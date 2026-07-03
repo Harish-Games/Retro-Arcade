@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Lunar Lander - Terrain Edition</title>
+    <title>🌙 Lunar Lander – Ultimate</title>
     <style>
         * {
             margin: 0;
@@ -23,6 +23,8 @@
             padding: 20px 30px 25px;
             border-radius: 16px;
             border: 2px solid #2a2a5a;
+            box-shadow: 0 0 60px rgba(0, 150, 255, 0.05);
+            min-width: 760px;
         }
         canvas {
             display: block;
@@ -33,28 +35,49 @@
             width: 700px;
             height: 500px;
         }
-        .info {
-            display: flex;
-            justify-content: space-between;
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 8px;
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: #0a0a15;
+            border-radius: 8px;
+            border: 1px solid #1a1a3a;
+        }
+        .dash-item {
             color: #aac0ff;
-            font-size: 16px;
+            font-size: 13px;
             font-weight: bold;
-            margin-top: 12px;
-            padding: 0 10px;
+            text-align: center;
+            padding: 2px 0;
         }
-        .info span {
+        .dash-item span {
             color: #ffcc77;
+            font-weight: normal;
         }
-        .info .fuel {
-            color: #66ff88;
+        .dash-item .danger {
+            color: #ff4477 !important;
+            animation: blink 0.5s infinite alternate;
         }
-        .info .lives {
-            color: #ff6688;
+        .dash-item .safe {
+            color: #66ff88 !important;
+        }
+        .dash-item .warning {
+            color: #ffaa44 !important;
+        }
+        @keyframes blink {
+            from {
+                opacity: 1;
+            }
+            to {
+                opacity: 0.3;
+            }
         }
         .controls {
             color: #6688aa;
             font-size: 13px;
-            margin-top: 10px;
+            margin-top: 8px;
             text-align: center;
             border-top: 1px solid #1a1a3a;
             padding-top: 10px;
@@ -66,91 +89,121 @@
             border: 1px solid #3a3a6a;
             color: #cce;
         }
+        @media (max-width: 780px) {
+            .game-wrapper {
+                min-width: unset;
+                width: 95vw;
+                padding: 12px;
+            }
+            canvas {
+                width: 100%;
+                height: auto;
+                aspect-ratio: 700/500;
+            }
+            .dashboard {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 4px;
+                font-size: 11px;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="game-wrapper">
         <canvas id="gameCanvas" width="700" height="500"></canvas>
-        <div class="info">
-            <div>🌀 LEVEL <span id="levelDisplay">1</span></div>
-            <div class="fuel">⛽ FUEL <span id="fuelDisplay">120</span></div>
-            <div class="lives">❤️ <span id="livesDisplay">3</span></div>
-            <div>🏆 SCORE <span id="scoreDisplay">0</span></div>
+        <div class="dashboard" id="dashboard">
+            <div class="dash-item">SCORE <span id="scoreDisplay">0</span></div>
+            <div class="dash-item">FUEL <span id="fuelDisplay">120</span></div>
+            <div class="dash-item">LIVES <span id="livesDisplay">3</span></div>
+            <div class="dash-item">LEVEL <span id="levelDisplay">1</span></div>
+            <div class="dash-item">VERT <span id="vSpeedDisplay">0.00</span></div>
+            <div class="dash-item">HORIZ <span id="hSpeedDisplay">0.00</span></div>
         </div>
         <div class="controls">
             <kbd>←</kbd> <kbd>→</kbd> rotate &nbsp;|&nbsp; <kbd>↑</kbd> or <kbd>Space</kbd> thrust &nbsp;|&nbsp; <kbd>R</kbd> restart
         </div>
     </div>
     <script>
+        // ============================================================
+        // LUNAR LANDER – Ultimate Edition
+        // Combining the best of all versions
+        // ============================================================
+
         // ----- SETUP -----
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const levelSpan = document.getElementById('levelDisplay');
-        const fuelSpan = document.getElementById('fuelDisplay');
-        const livesSpan = document.getElementById('livesDisplay');
-        const scoreSpan = document.getElementById('scoreDisplay');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const fuelDisplay = document.getElementById('fuelDisplay');
+        const livesDisplay = document.getElementById('livesDisplay');
+        const levelDisplay = document.getElementById('levelDisplay');
+        const vSpeedDisplay = document.getElementById('vSpeedDisplay');
+        const hSpeedDisplay = document.getElementById('hSpeedDisplay');
 
         const W = 700,
             H = 500;
-        const GROUND = 460;
+        const GROUND_BASE = 460;
 
-        // ----- LEVELS -----
+        // ============================================================
+        // LEVEL DEFINITIONS
+        // ============================================================
         const LEVELS = [{
             name: 'Highlands',
             gravity: 0.030,
-            fuel: 120,
+            fuel: 140,
             windChance: 0,
             terrainType: 'hills',
             pads: [
-                { x: 350, width: 80, points: 100, label: 'EASY' },
-                { x: 550, width: 40, points: 200, label: 'MEDIUM' },
+                { x: 350, width: 80, points: 100, label: 'EASY', mult: 1 },
+                { x: 550, width: 40, points: 200, label: 'MEDIUM', mult: 2 },
             ],
         }, {
             name: 'Craters',
             gravity: 0.035,
-            fuel: 110,
+            fuel: 135,
             windChance: 0.05,
             terrainType: 'craters',
             pads: [
-                { x: 200, width: 60, points: 120, label: 'EASY' },
-                { x: 400, width: 35, points: 220, label: 'HARD' },
-                { x: 580, width: 20, points: 350, label: 'EXTREME' },
+                { x: 200, width: 60, points: 120, label: 'EASY', mult: 1 },
+                { x: 400, width: 35, points: 220, label: 'HARD', mult: 3 },
+                { x: 580, width: 20, points: 350, label: 'EXTREME', mult: 5 },
             ],
         }, {
             name: 'Ridge',
             gravity: 0.038,
-            fuel: 100,
-            windChance: 0.15,
+            fuel: 130,
+            windChance: 0.12,
             terrainType: 'ridge',
             pads: [
-                { x: 150, width: 50, points: 150, label: 'EASY' },
-                { x: 380, width: 25, points: 280, label: 'HARD' },
-                { x: 600, width: 15, points: 400, label: 'EXTREME' },
+                { x: 150, width: 50, points: 150, label: 'EASY', mult: 1 },
+                { x: 380, width: 25, points: 280, label: 'HARD', mult: 3 },
+                { x: 600, width: 15, points: 400, label: 'EXTREME', mult: 5 },
             ],
         }, {
             name: 'Canyon',
             gravity: 0.042,
-            fuel: 90,
-            windChance: 0.25,
+            fuel: 110,
+            windChance: 0.20,
             terrainType: 'canyon',
             pads: [
-                { x: 250, width: 40, points: 180, label: 'MEDIUM' },
-                { x: 480, width: 20, points: 320, label: 'HARD' },
+                { x: 250, width: 40, points: 180, label: 'MEDIUM', mult: 2 },
+                { x: 480, width: 20, points: 320, label: 'HARD', mult: 3 },
             ],
         }, {
             name: 'Chaos',
             gravity: 0.048,
-            fuel: 80,
-            windChance: 0.35,
+            fuel: 140,
+            windChance: 0.30,
             terrainType: 'chaos',
             pads: [
-                { x: 180, width: 30, points: 250, label: 'HARD' },
-                { x: 420, width: 15, points: 450, label: 'EXTREME' },
-                { x: 600, width: 10, points: 600, label: 'INSANE' },
+                { x: 180, width: 30, points: 250, label: 'HARD', mult: 3 },
+                { x: 420, width: 15, points: 450, label: 'EXTREME', mult: 5 },
+                { x: 600, width: 10, points: 600, label: 'INSANE', mult: 8 },
             ],
         }, ];
 
-        // ----- GAME STATE -----
+        // ============================================================
+        // GAME STATE
+        // ============================================================
         let currentLevel = 0;
         let score = 0;
         let lives = 3;
@@ -160,6 +213,7 @@
         let particles = [];
         let wind = { x: 0, y: 0 };
         let deathFlash = 0;
+        let padFlash = 0;
 
         // ----- RESET -----
         function resetGame() {
@@ -187,15 +241,17 @@
             gameOver = false;
             landed = false;
             deathFlash = 0;
+            padFlash = 0;
             particles = [];
             wind = { x: 0, y: 0 };
             generateTerrain(level);
             updateUI();
+            updateDashboard();
         }
 
-        function crashAndRespawn() {
+        function crashAndRespawn(reason) {
             lives--;
-            deathFlash = 30; // red flash frames
+            deathFlash = 30;
             updateUI();
 
             if (lives <= 0) {
@@ -203,7 +259,6 @@
                 return;
             }
 
-            // Respawn on same level with fresh fuel
             const level = LEVELS[currentLevel];
             ship.x = 350;
             ship.y = 80;
@@ -218,24 +273,16 @@
             landed = false;
             particles = [];
             wind = { x: 0, y: 0 };
-            // Keep terrain and pads as they were (pads already used stay used)
             generateTerrain(level);
-            // Reapply pad usage
-            for (const p of pads) {
-                // Find the matching pad in the level data
-                const levelPad = level.pads.find(lp => lp.x === p.x);
-                if (levelPad && levelPad.used) {
-                    p.used = true;
-                }
-            }
             updateUI();
+            updateDashboard();
         }
 
+        // ----- TERRAIN GENERATION -----
         function generateTerrain(level) {
             terrain = [];
             pads = [];
             const type = level.terrainType;
-
             const steps = 350;
             let heights = [];
 
@@ -282,16 +329,16 @@
             }
 
             for (const p of heights) {
-                const y = GROUND - (p.h + 60);
+                const y = GROUND_BASE - (p.h + 60);
                 terrain.push({ x: p.x, y: y });
             }
 
-            // ---- PLACE LANDING PADS ----
+            // Place landing pads
             for (const padData of level.pads) {
                 const padX = padData.x;
                 const halfW = padData.width / 2;
 
-                let padY = GROUND;
+                let padY = GROUND_BASE;
                 for (const t of terrain) {
                     if (Math.abs(t.x - padX) < 2) {
                         padY = t.y;
@@ -307,7 +354,7 @@
                         } else {
                             const blend = (dist - halfW) / 4;
                             if (blend < 1) {
-                                const origY = GROUND - (60 + Math.sin(t.x * 0.01) * 30);
+                                const origY = GROUND_BASE - (60 + Math.sin(t.x * 0.01) * 30);
                                 t.y = padY + (origY - padY) * blend;
                             }
                         }
@@ -320,28 +367,42 @@
                     width: padData.width,
                     halfW: halfW,
                     points: padData.points,
+                    mult: padData.mult || 1,
                     label: padData.label,
-                    used: padData.used || false,
+                    used: false,
                 });
             }
         }
 
-        // ----- GET TERRAIN HEIGHT -----
         function getTerrainHeight(x) {
-            if (x < 0 || x > W) return GROUND;
+            if (x < 0 || x > W) return GROUND_BASE;
             for (let i = 0; i < terrain.length - 1; i++) {
                 if (x >= terrain[i].x && x <= terrain[i + 1].x) {
                     const t = (x - terrain[i].x) / (terrain[i + 1].x - terrain[i].x);
                     return terrain[i].y + (terrain[i + 1].y - terrain[i].y) * t;
                 }
             }
-            return GROUND;
+            return GROUND_BASE;
         }
 
         function getTerrainSlope(x) {
             const h1 = getTerrainHeight(x - 3);
             const h2 = getTerrainHeight(x + 3);
             return (h2 - h1) / 6;
+        }
+
+        function getNearestPad(x) {
+            let nearest = null;
+            let minDist = Infinity;
+            for (const p of pads) {
+                if (p.used) continue;
+                const dist = Math.abs(x - p.x);
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearest = p;
+                }
+            }
+            return nearest;
         }
 
         // ----- PARTICLES -----
@@ -358,11 +419,13 @@
                     life: 12 + Math.random() * 14,
                     maxLife: 26,
                     radius: 1 + Math.random() * 1.5,
+                    color: '#ffaa44',
                 });
             }
         }
 
         function spawnCrashParticles(x, y) {
+            const colors = ['#ff4422', '#ff8844', '#ffcc44', '#ffffff'];
             for (let i = 0; i < 50; i++) {
                 const angle = Math.random() * Math.PI * 2;
                 const speed = 1 + Math.random() * 5;
@@ -374,6 +437,7 @@
                     life: 25 + Math.random() * 35,
                     maxLife: 60,
                     radius: 1 + Math.random() * 2.5,
+                    color: colors[Math.floor(Math.random() * colors.length)],
                 });
             }
         }
@@ -390,19 +454,61 @@
                     life: 20 + Math.random() * 20,
                     maxLife: 40,
                     radius: 1 + Math.random() * 2,
+                    color: '#ccaa88',
                 });
             }
         }
 
         // ----- UI -----
         function updateUI() {
-            levelSpan.textContent = currentLevel + 1;
-            fuelSpan.textContent = Math.floor(ship.fuel);
-            livesSpan.textContent = lives;
-            scoreSpan.textContent = score;
+            scoreDisplay.textContent = score;
+            fuelDisplay.textContent = Math.floor(ship.fuel);
+            livesDisplay.textContent = lives;
+            levelDisplay.textContent = currentLevel + 1;
         }
 
-        // ----- UPDATE -----
+        function updateDashboard() {
+            const vSpeed = ship.vy;
+            const hSpeed = ship.vx;
+            vSpeedDisplay.textContent = vSpeed.toFixed(2);
+            hSpeedDisplay.textContent = hSpeed.toFixed(2);
+
+            // Color coding
+            const vEl = vSpeedDisplay.parentElement;
+            const hEl = hSpeedDisplay.parentElement;
+            const fEl = fuelDisplay.parentElement;
+
+            // Vertical speed danger
+            if (Math.abs(vSpeed) > 1.5) {
+                vEl.className = 'dash-item danger';
+            } else if (Math.abs(vSpeed) > 0.8) {
+                vEl.className = 'dash-item warning';
+            } else {
+                vEl.className = 'dash-item safe';
+            }
+
+            // Horizontal speed danger
+            if (Math.abs(hSpeed) > 1.0) {
+                hEl.className = 'dash-item danger';
+            } else if (Math.abs(hSpeed) > 0.5) {
+                hEl.className = 'dash-item warning';
+            } else {
+                hEl.className = 'dash-item safe';
+            }
+
+            // Fuel danger
+            if (ship.fuel < 20) {
+                fEl.className = 'dash-item danger';
+            } else if (ship.fuel < 50) {
+                fEl.className = 'dash-item warning';
+            } else {
+                fEl.className = 'dash-item';
+            }
+        }
+
+        // ============================================================
+        // UPDATE
+        // ============================================================
         function update() {
             if (gameOver) return;
             if (levelComplete) return;
@@ -464,36 +570,45 @@
                 const pad = getNearestPad(ship.x);
                 const onPad = pad && Math.abs(ship.x - pad.x) < pad.halfW;
 
-                if (onPad && speed < 1.8 && Math.abs(ship.angle) < 0.35) {
-                    // LANDED!
+                // ---- LANDING CHECK ----
+                const speedOk = speed < 1.8;
+                const angleOk = Math.abs(ship.angle) < 0.35;
+
+                if (onPad && speedOk && angleOk) {
+                    // SUCCESSFUL LANDING!
                     landed = true;
+                    pad.used = true;
                     const bonus = Math.floor(ship.fuel * 2);
-                    const padBonus = pad.points;
+                    const padBonus = pad.points * pad.mult;
                     const totalScore = 100 + bonus + padBonus;
                     score += totalScore;
-                    pad.used = true;
+                    padFlash = 20;
                     spawnLandingDust(ship.x, groundY);
                     updateUI();
 
+                    // Check if all pads used
                     const allUsed = pads.every(p => p.used);
                     if (allUsed) {
                         levelComplete = true;
-                        lives = 3; // Reset lives for next level
+                        lives = 3;
                         updateUI();
                     }
                     ship.vx = 0;
                     ship.vy = 0;
+                    updateDashboard();
                     return;
                 }
 
+                // ---- SLIDING ----
                 if (Math.abs(slope) > 0.15 && speed < 0.5) {
                     ship.vx += slope * 0.02;
                     ship.angle += slope * 0.01;
                     ship.sliding = true;
                 } else if (speed > 1.8 || Math.abs(ship.angle) > 0.35) {
-                    // CRASH!
+                    // ---- CRASH! ----
                     spawnCrashParticles(ship.x, groundY);
                     crashAndRespawn();
+                    updateDashboard();
                     return;
                 } else {
                     ship.vx *= 0.9;
@@ -514,25 +629,15 @@
             }
 
             if (deathFlash > 0) deathFlash--;
+            if (padFlash > 0) padFlash--;
 
             updateUI();
+            updateDashboard();
         }
 
-        function getNearestPad(x) {
-            let nearest = null;
-            let minDist = Infinity;
-            for (const p of pads) {
-                if (p.used) continue;
-                const dist = Math.abs(x - p.x);
-                if (dist < minDist) {
-                    minDist = dist;
-                    nearest = p;
-                }
-            }
-            return nearest;
-        }
-
-        // ----- DRAW -----
+        // ============================================================
+        // DRAW
+        // ============================================================
         function draw() {
             ctx.clearRect(0, 0, W, H);
 
@@ -546,16 +651,17 @@
 
             // ---- Terrain ----
             ctx.beginPath();
-            ctx.moveTo(0, GROUND);
+            ctx.moveTo(0, GROUND_BASE);
             for (const p of terrain) {
                 ctx.lineTo(p.x, p.y);
             }
-            ctx.lineTo(W, GROUND);
+            ctx.lineTo(W, GROUND_BASE);
             ctx.closePath();
-            const grad = ctx.createLinearGradient(0, GROUND - 80, 0, GROUND);
+
+            const grad = ctx.createLinearGradient(0, GROUND_BASE - 80, 0, GROUND_BASE);
             grad.addColorStop(0, 'rgba(40,35,30,0)');
             grad.addColorStop(0.2, 'rgba(50,45,40,0.4)');
-            grad.addColorStop(1, 'rgba(40,35,30,0.9)');
+            grad.addColorStop(1, 'rgba(30,28,24,0.9)');
             ctx.fillStyle = grad;
             ctx.fill();
 
@@ -572,98 +678,101 @@
             for (const p of pads) {
                 const isUsed = p.used;
                 const isNear = !isUsed && Math.abs(ship.x - p.x) < p.halfW + 30;
+                const flashing = padFlash > 0 && isNear;
 
+                // Glow
                 if (!isUsed) {
-                    ctx.fillStyle = isNear ? 'rgba(255,221,68,0.08)' : 'rgba(255,221,68,0.03)';
+                    const alpha = flashing ? 0.15 : (isNear ? 0.08 : 0.03);
+                    ctx.fillStyle = `rgba(255,221,68,${alpha})`;
                     ctx.fillRect(p.x - p.halfW - 15, p.y - 30, p.halfW * 2 + 30, 40);
                 }
 
+                // Pad line
                 ctx.strokeStyle = isUsed ? 'rgba(255,221,68,0.2)' :
-                    isNear ? '#ffdd44' : 'rgba(255,221,68,0.5)';
-                ctx.lineWidth = isNear ? 3 : 2;
+                    flashing ? '#ffdd44' :
+                    isNear ? 'rgba(255,221,68,0.7)' : 'rgba(255,221,68,0.4)';
+                ctx.lineWidth = flashing ? 3 : (isNear ? 2.5 : 2);
                 ctx.beginPath();
                 ctx.moveTo(p.x - p.halfW, p.y);
                 ctx.lineTo(p.x + p.halfW, p.y);
                 ctx.stroke();
 
+                // Pad markers
                 if (!isUsed) {
                     for (let x = p.x - p.halfW + 4; x < p.x + p.halfW - 4; x += 6) {
-                        ctx.fillStyle = isNear ? 'rgba(255,221,68,0.4)' : 'rgba(255,221,68,0.15)';
+                        ctx.fillStyle = flashing ? 'rgba(255,221,68,0.6)' :
+                            isNear ? 'rgba(255,221,68,0.3)' : 'rgba(255,221,68,0.12)';
                         ctx.fillRect(x, p.y - 2, 2, 4);
                     }
                 }
 
+                // Label
                 if (!isUsed) {
-                    ctx.fillStyle = isNear ? 'rgba(255,221,68,0.6)' : 'rgba(255,221,68,0.3)';
+                    ctx.fillStyle = flashing ? '#ffdd44' :
+                        isNear ? 'rgba(255,221,68,0.6)' : 'rgba(255,221,68,0.3)';
                     ctx.font = '8px monospace';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'bottom';
-                    ctx.fillText(p.label + ' ' + p.points + 'pts', p.x, p.y - 6);
-                    ctx.fillStyle = isNear ? 'rgba(255,221,68,0.15)' : 'rgba(255,221,68,0.05)';
-                    ctx.fillRect(p.x - p.halfW, p.y - 1, p.halfW * 2, 2);
+                    const labelText = p.label + ' ' + (p.points * p.mult) + 'pts';
+                    ctx.fillText(labelText, p.x, p.y - 6);
                 }
 
+                // Checkmark when used
                 if (isUsed) {
-                    ctx.fillStyle = 'rgba(100,255,100,0.3)';
-                    ctx.font = '12px monospace';
+                    ctx.fillStyle = 'rgba(100,255,100,0.4)';
+                    ctx.font = '14px monospace';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'bottom';
-                    ctx.fillText('✓', p.x, p.y - 4);
+                    ctx.fillText('✓', p.x, p.y - 2);
                 }
             }
 
             // ---- Wind ----
             if (Math.abs(wind.x) > 0.005) {
                 ctx.fillStyle = 'rgba(255,200,100,0.3)';
-                ctx.font = '12px monospace';
+                ctx.font = '11px monospace';
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'bottom';
                 const dir = wind.x > 0 ? '→' : '←';
-                ctx.fillText('WIND ' + dir + ' ' + (Math.abs(wind.x) * 100).toFixed(0) + '%', 12, GROUND - 10);
-                ctx.strokeStyle = 'rgba(255,200,100,0.1)';
+                ctx.fillText('WIND ' + dir + ' ' + (Math.abs(wind.x) * 100).toFixed(0) + '%', 10, GROUND_BASE - 10);
+                ctx.strokeStyle = 'rgba(255,200,100,0.08)';
                 ctx.lineWidth = 2;
                 ctx.beginPath();
-                const wStart = 120;
+                const wStart = 110;
                 const wLen = Math.abs(wind.x) * 300;
-                ctx.moveTo(wStart, GROUND - 4);
-                ctx.lineTo(wStart + wLen * (wind.x > 0 ? 1 : -1), GROUND - 4);
+                ctx.moveTo(wStart, GROUND_BASE - 4);
+                ctx.lineTo(wStart + wLen * (wind.x > 0 ? 1 : -1), GROUND_BASE - 4);
                 ctx.stroke();
             }
 
-            // ---- SHIP COLOUR LOGIC ----
+            // ---- Ship Color Logic ----
             const pad = getNearestPad(ship.x);
             const onPad = pad && Math.abs(ship.x - pad.x) < pad.halfW;
             const speed = Math.hypot(ship.vx, ship.vy);
             const angleOk = Math.abs(ship.angle) < 0.35;
             const speedOk = speed < 1.8;
 
-            let shipColor = '#88ddff'; // default blue-white
+            let shipColor = '#88ddff';
             let glowColor = 'rgba(100, 200, 255, 0.15)';
 
-            // Only change colour if alive and not already landed
             if (!landed && ship.fuel > 0) {
                 if (onPad && !pad.used) {
                     if (speedOk && angleOk) {
-                        shipColor = '#66ff88'; // GREEN – perfect landing!
+                        shipColor = '#66ff88';
                         glowColor = 'rgba(100, 255, 150, 0.4)';
                     } else {
-                        shipColor = '#ffaa44'; // ORANGE – warning! too fast or tilted
+                        shipColor = '#ffaa44';
                         glowColor = 'rgba(255, 170, 68, 0.4)';
                     }
-                } else {
-                    // Not on a pad – default blue
-                    shipColor = '#88ddff';
-                    glowColor = 'rgba(100, 200, 255, 0.15)';
                 }
             }
 
-            // If landed, keep it green
             if (landed) {
                 shipColor = '#66ff88';
                 glowColor = 'rgba(100, 255, 150, 0.4)';
             }
 
-            // ---- DRAW SHIP ----
+            // ---- Draw Ship ----
             if (!gameOver) {
                 ctx.save();
                 ctx.translate(ship.x, ship.y);
@@ -671,7 +780,7 @@
                 ctx.shadowColor = glowColor;
                 ctx.shadowBlur = 18;
 
-                // Ship hull
+                // Hull
                 ctx.strokeStyle = shipColor;
                 ctx.lineWidth = 2.5;
                 ctx.beginPath();
@@ -681,7 +790,7 @@
                 ctx.closePath();
                 ctx.stroke();
 
-                // Inner glow line
+                // Inner glow
                 ctx.strokeStyle = shipColor;
                 ctx.globalAlpha = 0.3;
                 ctx.lineWidth = 1;
@@ -720,11 +829,16 @@
             // ---- Particles ----
             for (const p of particles) {
                 ctx.globalAlpha = p.life / p.maxLife;
-                const color = p.life > p.maxLife * 0.5 ? '#ffaa44' : '#ff6633';
-                ctx.fillStyle = color;
-                ctx.fillRect(p.x - p.radius / 2, p.y - p.radius / 2, p.radius, p.radius);
+                ctx.fillStyle = p.color || '#ff8844';
+                ctx.shadowColor = p.color || '#ff8844';
+                ctx.shadowBlur = 4;
+                const size = p.radius * (p.life / p.maxLife);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, Math.max(0.5, size), 0, Math.PI * 2);
+                ctx.fill();
             }
             ctx.globalAlpha = 1;
+            ctx.shadowBlur = 0;
 
             // ---- Red flash on death ----
             if (deathFlash > 0) {
@@ -732,99 +846,105 @@
                 ctx.fillRect(0, 0, W, H);
             }
 
-            // ---- HUD ----
-            ctx.fillStyle = 'rgba(255,255,255,0.5)';
-            ctx.font = '12px monospace';
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'top';
+            // ---- HUD (bigger & brighter) ----
+ctx.fillStyle = 'rgba(255,255,255,0.85)';
+ctx.font = '13px monospace';
+ctx.textAlign = 'left';
+ctx.textBaseline = 'top';
+const spd = Math.hypot(ship.vx, ship.vy);
+ctx.fillText(`SPD ${spd.toFixed(2)}  ANG ${(ship.angle / Math.PI * 180).toFixed(1)}°`, 10, 8);
 
-            const spd = Math.hypot(ship.vx, ship.vy);
-            const angleDeg = (ship.angle / Math.PI * 180) % 360;
-            ctx.fillText(`SPD ${spd.toFixed(2)}`, 12, 12);
-            ctx.fillText(`VX ${ship.vx.toFixed(2)}`, 12, 26);
-            ctx.fillText(`VY ${ship.vy.toFixed(2)}`, 12, 40);
-            ctx.fillText(`ANG ${angleDeg.toFixed(1)}°`, 12, 54);
+// ---- Fuel Bar (brighter) ----
+const fuelPct = ship.fuel / ship.maxFuel;
+ctx.fillStyle = 'rgba(255,255,255,0.2)';
+ctx.fillRect(10, 30, 100, 8);
+const fuelColor = fuelPct > 0.3 ? 'rgba(100,255,200,0.85)' : 'rgba(255,80,80,0.85)';
+ctx.fillStyle = fuelColor;
+ctx.fillRect(12, 32, Math.max(0, fuelPct * 96), 4);
+ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+ctx.lineWidth = 0.5;
+ctx.strokeRect(10, 30, 100, 8);
 
-            // ---- Fuel Bar ----
-            const fuelPct = ship.fuel / ship.maxFuel;
-            ctx.fillStyle = 'rgba(255,255,255,0.08)';
-            ctx.fillRect(12, 80, 120, 10);
-            const fuelColor = fuelPct > 0.3 ? 'rgba(100,255,200,0.7)' : 'rgba(255,80,80,0.7)';
-            ctx.fillStyle = fuelColor;
-            ctx.fillRect(14, 82, Math.max(0, fuelPct * 116), 6);
-            ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(12, 80, 120, 10);
-            ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.font = '7px monospace';
-            ctx.fillText('FUEL', 16, 82);
+// ---- Pads remaining (brighter) ----
+const remaining = pads.filter(p => !p.used).length;
+ctx.fillStyle = 'rgba(255,255,255,0.75)';
+ctx.font = '12px monospace';
+ctx.fillText('PADS: ' + remaining, 10, 46);
 
-            // ---- Pads remaining ----
-            const remaining = pads.filter(p => !p.used).length;
-            ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.font = '10px monospace';
-            ctx.fillText('PADS: ' + remaining, 12, 100);
+// ---- Level name (brighter, right side) ----
+ctx.textAlign = 'right';
+ctx.textBaseline = 'top';
+ctx.fillStyle = 'rgba(255,255,255,0.7)';
+ctx.font = '13px monospace';
+ctx.fillText(LEVELS[currentLevel].name, W - 10, 8);
 
-            // ---- Level name ----
-            ctx.textAlign = 'right';
-            ctx.textBaseline = 'top';
-            ctx.fillStyle = 'rgba(255,255,255,0.15)';
-            ctx.font = '12px monospace';
-            ctx.fillText(LEVELS[currentLevel].name, W - 12, 12);
+            // ---- Landed message ----
+            if (landed && !levelComplete && !gameOver) {
+                ctx.fillStyle = 'rgba(0,0,0,0.25)';
+                ctx.fillRect(0, 0, W, 28);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#88ff88';
+                ctx.font = '14px monospace';
+                ctx.fillText('🛸 LANDED! Find the next landing pad →', W / 2, 14);
+            }
 
-            // ---- GAME OVER / WIN ----
+            // ---- GAME OVER ----
             if (gameOver) {
-                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
                 ctx.fillRect(0, 0, W, H);
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
+                ctx.shadowColor = '#ff4477';
+                ctx.shadowBlur = 30;
                 ctx.fillStyle = '#ff4477';
-                ctx.font = 'bold 36px monospace';
+                ctx.font = 'bold 40px monospace';
                 ctx.fillText('💀 GAME OVER', W / 2, H / 2 - 40);
+                ctx.shadowBlur = 0;
                 ctx.fillStyle = '#aaccee';
                 ctx.font = '18px monospace';
                 ctx.fillText(`Final Score: ${score}  |  Press R to restart`, W / 2, H / 2 + 30);
             }
 
+            // ---- LEVEL COMPLETE ----
             if (levelComplete) {
                 ctx.fillStyle = 'rgba(0,0,0,0.5)';
                 ctx.fillRect(0, 0, W, H);
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillStyle = '#88ff88';
+                ctx.shadowColor = '#66ff88';
+                ctx.shadowBlur = 40;
+                ctx.fillStyle = '#66ff88';
                 ctx.font = 'bold 36px monospace';
                 if (currentLevel + 1 < LEVELS.length) {
                     ctx.fillText('🌟 LEVEL COMPLETE!', W / 2, H / 2 - 50);
+                    ctx.shadowBlur = 0;
                     ctx.fillStyle = '#aaccee';
                     ctx.font = '18px monospace';
                     ctx.fillText(`Score: ${score}  |  Press SPACE for next level`, W / 2, H / 2 + 20);
                 } else {
                     ctx.fillText('🏆 ALL LEVELS COMPLETE!', W / 2, H / 2 - 50);
+                    ctx.shadowBlur = 0;
                     ctx.fillStyle = '#aaccee';
                     ctx.font = '18px monospace';
                     ctx.fillText(`Final Score: ${score}  |  Press R to restart`, W / 2, H / 2 + 20);
                 }
-            }
-
-            if (landed && !levelComplete && !gameOver) {
-                ctx.fillStyle = 'rgba(0,0,0,0.3)';
-                ctx.fillRect(0, 0, W, 30);
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillStyle = '#88ff88';
-                ctx.font = '14px monospace';
-                ctx.fillText('🛸 LANDED! Find the next landing pad →', W / 2, 15);
+                ctx.shadowBlur = 0;
             }
         }
 
-        // ----- GAME LOOP -----
+        // ============================================================
+        // GAME LOOP
+        // ============================================================
         function gameLoop() {
             update();
             draw();
             requestAnimationFrame(gameLoop);
         }
 
-        // ----- INPUT -----
+        // ============================================================
+        // INPUT
+        // ============================================================
         const keys = {
             left: false,
             right: false,
@@ -877,7 +997,9 @@
             }
         });
 
-        // ----- START -----
+        // ============================================================
+        // START
+        // ============================================================
         resetGame();
         gameLoop();
     </script>

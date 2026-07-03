@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🏛️ The Lost Temple – Text Adventure</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0a0a12;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+        .game-wrapper {
+            background: #12101f;
+            padding: 25px 30px 30px;
+            border-radius: 16px;
+            border: 2px solid #2a2a5a;
+            box-shadow: 0 0 60px rgba(100, 50, 200, 0.05);
+            max-width: 750px;
+            width: 100%;
+        }
+        .title {
+            text-align: center;
+            color: #ffcc77;
+            font-size: 24px;
+            letter-spacing: 6px;
+            font-weight: bold;
+            text-shadow: 0 0 20px rgba(255, 200, 100, 0.05);
+            border-bottom: 2px solid #2a2a5a;
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+        }
+        .title span {
+            color: #6688aa;
+        }
+        .text-area {
+            background: #0a0a15;
+            border-radius: 10px;
+            border: 2px solid #1a1a3a;
+            padding: 14px 18px;
+            min-height: 280px;
+            max-height: 450px;
+            overflow-y: auto;
+            margin-bottom: 12px;
+        }
+        .text-area p {
+            color: #c8d0e6;
+            font-size: 14px;
+            line-height: 1.7;
+            margin-bottom: 4px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .text-area .prompt {
+            color: #88ddff;
+        }
+        .text-area .highlight {
+            color: #ffcc77;
+        }
+        .text-area .danger {
+            color: #ff6688;
+        }
+        .text-area .success {
+            color: #66ff88;
+        }
+        .text-area .info {
+            color: #88aadd;
+        }
+        .text-area .system {
+            color: #667799;
+            font-style: italic;
+        }
+        .input-area {
+            display: flex;
+            gap: 10px;
+        }
+        .input-area input {
+            flex: 1;
+            background: #0a0a15;
+            border: 2px solid #1a1a3a;
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: #c8d0e6;
+            font-family: 'Courier New', monospace;
+            font-size: 15px;
+            outline: none;
+        }
+        .input-area input:focus {
+            border-color: #4a6aaa;
+            box-shadow: 0 0 20px rgba(74, 106, 170, 0.1);
+        }
+        .input-area button {
+            background: #1a1a3a;
+            border: 2px solid #2a2a5a;
+            border-radius: 8px;
+            padding: 10px 20px;
+            color: #c8d0e6;
+            font-family: 'Courier New', monospace;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .input-area button:hover {
+            background: #2a2a5a;
+            border-color: #4a6aaa;
+            box-shadow: 0 0 20px rgba(74, 106, 170, 0.1);
+        }
+        .info-bar {
+            display: flex;
+            justify-content: space-between;
+            color: #445577;
+            font-size: 12px;
+            margin-top: 10px;
+            padding: 8px 6px 0;
+            border-top: 1px solid #1a1a3a;
+        }
+        .info-bar .hint {
+            color: #556688;
+        }
+        .info-bar .hint kbd {
+            background: #1a1a3a;
+            padding: 1px 8px;
+            border-radius: 3px;
+            border: 1px solid #2a2a5a;
+            color: #88aacc;
+            font-size: 11px;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0a0a15;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #2a2a5a;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4a6aaa;
+        }
+        @media (max-width: 600px) {
+            .game-wrapper {
+                padding: 15px;
+            }
+            .title {
+                font-size: 18px;
+                letter-spacing: 3px;
+            }
+            .text-area {
+                min-height: 200px;
+                max-height: 300px;
+                padding: 10px 12px;
+            }
+            .text-area p {
+                font-size: 13px;
+            }
+            .input-area input {
+                font-size: 13px;
+                padding: 8px 10px;
+            }
+            .input-area button {
+                padding: 8px 14px;
+                font-size: 13px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-wrapper">
+        <div class="title">🏛️ <span>LOST TEMPLE</span></div>
+
+        <div class="text-area" id="textArea"></div>
+
+        <div class="input-area">
+            <input type="text" id="commandInput" placeholder="Type a command..." autofocus />
+            <button id="submitBtn">▶</button>
+        </div>
+
+        <div class="info-bar">
+            <span class="hint"><kbd>look</kbd> <kbd>go north</kbd> <kbd>take</kbd> <kbd>inventory</kbd> <kbd>help</kbd></span>
+            <span id="moveCount">MOVES: 0</span>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // THE LOST TEMPLE – A Text Adventure
+        // Inspired by Colossal Cave (1976) and classic interactive fiction
+        // ============================================================
+
+        // ----- GAME STATE -----
+        let currentRoom = 0;
+        let inventory = [];
+        let moves = 0;
+        let gameOver = false;
+        let lampLit = false;
+        let hasKey = false;
+        let hasIdol = false;
+        let hasMap = false;
+        let hasGem = false;
+        let hasTorch = false;
+        let torchLit = false;
+        let raftBuilt = false;
+        let bridgeCrossed = false;
+        let monsterDefeated = false;
+        let puzzleSolved = false;
+
+        // ----- ROOMS -----
+        const rooms = [{
+            id: 0,
+            name: "Forest Path",
+            desc: "You stand at the edge of a dark forest. A narrow path leads north into the trees. To the south, you can see a village. The sun is setting.",
+            exits: { north: 1, south: 2 },
+            objects: [],
+            description: "narrow path",
+        }, {
+            id: 1,
+            name: "Deep Forest",
+            desc: "The forest grows darker. Ancient trees tower above you. You hear strange calls from the canopy. A path continues north. To the east, you see a glint of metal.",
+            exits: { north: 3, east: 4, south: 0 },
+            objects: ['torch', 'old key'],
+            description: "dark forest",
+        }, {
+            id: 2,
+            name: "Village",
+            desc: "You are in a small, deserted village. The houses are empty. A well stands in the center. You see a shop that might have supplies. A path leads north into the forest.",
+            exits: { north: 0 },
+            objects: ['rope', 'flint'],
+            description: "deserted village",
+        }, {
+            id: 3,
+            name: "Forest Clearing",
+            desc: "You enter a large clearing. In the center stands a stone altar. An old map is carved into the stone. To the north, the forest continues.",
+            exits: { north: 5, south: 1 },
+            objects: ['map', 'stone knife'],
+            description: "clearing with altar",
+        }, {
+            id: 4,
+            name: "Ruined Tower",
+            desc: "You stand before a crumbling stone tower. The door is open. Inside, you see stairs leading up. The glint of metal was a sword lying on the ground.",
+            exits: { west: 1, up: 6 },
+            objects: ['sword', 'shield'],
+            description: "ruined tower",
+        }, {
+            id: 5,
+            name: "Mountain Pass",
+            desc: "The forest gives way to a rocky mountain pass. A river flows through the valley below. You can see the temple in the distance. The path splits here.",
+            exits: { north: 8, east: 9, south: 3 },
+            objects: ['wood', 'vine'],
+            description: "mountain pass",
+        }, {
+            id: 6,
+            name: "Tower Top",
+            desc: "You climb the spiral stairs to the top of the tower. The view is incredible. You can see the entire forest. In a chest, you find an old map and a gem.",
+            exits: { down: 4 },
+            objects: ['gem', 'old scroll'],
+            description: "top of tower",
+        }, {
+            id: 7,
+            name: "Cave Entrance",
+            desc: "You stand at the entrance to a dark cave. It smells of damp earth. You can hear water dripping inside. A path leads back to the mountain pass.",
+            exits: { south: 5, north: 10 },
+            objects: [],
+            description: "cave entrance",
+            dark: true,
+        }, {
+            id: 8,
+            name: "River Crossing",
+            desc: "The river is too deep to cross. You see a raft on the bank, but it has a hole. You need materials to repair it. To the south, the path leads back.",
+            exits: { south: 5, east: 12 },
+            objects: ['raft'],
+            description: "river crossing",
+        }, {
+            id: 9,
+            name: "Hidden Valley",
+            desc: "You discover a hidden valley. It's beautiful and green. A small temple stands at the far end. A path leads back west to the mountain pass.",
+            exits: { west: 5, east: 11 },
+            objects: [],
+            description: "hidden valley",
+        }, {
+            id: 10,
+            name: "Dark Cave",
+            desc: "The cave is pitch black. You can feel your way along the walls. You hear strange echoes. You can go north or south.",
+            exits: { south: 7, north: 13 },
+            objects: [],
+            description: "dark cave",
+            dark: true,
+        }, {
+            id: 11,
+            name: "Temple Entrance",
+            desc: "You stand before the ancient temple. Hieroglyphics cover the walls. The door is sealed with a stone mechanism. You need something to open it.",
+            exits: { west: 9 },
+            objects: [],
+            description: "temple entrance",
+        }, {
+            id: 12,
+            name: "Raft Crossing",
+            desc: "You have crossed the river on a raft. The temple looms ahead. You can see the main entrance from here. A path leads west back to the river.",
+            exits: { west: 8 },
+            objects: [],
+            description: "raft crossing",
+        }, {
+            id: 13,
+            name: "Cave Chamber",
+            desc: "You enter a large cave chamber. A pool of water lies in the center. You see writing on the wall. There is a passage to the east.",
+            exits: { south: 10, east: 14 },
+            objects: ['ancient tablet'],
+            description: "cave chamber",
+        }, {
+            id: 14,
+            name: "Temple Interior",
+            desc: "You are inside the temple. The walls are covered with murals. At the far end, you see the golden idol, glowing with power. You have found the Lost Temple!",
+            exits: { west: 13 },
+            objects: ['golden idol', 'offering bowl'],
+            description: "temple interior",
+            isTemple: true,
+        }, ];
+
+        // ----- COMMAND PARSER -----
+        let commandHistory = [];
+
+        function parseCommand(input) {
+            if (gameOver) {
+                if (input.toLowerCase().includes('restart')) {
+                    resetGame();
+                    return "🏛️ The game has been restarted.";
+                }
+                return "💀 The game is over. Type RESTART to try again.";
+            }
+
+            const words = input.toLowerCase().trim().split(/\s+/);
+            const cmd = words[0] || '';
+            const arg = words.slice(1).join(' ');
+
+            // Track moves
+            moves++;
+
+            // ---- LOOK ----
+            if (cmd === 'look' || cmd === 'l') {
+                return lookRoom();
+            }
+
+            // ---- INVENTORY ----
+            if (cmd === 'inventory' || cmd === 'i') {
+                if (inventory.length === 0) return "📦 You are carrying nothing.";
+                return "📦 You are carrying: " + inventory.join(', ') + ".";
+            }
+
+            // ---- GO ----
+            if (cmd === 'go' || cmd === 'move' || cmd === 'walk') {
+                const direction = arg || words[1] || '';
+                return goDirection(direction);
+            }
+
+            // ---- Direction shortcuts ----
+            if (['north', 'south', 'east', 'west', 'n', 's', 'e', 'w', 'up', 'down', 'u', 'd', 'enter'].includes(cmd)) {
+                return goDirection(cmd);
+            }
+
+            // ---- TAKE ----
+            if (cmd === 'take' || cmd === 'get' || cmd === 'grab') {
+                return takeItem(arg || words[1] || '');
+            }
+
+            // ---- DROP ----
+            if (cmd === 'drop' || cmd === 'put' || cmd === 'leave') {
+                return dropItem(arg || words[1] || '');
+            }
+
+            // ---- USE ----
+            if (cmd === 'use' || cmd === 'light' || cmd === 'turn') {
+                return useItem(arg || words[1] || '');
+            }
+
+            // ---- EXAMINE ----
+            if (cmd === 'examine' || cmd === 'x' || cmd === 'check' || cmd === 'read') {
+                return examineItem(arg || words[1] || '');
+            }
+
+            // ---- OPEN ----
+            if (cmd === 'open') {
+                return openItem(arg || words[1] || '');
+            }
+
+            // ---- HELP ----
+            if (cmd === 'help' || cmd === '?') {
+                return helpText();
+            }
+
+            // ---- WAIT ----
+            if (cmd === 'wait' || cmd === 'rest') {
+                return "⏳ You wait. Nothing happens.";
+            }
+
+            // ---- SCORE ----
+            if (cmd === 'score') {
+                let s = 0;
+                if (hasIdol) s += 50;
+                if (hasGem) s += 20;
+                if (hasMap) s += 10;
+                if (hasKey) s += 10;
+                if (bridgeCrossed) s += 10;
+                if (puzzleSolved) s += 20;
+                return "🏆 Score: " + s + " points.";
+            }
+
+            return "❓ I don't understand. Type HELP for commands.";
+        }
+
+        // ----- LOOK -----
+        function lookRoom() {
+            const room = rooms[currentRoom];
+            let text = "📖 " + room.name + "\n";
+            text += room.desc + "\n";
+
+            // Objects in room
+            const objects = [];
+            for (const obj of room.objects) {
+                if (!inventory.includes(obj)) {
+                    objects.push(obj);
+                }
+            }
+
+            if (objects.length > 0) {
+                text += "\n📦 You see: " + objects.join(', ') + ".\n";
+            }
+
+            // Exits
+            const exits = Object.keys(room.exits);
+            if (exits.length > 0) {
+                text += "\n🚪 Exits: " + exits.join(', ') + ".";
+            }
+
+            return text;
+        }
+
+        function goDirection(direction) {
+    const room = rooms[currentRoom];
+    const dirMap = {
+        'n': 'north', 's': 'south', 'e': 'east', 'w': 'west',
+        'u': 'up', 'd': 'down',
+        'north': 'north', 'south': 'south', 'east': 'east', 'west': 'west',
+        'up': 'up', 'down': 'down',
+        'enter': 'enter',
+    };
+
+    const dir = dirMap[direction];
+    if (!dir) return "🚫 Go where?";
+
+    // Check if room is dark
+    if (room.dark && !lampLit && !torchLit) {
+        return "🌑 It's too dark to see! You need a light source.";
+    }
+
+    // Check if the exit exists
+    const exit = room.exits[dir];
+    if (exit === undefined) {
+        return "🚫 You can't go that way.";
+    }
+
+    // Special case: raft crossing requires raft built
+    if (currentRoom === 8 && dir === 'east' && !raftBuilt) {
+        return "🌊 The river is too wide. You need a raft to cross.";
+    }
+
+    // Special case: temple entrance requires key
+    if (exit === 11 && !hasKey) {
+        return "🔒 The temple door is sealed. You need a key to enter.";
+    }
+
+    // Special case: dark cave without light
+    if (exit === 10 && !lampLit && !torchLit) {
+        return "🌑 It's too dark in there. You need a light source.";
+    }
+
+    currentRoom = exit;
+    updateUI();
+    return lookRoom();
+}
+
+        // ----- TAKE -----
+        function takeItem(item) {
+            const room = rooms[currentRoom];
+            const itemMap = {
+                'torch': 'torch',
+                'old key': 'key',
+                'key': 'key',
+                'rope': 'rope',
+                'flint': 'flint',
+                'map': 'map',
+                'stone knife': 'knife',
+                'knife': 'knife',
+                'sword': 'sword',
+                'shield': 'shield',
+                'wood': 'wood',
+                'vine': 'vine',
+                'gem': 'gem',
+                'old scroll': 'scroll',
+                'scroll': 'scroll',
+                'ancient tablet': 'tablet',
+                'tablet': 'tablet',
+                'golden idol': 'idol',
+                'idol': 'idol',
+                'offering bowl': 'bowl',
+                'bowl': 'bowl',
+                'raft': 'raft',
+            };
+
+            const target = itemMap[item];
+            if (!target) return "❓ What do you want to take?";
+
+            // Check if room has the item
+            const roomHasItem = room.objects.includes(target) || room.objects.includes(item);
+            if (!roomHasItem) return "❌ There is no " + item + " here.";
+
+            if (inventory.includes(target)) return "✅ You already have the " + target + ".";
+
+            // Special cases
+            if (target === 'raft') {
+                return "🪵 The raft is too large to carry. You need to repair it first.";
+            }
+
+            // Take the item
+            inventory.push(target);
+            // Remove from room
+            room.objects = room.objects.filter(o => o !== target && o !== item);
+
+            // Special handling
+            if (target === 'key') { hasKey = true; }
+            if (target === 'map') { hasMap = true; }
+            if (target === 'gem') { hasGem = true; }
+            if (target === 'idol') { hasIdol = true; }
+
+            return "✅ You take the " + target + ".";
+        }
+
+        // ----- DROP -----
+        function dropItem(item) {
+            const itemMap = {
+                'torch': 'torch',
+                'key': 'key',
+                'rope': 'rope',
+                'flint': 'flint',
+                'map': 'map',
+                'knife': 'knife',
+                'sword': 'sword',
+                'shield': 'shield',
+                'wood': 'wood',
+                'vine': 'vine',
+                'gem': 'gem',
+                'scroll': 'scroll',
+                'tablet': 'tablet',
+                'idol': 'idol',
+                'bowl': 'bowl',
+            };
+
+            const target = itemMap[item];
+            if (!target) return "❓ What do you want to drop?";
+
+            if (!inventory.includes(target)) return "❌ You don't have a " + target + ".";
+
+            inventory = inventory.filter(i => i !== target);
+            rooms[currentRoom].objects.push(target);
+
+            if (target === 'key') hasKey = false;
+            if (target === 'map') hasMap = false;
+            if (target === 'gem') hasGem = false;
+            if (target === 'idol') hasIdol = false;
+
+            return "📦 You drop the " + target + ".";
+        }
+
+        // ----- USE -----
+        function useItem(item) {
+            const room = rooms[currentRoom];
+            const itemMap = {
+                'torch': 'torch',
+                'flint': 'flint',
+                'rope': 'rope',
+                'knife': 'knife',
+                'sword': 'sword',
+                'shield': 'shield',
+                'map': 'map',
+                'key': 'key',
+                'wood': 'wood',
+                'vine': 'vine',
+                'gem': 'gem',
+                'scroll': 'scroll',
+                'tablet': 'tablet',
+                'idol': 'idol',
+                'bowl': 'bowl',
+            };
+
+            const target = itemMap[item];
+            if (!target) return "❓ What do you want to use?";
+
+            // ---- LIGHT TORCH ----
+            if (target === 'torch' && inventory.includes('torch')) {
+                if (inventory.includes('flint')) {
+                    torchLit = !torchLit;
+                    lampLit = false;
+                    return torchLit ? "🔥 You light the torch. The flame flickers, casting dancing shadows." :
+                        "🌑 You extinguish the torch.";
+                }
+                return "💥 You need something to light the torch with. Try flint.";
+            }
+
+            // ---- USE FLINT ----
+            if (target === 'flint' && inventory.includes('flint')) {
+                if (inventory.includes('torch')) {
+                    torchLit = true;
+                    lampLit = false;
+                    return "🔥 You strike the flint. Sparks fly and ignite the torch!";
+                }
+                return "💥 You strike the flint, but there's nothing to light.";
+            }
+
+            // ---- USE ROPE ----
+            if (target === 'rope' && inventory.includes('rope')) {
+                if (currentRoom === 8) {
+                    return "🧵 You tie the rope to the raft. It's still not enough. You need wood and vine to build a proper raft.";
+                }
+                if (currentRoom === 3) {
+                    return "🧵 You tie the rope to the altar. Nothing happens.";
+                }
+                return "🧵 You have a rope. You could use it to tie things together.";
+            }
+
+            // ---- USE WOOD + VINE (build raft) ----
+            if (target === 'wood' && inventory.includes('wood')) {
+                if (inventory.includes('vine') && currentRoom === 8) {
+                    raftBuilt = true;
+                    inventory = inventory.filter(i => i !== 'wood');
+                    inventory = inventory.filter(i => i !== 'vine');
+                    return "🪵 You build a sturdy raft from the wood and vine. It looks strong enough to cross the river!";
+                }
+                return "🪵 You have some wood. It could be used to build something.";
+            }
+
+            // ---- USE KEY ----
+            if (target === 'key' && inventory.includes('key')) {
+                if (currentRoom === 11) {
+                    return "🔑 You insert the key into the stone mechanism. The temple door grinds open!";
+                }
+                return "🔑 You have a key. It might fit somewhere.";
+            }
+
+            // ---- USE MAP ----
+            if (target === 'map' && inventory.includes('map')) {
+                return "🗺️ You study the map. It shows a path through the mountains to the temple. You notice a hidden passage in the cave chamber.";
+            }
+
+            // ---- USE SWORD ----
+            if (target === 'sword' && inventory.includes('sword')) {
+                if (currentRoom === 10 && !monsterDefeated) {
+                    monsterDefeated = true;
+                    return "⚔️ You swing the sword at the monster! It shrieks and retreats into the darkness. The passage is clear.";
+                }
+                return "⚔️ You brandish the sword. It feels well-balanced and sharp.";
+            }
+
+            // ---- USE GEM ----
+            if (target === 'gem' && inventory.includes('gem')) {
+                if (currentRoom === 14) {
+                    return "💎 You place the gem in the offering bowl. The room glows with golden light! The temple has accepted your offering.";
+                }
+                return "💎 The gem glows with inner light. It feels warm to the touch.";
+            }
+
+            // ---- USE SCROLL ----
+            if (target === 'scroll' && inventory.includes('scroll')) {
+                return "📜 You unroll the scroll. It contains an ancient prayer: 'He who offers the gem and the idol shall be blessed with treasure beyond measure.'";
+            }
+
+            // ---- USE TABLET ----
+            if (target === 'tablet' && inventory.includes('tablet')) {
+                return "📋 The tablet reads: 'The path is hidden in the cave chamber. Seek the writing on the wall.'";
+            }
+
+            // ---- USE IDOL ----
+            if (target === 'idol' && inventory.includes('idol')) {
+                if (currentRoom === 14) {
+                    return "🏆 You place the golden idol on the altar. The temple rumbles. A secret passage opens! You have completed the quest!";
+                }
+                return "🏆 The idol is heavy with gold. It's the prize you've been seeking.";
+            }
+
+            return "❓ You can't use that here.";
+        }
+
+        // ----- EXAMINE -----
+        function examineItem(item) {
+            const room = rooms[currentRoom];
+            const itemMap = {
+                'torch': 'torch',
+                'key': 'key',
+                'old key': 'key',
+                'rope': 'rope',
+                'flint': 'flint',
+                'map': 'map',
+                'knife': 'knife',
+                'stone knife': 'knife',
+                'sword': 'sword',
+                'shield': 'shield',
+                'wood': 'wood',
+                'vine': 'vine',
+                'gem': 'gem',
+                'scroll': 'scroll',
+                'old scroll': 'scroll',
+                'tablet': 'tablet',
+                'ancient tablet': 'tablet',
+                'idol': 'idol',
+                'golden idol': 'idol',
+                'bowl': 'bowl',
+                'offering bowl': 'bowl',
+                'raft': 'raft',
+            };
+
+            const target = itemMap[item];
+            if (!target) return "❓ What do you want to examine?";
+
+            const hasItem = inventory.includes(target) || room.objects.includes(target);
+            if (!hasItem) return "❌ There's no " + item + " here.";
+
+            // Examine descriptions
+            const descriptions = {
+                'torch': "A wooden torch wrapped in cloth. It could be lit with flint.",
+                'key': "An old iron key. It looks like it might open a temple door.",
+                'rope': "A length of sturdy rope. It could be used to tie things.",
+                'flint': "A piece of flint. It could be used to start a fire.",
+                'map': "An ancient map. It shows the path to the temple.",
+                'knife': "A stone knife. It's sharp and could cut vines.",
+                'sword': "A well-made sword. It feels powerful.",
+                'shield': "A wooden shield. It might protect you.",
+                'wood': "Some dry wood. It could be used for building or burning.",
+                'vine': "A strong vine. It could be used to tie things.",
+                'gem': "A brilliant gem. It glows with inner light.",
+                'scroll': "An ancient scroll. It contains instructions for the temple.",
+                'tablet': "A stone tablet. It has strange writing on it.",
+                'idol': "A golden idol. It's the treasure of the Lost Temple.",
+                'bowl': "An offering bowl. It's made of polished stone.",
+                'raft': "A large raft. It needs to be repaired before it can float.",
+            };
+
+            return "🔍 " + (descriptions[target] || "It's a " + target + ".");
+        }
+
+        // ----- OPEN -----
+        function openItem(item) {
+            if (item === 'door' || item === 'temple door') {
+                if (currentRoom === 11 && hasKey) {
+                    return "🔑 You open the temple door. Inside, you see the golden idol!";
+                }
+                if (currentRoom === 11 && !hasKey) {
+                    return "🔒 The door is sealed. You need a key.";
+                }
+                return "🚪 There's no door here.";
+            }
+            return "❓ What do you want to open?";
+        }
+
+        // ----- HELP -----
+        function helpText() {
+            return [
+                "📖 AVAILABLE COMMANDS:",
+                "  LOOK or L         – Describe the current room",
+                "  GO [direction]    – Move (north/south/east/west/up/down)",
+                "  TAKE [item]       – Pick up an item",
+                "  DROP [item]       – Drop an item",
+                "  USE [item]        – Use an item",
+                "  EXAMINE [item]    – Inspect an item",
+                "  INVENTORY or I    – Show carried items",
+                "  HELP or ?         – Show this message",
+                "  SCORE             – Show your score",
+                "  WAIT              – Pass time",
+                "",
+                "💡 TIP: Find the temple, collect the treasure, and escape!",
+            ].join('\n');
+        }
+
+        // ----- UI -----
+        const textArea = document.getElementById('textArea');
+        const commandInput = document.getElementById('commandInput');
+        const submitBtn = document.getElementById('submitBtn');
+        const moveCount = document.getElementById('moveCount');
+
+        function updateUI() {
+            moveCount.textContent = 'MOVES: ' + moves;
+            // Keep scroll at bottom
+            textArea.scrollTop = textArea.scrollHeight;
+        }
+
+        function appendText(text, type) {
+            const lines = text.split('\n');
+            for (const line of lines) {
+                const p = document.createElement('p');
+                if (line.startsWith('📖')) {
+                    p.className = 'highlight';
+                } else if (line.startsWith('💀') || line.startsWith('❌') || line.startsWith('🚫') || line.startsWith('💥')) {
+                    p.className = 'danger';
+                } else if (line.startsWith('✅') || line.startsWith('🎉') || line.startsWith('🏆')) {
+                    p.className = 'success';
+                } else if (line.startsWith('📦') || line.startsWith('💡') || line.startsWith('🔍') || line.startsWith('🗺️')) {
+                    p.className = 'info';
+                } else if (line.startsWith('🌑') || line.startsWith('⏳')) {
+                    p.className = 'system';
+                } else if (line.startsWith('❓')) {
+                    p.className = 'danger';
+                } else if (line.startsWith('>')) {
+                    p.className = 'prompt';
+                } else {
+                    p.className = '';
+                }
+                p.textContent = line;
+                textArea.appendChild(p);
+            }
+            // Keep last 30 messages
+            while (textArea.children.length > 30) {
+                textArea.removeChild(textArea.firstChild);
+            }
+            updateUI();
+        }
+
+        function handleCommand() {
+            const input = commandInput.value.trim();
+            if (!input) return;
+
+            commandInput.value = '';
+            const response = parseCommand(input);
+            appendText('> ' + input);
+            appendText(response);
+
+            // Check win condition
+            if (hasIdol && currentRoom === 14) {
+                appendText('🎉🎉🎉 YOU HAVE FOUND THE LOST TEMPLE AND CLAIMED THE GOLDEN IDOL! 🎉🎉🎉');
+                appendText('🏆 You are now a legendary adventurer!');
+                appendText('💡 Type RESTART to play again.');
+                gameOver = true;
+            }
+
+            updateUI();
+        }
+
+        // ----- RESET -----
+        function resetGame() {
+            currentRoom = 0;
+            inventory = [];
+            moves = 0;
+            gameOver = false;
+            lampLit = false;
+            hasKey = false;
+            hasIdol = false;
+            hasMap = false;
+            hasGem = false;
+            hasTorch = false;
+            torchLit = false;
+            raftBuilt = false;
+            bridgeCrossed = false;
+            monsterDefeated = false;
+            puzzleSolved = false;
+
+            // Reset room objects
+            rooms[1].objects = ['torch', 'old key'];
+            rooms[2].objects = ['rope', 'flint'];
+            rooms[3].objects = ['map', 'stone knife'];
+            rooms[4].objects = ['sword', 'shield'];
+            rooms[5].objects = ['wood', 'vine'];
+            rooms[6].objects = ['gem', 'old scroll'];
+            rooms[8].objects = ['raft'];
+            rooms[13].objects = ['ancient tablet'];
+            rooms[14].objects = ['golden idol', 'offering bowl'];
+
+            textArea.innerHTML = '';
+            appendText('🏛️ THE LOST TEMPLE');
+            appendText('────────────────');
+            appendText('You are a treasure hunter searching for the legendary Lost Temple.');
+            appendText('Your journey begins in a dark forest at the edge of the world.');
+            appendText('');
+            appendText('Type HELP for commands, or LOOK to see your surroundings.');
+            updateUI();
+        }
+
+        // ----- INIT -----
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                handleCommand();
+            }
+        });
+
+        submitBtn.addEventListener('click', handleCommand);
+
+        // Click on wrapper to focus input
+        document.querySelector('.game-wrapper').addEventListener('click', (e) => {
+            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') {
+                commandInput.focus();
+            }
+        });
+
+        // Initial text
+        resetGame();
+
+        console.log('🏛️ THE LOST TEMPLE loaded!');
+        console.log('Find the temple, claim the golden idol, and escape!');
+        console.log('Commands: LOOK, GO [direction], TAKE [item], USE [item], INVENTORY, HELP');
+    </script>
+</body>
+</html>

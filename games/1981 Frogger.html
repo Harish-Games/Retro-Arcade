@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🐸 Frogger Arcade Definitive Edition</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body {
+            background: #0a0a12;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+        .game-wrapper {
+            background: #12101f;
+            padding: 18px 24px 22px;
+            border-radius: 16px;
+            border: 2px solid #2a2a5a;
+            box-shadow: 0 0 60px rgba(100, 50, 200, 0.1);
+            max-width: 600px;
+            width: 100%;
+            position: relative;
+        }
+        h1 {
+            color: #44dd44;
+            text-align: center;
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px rgba(68, 221, 68, 0.4);
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            border: 3px solid #2a2a5a;
+            border-radius: 8px;
+            background: #0a0a18;
+            width: 520px;
+            height: 520px;
+            image-rendering: pixelated;
+        }
+        .info {
+            display: flex;
+            justify-content: space-between;
+            color: #aac0ff;
+            font-size: 15px;
+            font-weight: bold;
+            margin-top: 12px;
+            padding: 0 8px;
+            letter-spacing: 1px;
+        }
+        .info span {
+            color: #ffcc77;
+        }
+        .controls {
+            color: #6688aa;
+            font-size: 13px;
+            margin-top: 8px;
+            text-align: center;
+            border-top: 1px solid #1a1a3a;
+            padding-top: 10px;
+        }
+        .controls kbd {
+            background: #1a1a3a;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid #3a3a6a;
+            color: #cce;
+        }
+        .status-bar {
+            text-align: center;
+            color: #44dd44;
+            font-size: 14px;
+            margin-top: 6px;
+            min-height: 1.5rem;
+            font-weight: bold;
+        }
+        @media (max-width: 560px) {
+            .game-wrapper {
+                padding: 10px;
+            }
+            canvas {
+                width: 92vw;
+                height: 92vw;
+            }
+            .info {
+                font-size: 11px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-wrapper">
+        <h1>FROGGER</h1>
+        <canvas id="gameCanvas" width="520" height="520"></canvas>
+        <div class="info">
+            <div>🏆 SCORE <span id="scoreDisplay">00000</span></div>
+            <div>❤️ LIVES <span id="livesDisplay">♥♥♥</span></div>
+            <div>🌀 LEVEL <span id="levelDisplay">1</span></div>
+        </div>
+        <div class="status-bar" id="statusMessage">🐸 Press any Arrow key or WASD to Start!</div>
+        <div class="controls">
+            <kbd>←↑↓→</kbd> or <kbd>WASD</kbd> move &nbsp;|&nbsp; <kbd>R</kbd> restart
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreSpan = document.getElementById('scoreDisplay');
+        const livesSpan = document.getElementById('livesDisplay');
+        const levelSpan = document.getElementById('levelDisplay');
+        const statusDiv = document.getElementById('statusMessage');
+
+        const GRID = 40; 
+        const COLS = canvas.width / GRID; // 13 Columns
+        const ROWS = canvas.height / GRID; // 13 Rows
+
+        // ----- AUDIO ENGINE -----
+        let audioCtx = null;
+        function initAudio() {
+            if (!audioCtx) audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playSound(type) {
+            try {
+                initAudio();
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                switch (type) {
+                    case 'jump':
+                        osc.type = 'square';
+                        osc.frequency.setValueAtTime(480, now);
+                        osc.frequency.exponentialRampToValueAtTime(780, now + 0.06);
+                        gain.gain.setValueAtTime(0.04, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+                        osc.start(now); osc.stop(now + 0.06);
+                        break;
+                    case 'die':
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(350, now);
+                        osc.frequency.exponentialRampToValueAtTime(80, now + 0.4);
+                        gain.gain.setValueAtTime(0.08, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+                        osc.start(now); osc.stop(now + 0.4);
+                        break;
+                    case 'land':
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(600, now);
+                        osc.frequency.exponentialRampToValueAtTime(900, now + 0.08);
+                        gain.gain.setValueAtTime(0.05, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                        osc.start(now); osc.stop(now + 0.08);
+                        break;
+                    case 'win':
+                        [523, 659, 784, 1047].forEach((freq, i) => {
+                            const o = audioCtx.createOscillator();
+                            const g = audioCtx.createGain();
+                            o.connect(g); g.connect(audioCtx.destination);
+                            o.type = 'square';
+                            o.frequency.setValueAtTime(freq, now + i * 0.08);
+                            g.gain.setValueAtTime(0.04, now + i * 0.08);
+                            g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.08);
+                            o.start(now + i * 0.08); o.stop(now + i * 0.08 + 0.08);
+                        });
+                        break;
+                }
+            } catch (e) {}
+        }
+
+        // ----- GAME STATE -----
+        let score = 0;
+        let lives = 3;
+        let level = 1;
+        let gameOver = false;
+        let obstacles = [];
+        let lilyPads = [];
+
+        // Row definitions mappings
+        const ROW_CONFIG = {
+            1: { type: 'car', speed: -1.4, length: 1.4, color: '#ff4444' },
+            2: { type: 'car', speed: 1.1,  length: 2.0, color: '#33ccff' },
+            3: { type: 'car', speed: -1.8, length: 1.3, color: '#ffff33' },
+            4: { type: 'car', speed: 2.4,  length: 1.1, color: '#ff33ff' },
+            5: { type: 'car', speed: -1.0, length: 2.4, color: '#e0e0e0' },
+            // Row 6 is Mid-Safe Zone
+            7: { type: 'log', speed: 1.3,  length: 3.2, color: '#7a4f28' },
+            8: { type: 'turtle', speed: -1.6, length: 2.0, color: '#ff6600' },
+            9: { type: 'log', speed: 2.2,  length: 2.3, color: '#916032' },
+            10: { type: 'turtle', speed: -1.1, length: 2.8, color: '#cc5500' },
+            11: { type: 'log', speed: 1.5,  length: 4.0, color: '#7a4f28' }
+        };
+
+        // ----- FROG CLASS -----
+        class Frog {
+            constructor() {
+                this.reset();
+            }
+            reset() {
+                this.col = Math.floor(COLS / 2);
+                this.row = 12; // Bottom starting row
+                this.x = this.col * GRID;
+                this.y = this.row * GRID;
+                this.targetX = this.x;
+                this.targetY = this.y;
+                this.moving = false;
+                this.progress = 0;
+                this.startX = this.x;
+                this.startY = this.y;
+                this.facing = 'up';
+            }
+            move(dir) {
+                if (gameOver || this.moving) return;
+
+                let dCol = 0, dRow = 0;
+                if (dir === 'UP') dRow = -1;
+                if (dir === 'DOWN') dRow = 1;
+                if (dir === 'LEFT') dCol = -1;
+                if (dir === 'RIGHT') dCol = 1;
+
+                let nextCol = Math.round(this.x / GRID) + dCol;
+                let nextRow = this.row + dRow;
+
+                if (nextCol < 0 || nextCol >= COLS || nextRow < 0 || nextRow > 12) return;
+
+                this.facing = dir.toLowerCase();
+                this.startX = this.x;
+                this.startY = this.y;
+                this.targetX = nextCol * GRID;
+                this.targetY = nextRow * GRID;
+                this.row = nextRow;
+                this.moving = true;
+                this.progress = 0;
+                
+                playSound('jump');
+            }
+            update(attachedSpeed) {
+                if (this.moving) {
+                    this.progress += 0.15; // Animation speed step
+                    if (this.progress >= 1) {
+                        this.progress = 1;
+                        this.moving = false;
+                        this.x = this.targetX;
+                        this.y = this.targetY;
+                    } else {
+                        this.x = this.startX + (this.targetX - this.startX) * this.progress;
+                        this.y = this.startY + (this.targetY - this.startY) * this.progress;
+                    }
+                } else if (attachedSpeed && this.row >= 1 && this.row <= 5) {
+                    // Lock X alignment smoothly to log speeds when standing still
+                    this.x += attachedSpeed;
+                    this.targetX = this.x;
+                }
+            }
+            draw() {
+                const size = GRID * 0.7;
+                const fx = this.x + (GRID - size)/2;
+                const fy = this.y + (GRID - size)/2;
+
+                ctx.save();
+                ctx.shadowColor = '#66ff66';
+                ctx.shadowBlur = 12;
+
+                // Outer base body
+                ctx.fillStyle = '#44dd44';
+                ctx.beginPath();
+                ctx.ellipse(fx + size / 2, fy + size / 2 + 2, size * 0.5, size * 0.42, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Inner highlighted body
+                ctx.fillStyle = '#55ee55';
+                ctx.beginPath();
+                ctx.ellipse(fx + size / 2, fy + size / 2 - 1, size * 0.42, size * 0.36, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Structural Eye placement anchors
+                ctx.fillStyle = 'white';
+                const eyeX1 = fx + size / 2 - 5;
+                const eyeX2 = fx + size / 2 + 5;
+                const eyeY = fy + size / 2 - 3;
+                ctx.beginPath(); ctx.arc(eyeX1, eyeY, 3, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(eyeX2, eyeY, 3, 0, Math.PI * 2); ctx.fill();
+
+                // Dynamic Pupil Direction shifting
+                ctx.fillStyle = '#111';
+                const pX = this.facing === 'left' ? -1 : (this.facing === 'right' ? 1 : 0);
+                const pY = this.facing === 'up' ? -0.8 : (this.facing === 'down' ? 0.8 : 0);
+                ctx.beginPath(); ctx.arc(eyeX1 + pX, eyeY + pY, 1.5, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(eyeX2 + pX, eyeY + pY, 1.5, 0, Math.PI * 2); ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        const frog = new Frog();
+
+        // ----- OBSTACLE CLASS -----
+        class Obstacle {
+            constructor(row, xOffset = 0) {
+                this.row = row;
+                this.config = ROW_CONFIG[row];
+                this.speed = this.config.speed * (1 + (level - 1) * 0.14);
+                this.width = this.config.length * GRID;
+                this.height = GRID - 6;
+                this.y = (12 - this.row) * GRID + 3;
+                this.x = xOffset;
+                this.color = this.config.color;
+                this.type = this.config.type;
+            }
+            update() {
+                this.x += this.speed;
+                if (this.speed > 0 && this.x > canvas.width + 20) this.x = -this.width;
+                if (this.speed < 0 && this.x < -this.width - 20) this.x = canvas.width;
+            }
+            draw() {
+                ctx.save();
+                ctx.fillStyle = this.color;
+                if (this.type === 'car') {
+                    ctx.shadowColor = 'rgba(255,200,80,0.1)';
+                    ctx.shadowBlur = 6;
+                    ctx.beginPath();
+                    ctx.roundRect(this.x + 2, this.y, this.width - 4, this.height, 5);
+                    ctx.fill();
+                    
+                    // Windshield highlights
+                    ctx.fillStyle = 'rgba(150,200,255,0.2)';
+                    const ww = this.width - 8;
+                    ctx.fillRect(this.speed > 0 ? this.x + this.width - 16 : this.x + 6, this.y + 4, 10, this.height - 8);
+                } else if (this.type === 'log') {
+                    ctx.beginPath();
+                    ctx.roundRect(this.x + 1, this.y, this.width - 2, this.height, 6);
+                    ctx.fill();
+                    // Fine wood grain texture lines
+                    ctx.fillStyle = 'rgba(40,20,5,0.15)';
+                    for (let i = 1; i < this.config.length * 2; i++) {
+                        ctx.fillRect(this.x + i * (GRID/2), this.y + 4, 1.5, this.height - 8);
+                    }
+                } else if (this.type === 'turtle') {
+                    let segments = Math.floor(this.config.length);
+                    let segW = this.width / segments;
+                    for (let i = 0; i < segments; i++) {
+                        ctx.beginPath();
+                        ctx.arc(this.x + (i * segW) + segW/2, this.y + this.height/2, segW/2 - 1, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.fillStyle = 'rgba(0,0,0,0.12)';
+                        ctx.beginPath();
+                        ctx.arc(this.x + (i * segW) + segW/2, this.y + this.height/2, segW/4, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.fillStyle = this.color;
+                    }
+                }
+                ctx.restore();
+            }
+        }
+
+        // ----- SETUP ENGINE ENVIRONMENT -----
+        function initGame() {
+            obstacles = [];
+            for (let row in ROW_CONFIG) {
+                let rowIdx = parseInt(row);
+                let count = rowIdx === 11 || rowIdx === 7 ? 2 : 3; // Space out longest items
+                for (let i = 0; i < count; i++) {
+                    let spacing = (canvas.width + 60) / count;
+                    obstacles.push(new Obstacle(rowIdx, i * spacing));
+                }
+            }
+
+            lilyPads = [];
+            for (let i = 0; i < 5; i++) {
+                lilyPads.push({
+                    x: (i * 2.6 * GRID) + (GRID * 0.6),
+                    y: 6,
+                    width: GRID * 1.4,
+                    height: GRID - 12,
+                    occupied: false
+                });
+            }
+        }
+
+        function drawBackground() {
+            // Gradient base background fill
+            const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            grad.addColorStop(0, '#041220');
+            grad.addColorStop(0.45, '#051c33');
+            grad.addColorStop(0.53, '#142114');
+            grad.addColorStop(0.95, '#0f0f14');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Water Zone Background Color
+            ctx.fillStyle = 'rgba(10, 45, 85, 0.4)';
+            ctx.fillRect(0, GRID, canvas.width, 5 * GRID);
+
+            // Mid Safe Bank Row
+            ctx.fillStyle = '#182b18';
+            ctx.fillRect(0, 6 * GRID, canvas.width, GRID);
+
+            // Bottom Safe Starting Row
+            ctx.fillRect(0, 12 * GRID, canvas.width, GRID);
+
+            // Top Hedgerow Goal Line
+            ctx.fillStyle = '#0a240a';
+            ctx.fillRect(0, 0, canvas.width, GRID);
+
+            // Draw Lilypad Targets
+            lilyPads.forEach(pad => {
+                ctx.save();
+                ctx.fillStyle = pad.occupied ? 'rgba(80, 240, 80, 0.2)' : 'rgba(40, 180, 40, 0.65)';
+                ctx.shadowColor = pad.occupied ? 'transparent' : 'rgba(40,180,40,0.4)';
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.ellipse(pad.x + pad.width/2, pad.y + pad.height/2, pad.width * 0.45, pad.height * 0.45, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                if (pad.occupied) {
+                    ctx.font = '18px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('🐸', pad.x + pad.width/2, pad.y + pad.height/2 + 2);
+                }
+                ctx.restore();
+            });
+
+            // Ambient Zone text indicators
+            ctx.fillStyle = 'rgba(255,255,255,0.04)';
+            ctx.font = '9px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('🌊 RIVER DOMAIN', canvas.width/2, 3.5 * GRID);
+            ctx.fillText('🛣️ HIGHWAY DOMAIN', canvas.width/2, 9.5 * GRID);
+        }
+
+        // ----- UPDATE SYSTEM GAMEPLAY LOGIC -----
+        function update() {
+            if (gameOver) return;
+
+            obstacles.forEach(obs => obs.update());
+
+            let currentRiverRow = 12 - frog.row; 
+            let logSpeed = 0;
+            let riding = false;
+
+            if (currentRiverRow >= 7 && currentRiverRow <= 11) {
+                // Check if cleanly matching intersecting bounds inside water rows
+                obstacles.forEach(obs => {
+                    if (obs.row === currentRiverRow) {
+                        // Bounding Box Intersection Calculations
+                        if (frog.x + 6 < obs.x + obs.width &&
+                            frog.x + GRID - 6 > obs.x &&
+                            frog.y + 6 < obs.y + obs.height &&
+                            frog.y + GRID - 6 > obs.y) {
+                            riding = true;
+                            logSpeed = obs.speed;
+                        }
+                    }
+                });
+
+                if (!riding && !frog.moving) {
+                    handleDeath("SPLASH! YOU SANK IN THE RIVER!");
+                    return;
+                }
+            } else if (currentRiverRow >= 1 && currentRiverRow <= 5) {
+                // Highway Collision tests
+                obstacles.forEach(obs => {
+                    if (obs.row === currentRiverRow) {
+                        if (frog.x + 8 < obs.x + obs.width &&
+                            frog.x + GRID - 8 > obs.x &&
+                            frog.y + 8 < obs.y + obs.height &&
+                            frog.y + GRID - 8 > obs.y) {
+                            handleDeath("SQUASH! HIT BY A VEHICLE!");
+                            return;
+                        }
+                    }
+                });
+            } else if (frog.row === 0) {
+                // Landing bay evaluation
+                let landed = false;
+                lilyPads.forEach(pad => {
+                    if (!pad.occupied && 
+                        (frog.x + GRID/2) > pad.x && 
+                        (frog.x + GRID/2) < (pad.x + pad.width)) {
+                        pad.occupied = true;
+                        landed = true;
+                        score += 500;
+                        playSound('land');
+                        checkLevelWin();
+                    }
+                });
+
+                if (!landed) {
+                    // Reset position back one step if hitting solid decorative foliage walls
+                    frog.row = 1;
+                    frog.y = GRID;
+                    frog.targetY = frog.y;
+                }
+            }
+
+            frog.update(logSpeed);
+
+            // Boundaries check
+            if (frog.x < -10 || frog.x + GRID > canvas.width + 10) {
+                handleDeath("SWEPT AWAY OFF-SCREEN!");
+            }
+        }
+
+        // ----- EVENT & UI HANDLERS -----
+        function handleDeath(msg) {
+            lives--;
+            playSound('die');
+            updateUI();
+            if (lives <= 0) {
+                gameOver = true;
+                statusDiv.textContent = '💀 GAME OVER! Press R to Restart.';
+            } else {
+                statusDiv.textContent = msg;
+                frog.reset();
+            }
+        }
+
+        function checkLevelWin() {
+            let cleared = lilyPads.every(pad => pad.occupied);
+            if (cleared) {
+                level++;
+                score += 1000;
+                playSound('win');
+                statusDiv.textContent = `🎉 LEVEL ${level - 1} CLEARED! ADVANCING...`;
+                gameOver = true; // Briefly freeze action loop execution
+                setTimeout(() => {
+                    gameOver = false;
+                    initGame();
+                    frog.reset();
+                    updateUI();
+                    statusDiv.textContent = '🐸 Cross the road and river safely!';
+                }, 2000);
+            } else {
+                statusDiv.textContent = '🐸 Safe Landing! Keep going!';
+                frog.reset();
+                updateUI();
+            }
+        }
+
+        function updateUI() {
+            scoreSpan.textContent = String(score).padStart(5, '0');
+            livesSpan.textContent = '♥'.repeat(Math.max(0, lives));
+            levelSpan.textContent = level;
+        }
+
+        function triggerManualReset() {
+            score = 0;
+            lives = 3;
+            level = 1;
+            gameOver = false;
+            statusDiv.textContent = '🐸 Move with ←↑↓→ · Reach the lily pads!';
+            initGame();
+            frog.reset();
+            updateUI();
+        }
+
+        // ----- INPUT LISTENER ASSIGNMENTS -----
+        window.addEventListener('keydown', e => {
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'w', 'a', 's', 'd'].includes(e.key.toLowerCase())) {
+                e.preventDefault();
+            }
+
+            if (e.key.toLowerCase() === 'r') {
+                triggerManualReset();
+                return;
+            }
+
+            if (gameOver) return;
+
+            switch(e.key) {
+                case 'ArrowUp':
+                case 'w': case 'W':
+                    frog.move('UP'); break;
+                case 'ArrowDown':
+                case 's': case 'S':
+                    frog.move('DOWN'); break;
+                case 'ArrowLeft':
+                case 'a': case 'A':
+                    frog.move('LEFT'); break;
+                case 'ArrowRight':
+                case 'd': case 'D':
+                    frog.move('RIGHT'); break;
+            }
+        });
+
+        // ----- CORE LOOP -----
+        function mainLoop() {
+            drawBackground();
+            update();
+            obstacles.forEach(obs => obs.draw());
+            if (!gameOver || lives > 0) {
+                frog.draw();
+            }
+            requestAnimationFrame(mainLoop);
+        }
+
+        // Start initialization sequence trigger
+        initGame();
+        updateUI();
+        mainLoop();
+    </script>
+</body>
+</html>
