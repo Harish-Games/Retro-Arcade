@@ -1,0 +1,406 @@
+<!-- CoPilot and Clude -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Centipede Clone</title>
+  <style>
+    body {
+      background: #000;
+      color: #0f0;
+      font-family: monospace;
+      text-align: center;
+      margin: 0;
+      overflow: hidden;
+    }
+    #gameContainer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 10px;
+    }
+    canvas {
+      background: #111;
+      border: 2px solid #0f0;
+    }
+    #info {
+      margin-top: 5px;
+    }
+    #info span {
+      margin: 0 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <canvas id="game" width="480" height="640"></canvas>
+    <div id="info">
+      <span>Move: Left/Right | Shoot: Space</span><br/>
+      <span>Score: <span id="score">0</span></span>
+      <span>Level: <span id="level">1</span></span>
+      <span>Lives: <span id="lives">3</span></span>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const scoreEl = document.getElementById("score");
+    const levelEl = document.getElementById("level");
+    const livesEl = document.getElementById("lives");
+    const W = canvas.width;
+    const H = canvas.height;
+
+    // Player
+    const player = {
+      x: W / 2,
+      y: H - 40,
+      w: 16,
+      h: 16,
+      speed: 4
+    };
+
+    // Controls
+    const keys = {
+      left: false,
+      right: false,
+      shoot: false
+    };
+
+    // Mushrooms
+    const mushrooms = [];
+    const mushroomSize = 16;
+
+    // Centipede
+    const segmentSize = 16;
+    const centipede = [];
+
+    // Bullets
+    const bullets = [];
+    const bulletSpeed = 6;
+    let canShoot = true;
+
+    // Game state (mutable difficulty settings — let, not const, since nextLevel() changes them)
+    let score = 0;
+    let level = 1;
+    let lives = 3;
+    let gameOver = false;
+    let centipedeSpeed = 1.5;
+    let mushroomChance = 0.08;
+    let shootCooldown = 150; // ms
+
+    // Init mushrooms in grid
+    function initMushrooms() {
+      mushrooms.length = 0;
+      const cols = Math.floor(W / mushroomSize);
+      const rows = Math.floor((H - 120) / mushroomSize);
+      for (let r = 2; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (Math.random() < mushroomChance) {
+            mushrooms.push({
+              x: c * mushroomSize,
+              y: r * mushroomSize,
+              w: mushroomSize,
+              h: mushroomSize,
+              hp: 3
+            });
+          }
+        }
+      }
+    }
+
+    // Init centipede
+    function initCentipede() {
+      centipede.length = 0;
+      const length = 12;
+      for (let i = 0; i < length; i++) {
+        centipede.push({
+          x: i * segmentSize,
+          y: 0,
+          w: segmentSize,
+          h: segmentSize,
+          dir: 1, // 1 right, -1 left
+          isHead: i === length - 1
+        });
+      }
+    }
+
+    function resetGame() {
+      score = 0;
+      level = 1;
+      lives = 3;
+      centipedeSpeed = 1.5;
+      mushroomChance = 0.08;
+      shootCooldown = 150;
+      scoreEl.textContent = score;
+      levelEl.textContent = level;
+      livesEl.textContent = lives;
+      gameOver = false;
+      player.x = W / 2;
+      initMushrooms();
+      initCentipede();
+      bullets.length = 0;
+    }
+
+    function nextLevel() {
+      level++;
+      levelEl.textContent = level;
+
+      // Increase difficulty
+      centipedeSpeed += 0.4;       // faster movement
+      mushroomChance += 0.01;      // more mushrooms
+      shootCooldown = Math.max(60, shootCooldown - 10); // faster shooting
+
+      initMushrooms();
+      initCentipede();
+    }
+
+    function loseLife() {
+      lives--;
+      livesEl.textContent = lives;
+      if (lives <= 0) {
+        gameOver = true;
+        return;
+      }
+      // Respawn: clear bullets, reset player position, give a fresh centipede
+      bullets.length = 0;
+      player.x = W / 2;
+      initCentipede();
+    }
+
+    // Input
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "ArrowLeft" || e.code === "KeyA") keys.left = true;
+      if (e.code === "ArrowRight" || e.code === "KeyD") keys.right = true;
+      if (e.code === "Space") {
+        keys.shoot = true;
+        e.preventDefault();
+      }
+      if (gameOver && e.code === "Enter") {
+        resetGame();
+      }
+    });
+
+    window.addEventListener("keyup", (e) => {
+      if (e.code === "ArrowLeft" || e.code === "KeyA") keys.left = false;
+      if (e.code === "ArrowRight" || e.code === "KeyD") keys.right = false;
+      if (e.code === "Space") keys.shoot = false;
+    });
+
+    // Shooting
+    function shoot() {
+      if (!canShoot || gameOver) return;
+      bullets.push({
+        x: player.x + player.w / 2 - 2,
+        y: player.y,
+        w: 4,
+        h: 8
+      });
+      canShoot = false;
+      setTimeout(() => (canShoot = true), shootCooldown);
+    }
+
+    // Collision helper
+    function rectIntersect(a, b) {
+      return (
+        a.x < b.x + b.w &&
+        a.x + a.w > b.x &&
+        a.y < b.y + b.h &&
+        a.y + a.h > b.y
+      );
+    }
+
+    // Update
+    function update() {
+      if (gameOver) return;
+
+      // Player movement
+      if (keys.left) player.x -= player.speed;
+      if (keys.right) player.x += player.speed;
+      player.x = Math.max(0, Math.min(W - player.w, player.x));
+
+      // Shooting
+      if (keys.shoot) shoot();
+
+      // Bullets
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        b.y -= bulletSpeed;
+        if (b.y + b.h < 0) {
+          bullets.splice(i, 1);
+          continue;
+        }
+
+        let bulletConsumed = false;
+
+        // Bullet vs mushrooms
+        for (let j = mushrooms.length - 1; j >= 0; j--) {
+          const m = mushrooms[j];
+          if (rectIntersect(b, m)) {
+            m.hp--;
+            bulletConsumed = true;
+            if (m.hp <= 0) {
+              mushrooms.splice(j, 1);
+              score += 1;
+              scoreEl.textContent = score;
+            }
+            break;
+          }
+        }
+
+        if (bulletConsumed) {
+          bullets.splice(i, 1);
+          continue;
+        }
+
+        // Bullet vs centipede
+        for (let k = centipede.length - 1; k >= 0; k--) {
+          const s = centipede[k];
+          if (rectIntersect(b, s)) {
+            bulletConsumed = true;
+            score += s.isHead ? 10 : 5;
+            scoreEl.textContent = score;
+
+            // Turn hit segment into a mushroom
+            mushrooms.push({
+              x: s.x,
+              y: s.y,
+              w: mushroomSize,
+              h: mushroomSize,
+              hp: 3
+            });
+
+            const wasHead = s.isHead;
+            centipede.splice(k, 1);
+
+            if (centipede.length === 0) {
+              nextLevel();
+            } else if (wasHead) {
+              // Promote the segment that was previously following the head
+              // (the next index toward the tail) to be the new head.
+              const newHeadIndex = Math.min(k, centipede.length - 1);
+              centipede[newHeadIndex].isHead = true;
+            }
+            break;
+          }
+        }
+
+        if (bulletConsumed) {
+          bullets.splice(i, 1);
+        }
+      }
+
+      // Centipede movement
+      for (let i = 0; i < centipede.length; i++) {
+        const s = centipede[i];
+        s.x += centipedeSpeed * s.dir;
+
+        // Hit wall
+        if (s.x < 0) {
+          s.x = 0;
+          s.dir = 1;
+          s.y += segmentSize;
+        } else if (s.x + s.w > W) {
+          s.x = W - s.w;
+          s.dir = -1;
+          s.y += segmentSize;
+        }
+
+        // Hit mushroom -> drop down a row and reverse direction
+        for (const m of mushrooms) {
+          if (rectIntersect(s, m)) {
+            s.y += segmentSize;
+            s.dir *= -1;
+            break;
+          }
+        }
+
+        // Reach bottom -> game over
+        if (s.y + s.h >= H - 40) {
+          gameOver = true;
+        }
+
+        // Collide with player -> lose a life
+        if (rectIntersect(s, player)) {
+          loseLife();
+        }
+      }
+    }
+
+    // Draw
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+
+      // Background grid (subtle)
+      ctx.strokeStyle = "#222";
+      ctx.lineWidth = 1;
+      for (let x = 0; x < W; x += 16) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, H);
+        ctx.stroke();
+      }
+      for (let y = 0; y < H; y += 16) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+      }
+
+      // Player
+      ctx.fillStyle = "#0f0";
+      ctx.beginPath();
+      ctx.roundRect(player.x, player.y, player.w, player.h, 4);
+      ctx.fill();
+
+      // Mushrooms
+      for (const m of mushrooms) {
+        ctx.fillStyle = m.hp === 3 ? "#6f0" : m.hp === 2 ? "#4c0" : "#2a0";
+        ctx.beginPath();
+        ctx.arc(m.x + m.w / 2, m.y + m.h / 2, m.w / 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Stem
+        ctx.fillStyle = "#804000";
+        ctx.fillRect(m.x + m.w * 0.35, m.y + m.h * 0.6, m.w * 0.3, m.h * 0.4);
+      }
+
+      // Centipede
+      for (const s of centipede) {
+        ctx.fillStyle = s.isHead ? "#f00" : "#0ff";
+        ctx.fillRect(s.x, s.y, s.w, s.h);
+      }
+
+      // Bullets
+      for (const b of bullets) {
+        ctx.fillStyle = "#fff";
+        ctx.shadowColor = "#fff";
+        ctx.shadowBlur = 8;
+        ctx.fillRect(b.x, b.y, b.w, b.h);
+        ctx.shadowBlur = 0;
+      }
+
+      // Game over text
+      if (gameOver) {
+        ctx.fillStyle = "#f00";
+        ctx.font = "24px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("GAME OVER", W / 2, H / 2 - 20);
+        ctx.font = "16px monospace";
+        ctx.fillText("Press Enter to restart", W / 2, H / 2 + 10);
+      }
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    // Start
+    resetGame();
+    loop();
+  </script>
+</body>
+</html>

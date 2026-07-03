@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pac-Man Arcade: Multi-Level Edition</title>
+    <style>
+        body {
+            background-color: #111;
+            color: white;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        #ui {
+            font-size: 20px;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+        }
+        canvas {
+            border: 4px solid #0022ff;
+            background-color: black;
+            box-shadow: 0px 0px 25px rgba(0, 34, 255, 0.4);
+        }
+        .instructions {
+            margin-top: 15px;
+            color: #888;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui">SCORE: <span id="score">0</span> | LIVES: <span id="lives">3</span> | LEVEL: <span id="level">1</span></div>
+    <canvas id="gameCanvas" width="440" height="440"></canvas>
+    <div class="instructions">Use **Arrow Keys** to steer Pac-Man! Clear the board to level up.</div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        const TILE_SIZE = 20;
+        let score = 0;
+        let lives = 3;
+        let currentLevel = 1;
+        let gameOver = false;
+        let victoryState = false;
+        let victoryTimer = 0;
+
+        // 1 = Wall, 0 = Dot, 2 = Empty, 3 = Power Pellet, 4 = Ghost Gate (Passable only by ghosts)
+        let maze = [];
+        const originalMaze = [
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,3,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,3,1],
+            [1,0,1,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,1,0,1],
+            [1,0,1,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,1,0,1,0,1,1,1,1,1,1,0,1,0,1,1,1,0,1],
+            [1,0,0,0,0,0,1,0,0,0,1,1,0,0,0,1,0,0,0,0,0,1],
+            [1,1,1,1,1,0,1,1,1,2,1,1,2,1,1,1,0,1,1,1,1,1],
+            [1,2,2,2,1,0,1,2,2,2,2,2,2,2,2,1,0,1,2,2,2,1],
+            [1,1,1,1,1,0,1,2,1,1,4,4,1,1,2,1,0,1,1,1,1,1], // 4s are the door!
+            [1,2,2,2,2,0,2,2,1,2,2,2,2,1,2,2,0,2,2,2,2,1],
+            [1,1,1,1,1,0,1,2,1,1,1,1,1,1,2,1,0,1,1,1,1,1],
+            [1,2,2,2,1,0,1,2,2,2,2,2,2,2,2,1,0,1,2,2,2,1],
+            [1,1,1,1,1,0,1,2,1,1,1,1,1,1,2,1,0,1,1,1,1,1],
+            [1,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,1,0,1],
+            [1,3,0,0,1,0,0,0,0,0,2,2,0,0,0,0,0,1,0,0,3,1],
+            [1,1,1,0,1,0,1,0,1,1,1,1,1,1,0,1,0,1,0,1,1,1],
+            [1,0,0,0,0,0,1,0,0,0,1,1,0,0,0,1,0,0,0,0,0,1],
+            [1,0,1,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+        ];
+
+        // Clone map state so we can reload it on next level
+        function initMaze() {
+            maze = originalMaze.map(row => [...row]);
+        }
+        initMaze();
+
+        // Input buffers
+        let dirX = 0, dirY = 0;
+        let nextDirX = 0, nextDirY = 0;
+
+        window.addEventListener("keydown", e => {
+            if (e.key === "ArrowUp")    { nextDirX = 0;  nextDirY = -1; }
+            if (e.key === "ArrowDown")  { nextDirX = 0;  nextDirY = 1;  }
+            if (e.key === "ArrowLeft")  { nextDirX = -1; nextDirY = 0;  }
+            if (e.key === "ArrowRight") { nextDirX = 1;  nextDirY = 0;  }
+        });
+
+        // Entities (Speed base resets every loop)
+        const pacman = { x: 10 * TILE_SIZE, y: 16 * TILE_SIZE, speed: 2, angle: 0 };
+        const ghost = { x: 10 * TILE_SIZE, y: 10 * TILE_SIZE, speed: 2, vx: 0, vy: -2, isFrightened: false, frightenedTimer: 0, color: "red" };
+
+        // Wall collision checker
+        function isWallTile(tileX, tileY, isGhost = false) {
+            if (tileX < 0 || tileX >= maze[0].length || tileY < 0 || tileY >= maze.length) {
+                return true; 
+            }
+            let tileType = maze[tileY][tileX];
+            
+            if (tileType === 1) return true; // Hard wall blocks everyone
+            if (tileType === 4 && !isGhost) return true; // Ghost gate blocks Pac-Man only
+            
+            return false;
+        }
+
+        function getDistance(x1, y1, x2, y2) {
+            return Math.hypot(x2 - x1, y2 - y1);
+        }
+
+        function resetPositions() {
+            pacman.x = 10 * TILE_SIZE; pacman.y = 16 * TILE_SIZE;
+            ghost.x = 10 * TILE_SIZE; ghost.y = 10 * TILE_SIZE;
+            dirX = 0; dirY = 0; nextDirX = 0; nextDirY = 0;
+            ghost.vx = 0; ghost.vy = -ghost.speed;
+            ghost.isFrightened = false;
+        }
+
+        function loadNextLevel() {
+            currentLevel++;
+            document.getElementById("level").innerText = currentLevel;
+            
+            // Speed up the ghost slightly every level to step up difficulty
+            ghost.speed = Math.min(4, 2 + (currentLevel * 0.2)); 
+            
+            victoryState = false;
+            initMaze();
+            resetPositions();
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            if (victoryState) {
+                victoryTimer++;
+                if (victoryTimer > 90) { // 1.5 seconds screen freeze
+                    victoryTimer = 0;
+                    loadNextLevel();
+                }
+                return;
+            }
+
+            // --- PACMAN ---
+            if (pacman.x % TILE_SIZE === 0 && pacman.y % TILE_SIZE === 0) {
+                let currentTileX = pacman.x / TILE_SIZE;
+                let currentTileY = pacman.y / TILE_SIZE;
+
+                if (!isWallTile(currentTileX + nextDirX, currentTileY + nextDirY, false)) {
+                    dirX = nextDirX;
+                    dirY = nextDirY;
+                    
+                    if (dirX === 1) pacman.angle = 0;
+                    if (dirX === -1) pacman.angle = Math.PI;
+                    if (dirY === 1) pacman.angle = Math.PI / 2;
+                    if (dirY === -1) pacman.angle = Math.PI * 1.5;
+                }
+                
+                if (isWallTile(currentTileX + dirX, currentTileY + dirY, false)) {
+                    dirX = 0; dirY = 0;
+                }
+            }
+            pacman.x += dirX * pacman.speed;
+            pacman.y += dirY * pacman.speed;
+
+            // --- DOT CONSUMPTION ---
+            let pTileX = Math.floor((pacman.x + TILE_SIZE / 2) / TILE_SIZE);
+            let pTileY = Math.floor((pacman.y + TILE_SIZE / 2) / TILE_SIZE);
+
+            if (maze[pTileY] && maze[pTileY][pTileX] === 0) {
+                maze[pTileY][pTileX] = 2; 
+                score += 10;
+                document.getElementById("score").innerText = score;
+            } else if (maze[pTileY] && maze[pTileY][pTileX] === 3) {
+                maze[pTileY][pTileX] = 2; 
+                score += 50;
+                document.getElementById("score").innerText = score;
+                ghost.isFrightened = true;
+                ghost.frightenedTimer = 360; 
+            }
+
+            // Level Win Check
+            let dotsLeft = false;
+            for (let row of maze) {
+                if (row.includes(0) || row.includes(3)) dotsLeft = true;
+            }
+            if (!dotsLeft) victoryState = true;
+
+            // --- GHOST MODE TIMERS ---
+            if (ghost.isFrightened) {
+                ghost.frightenedTimer--;
+                if (ghost.frightenedTimer <= 0) ghost.isFrightened = false;
+            }
+
+            // --- GHOST AI (Allows passing code 4) ---
+            if (ghost.x % TILE_SIZE === 0 && ghost.y % TILE_SIZE === 0) {
+                let gTileX = ghost.x / TILE_SIZE;
+                let gTileY = ghost.y / TILE_SIZE;
+
+                const directions = [
+                    {x: 0, y: -1}, {x: 0, y: 1}, {x: -1, y: 0}, {x: 1, y: 0}
+                ];
+                
+                let bestDir = null;
+                let bestDist = ghost.isFrightened ? -1 : Infinity;
+
+                for (let d of directions) {
+                    // Stop ghost from turning 180 directly around instantly
+                    if (ghost.vx !== 0 && d.x === -(ghost.vx / ghost.speed)) continue;
+                    if (ghost.vy !== 0 && d.y === -(ghost.vy / ghost.speed)) continue;
+
+                    let targetTileX = gTileX + d.x;
+                    let targetTileY = gTileY + d.y;
+
+                    if (!isWallTile(targetTileX, targetTileY, true)) { // true = is Ghost
+                        let targetPhysX = targetTileX * TILE_SIZE;
+                        let targetPhysY = targetTileY * TILE_SIZE;
+                        let dist = getDistance(targetPhysX, targetPhysY, pacman.x, pacman.y);
+                        
+                        if (ghost.isFrightened) {
+                            if (dist > bestDist) { bestDist = dist; bestDir = d; }
+                        } else {
+                            if (dist < bestDist) { bestDist = dist; bestDir = d; }
+                        }
+                    }
+                }
+
+                if (!bestDir) {
+                    for (let d of directions) {
+                        if (!isWallTile(gTileX + d.x, gTileY + d.y, true)) { bestDir = d; break; }
+                    }
+                }
+
+                if (bestDir) {
+                    ghost.vx = bestDir.x * ghost.speed;
+                    ghost.vy = bestDir.y * ghost.speed;
+                }
+            }
+            ghost.x += ghost.vx;
+            ghost.y += ghost.vy;
+
+            // --- COLLISION CHECK ---
+            let distanceToGhost = getDistance(pacman.x, pacman.y, ghost.x, ghost.y);
+            if (distanceToGhost < TILE_SIZE - 2) {
+                if (ghost.isFrightened) {
+                    score += 200;
+                    document.getElementById("score").innerText = score;
+                    ghost.x = 10 * TILE_SIZE;
+                    ghost.y = 10 * TILE_SIZE;
+                    ghost.vx = 0;
+                    ghost.vy = -ghost.speed;
+                    ghost.isFrightened = false;
+                } else {
+                    lives--;
+                    document.getElementById("lives").innerText = lives;
+                    if (lives <= 0) {
+                        gameOver = true;
+                    } else {
+                        resetPositions();
+                    }
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Maze Layout
+            for (let r = 0; r < maze.length; r++) {
+                for (let c = 0; c < maze[r].length; c++) {
+                    if (maze[r][c] === 1) {
+                        ctx.fillStyle = "#1919a6";
+                        ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    } else if (maze[r][c] === 4) {
+                        // Pink Ghost gate door
+                        ctx.fillStyle = "#ffb8de";
+                        ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE + 8, TILE_SIZE, 4);
+                    } else if (maze[r][c] === 0) {
+                        ctx.fillStyle = "#ffb8ae";
+                        ctx.beginPath();
+                        ctx.arc(c * TILE_SIZE + TILE_SIZE/2, r * TILE_SIZE + TILE_SIZE/2, 2.5, 0, Math.PI*2);
+                        ctx.fill();
+                    } else if (maze[r][c] === 3) {
+                        if (Math.floor(Date.now() / 200) % 2 === 0) {
+                            ctx.fillStyle = "#ffb8ae";
+                            ctx.beginPath();
+                            ctx.arc(c * TILE_SIZE + TILE_SIZE/2, r * TILE_SIZE + TILE_SIZE/2, 6, 0, Math.PI*2);
+                            ctx.fill();
+                        }
+                    }
+                }
+            }
+
+            // Draw Pacman
+            ctx.fillStyle = "yellow";
+            ctx.beginPath();
+            let mouthWiggle = (Math.floor(pacman.x + pacman.y) % 16 < 8) ? 0.25 : 0.05;
+            ctx.arc(
+                pacman.x + TILE_SIZE / 2, pacman.y + TILE_SIZE / 2, 
+                TILE_SIZE / 2 - 1, 
+                pacman.angle + mouthWiggle, pacman.angle + (Math.PI * 2) - mouthWiggle
+            );
+            ctx.lineTo(pacman.x + TILE_SIZE / 2, pacman.y + TILE_SIZE / 2);
+            ctx.fill();
+
+            // Draw Ghost
+            ctx.fillStyle = ghost.isFrightened ? "#2b2bff" : ghost.color;
+            let gx = ghost.x, gy = ghost.y;
+            ctx.beginPath();
+            ctx.arc(gx + TILE_SIZE/2, gy + TILE_SIZE/3 + 2, TILE_SIZE/2, Math.PI, 0, false);
+            ctx.lineTo(gx + TILE_SIZE, gy + TILE_SIZE);
+            ctx.lineTo(gx + TILE_SIZE*0.75, gy + TILE_SIZE*0.8);
+            ctx.lineTo(gx + TILE_SIZE*0.5, gy + TILE_SIZE);
+            ctx.lineTo(gx + TILE_SIZE*0.25, gy + TILE_SIZE*0.8);
+            ctx.lineTo(gx, gy + TILE_SIZE);
+            ctx.closePath();
+            ctx.fill();
+
+            // Eyes
+            ctx.fillStyle = ghost.isFrightened ? "orange" : "white";
+            ctx.beginPath();
+            ctx.arc(gx + TILE_SIZE/4 + 1, gy + TILE_SIZE/3 + 1, 3, 0, Math.PI * 2);
+            ctx.arc(gx + 3*TILE_SIZE/4 - 1, gy + TILE_SIZE/3 + 1, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // UI Cards
+            if (gameOver) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = "red";
+                ctx.font = "bold 28px 'Courier New'";
+                ctx.fillText("GAME OVER", 145, 220);
+            }
+            if (victoryState) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = "yellow";
+                ctx.font = "bold 24px 'Courier New'";
+                ctx.fillText(`STAGE ${currentLevel} CLEAR!`, 120, 210);
+                ctx.fillStyle = "white";
+                ctx.font = "14px 'Courier New'";
+                ctx.fillText("GHOSTS ARE SPEEDING UP...", 120, 250);
+            }
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>

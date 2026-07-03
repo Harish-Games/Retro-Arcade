@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gyruss 1983 Clone</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #050505;
+            color: white;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        #gameContainer {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 0, 255, 0.3);
+        }
+        canvas {
+            background: black;
+            display: block;
+            border: 4px solid #333;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 18px;
+            pointer-events: none;
+            text-shadow: 2px 2px black;
+        }
+        #startScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        h1 {
+            color: #ff3333;
+            font-size: 48px;
+            margin-bottom: 10px;
+            letter-spacing: 5px;
+        }
+        .controls-hint {
+            color: #aaa;
+            margin-top: 30px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        button {
+            background: #0000cc;
+            color: white;
+            border: 2px solid white;
+            padding: 10px 20px;
+            font-size: 18px;
+            font-family: inherit;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #3333ff;
+        }
+    </style>
+</head>
+<body>
+
+<div id="gameContainer">
+    <canvas id="gameCanvas" width="600" height="600"></canvas>
+    <div id="ui">
+        <div id="scoreDisplay">SCORE: 0</div>
+        <div id="livesDisplay">LIVES: 3</div>
+    </div>
+    <div id="startScreen">
+        <h1>GYRUSS</h1>
+        <p style="color: #00ff00;">3 WAVES TO NEPTUNE</p>
+        <button id="startButton">START GAME</button>
+        <div class="controls-hint">
+            <strong>CONTROLS:</strong><br>
+            Left / Right Arrow keys = Orbit Circle<br>
+            Spacebar = Shoot
+        </div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const startScreen = document.getElementById('startScreen');
+const startButton = document.getElementById('startButton');
+const scoreDisplay = document.getElementById('scoreDisplay');
+const livesDisplay = document.getElementById('livesDisplay');
+
+// Game constants
+const centerX = canvas.width / 2;
+const centerY = canvas.height / 2;
+const playerRadius = 240; // Orbit distance from center
+
+// Game state
+let gameRunning = false;
+let score = 0;
+let lives = 3;
+let playerAngle = Math.PI * 1.5; // Start at top
+let keys = {};
+
+let playerBullets = [];
+let enemies = [];
+let enemyBullets = [];
+let particles = [];
+let stars = [];
+let wave = 1;
+let spawnTimer = 0;
+let enemiesSpawnedInWave = 0;
+const maxEnemiesPerWave = 15;
+
+// Sound Synthesizer (Web Audio API)
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playSound(type) {
+    if (!audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    if (type === 'shoot') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(150, audioCtx.currentTime + 0.08);
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.08);
+    } else if (type === 'explosion') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(180, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(30, audioCtx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.25);
+    } else if (type === 'playerDeath') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(350, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(40, audioCtx.currentTime + 0.6);
+        gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.6);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.6);
+    }
+}
+
+// Initialize starfield
+for (let i = 0; i < 60; i++) {
+    stars.push({
+        x: Math.random() * canvas.width - centerX,
+        y: Math.random() * canvas.height - centerY,
+        z: Math.random() * canvas.width
+    });
+}
+
+// Event Listeners
+window.addEventListener('keydown', e => keys[e.code] = true);
+window.addEventListener('keyup', e => {
+    keys[e.code] = false;
+    if (e.code === 'Space' && gameRunning) {
+        fireBullet();
+    }
+});
+
+startButton.addEventListener('click', () => {
+    initGame();
+});
+
+function initGame() {
+    score = 0;
+    lives = 3;
+    wave = 1;
+    enemies = [];
+    playerBullets = [];
+    enemyBullets = [];
+    particles = [];
+    enemiesSpawnedInWave = 0;
+    playerAngle = Math.PI * 1.5;
+    scoreDisplay.innerText = `SCORE: ${score}`;
+    livesDisplay.innerText = `LIVES: ${lives}`;
+    startScreen.style.display = 'none';
+    gameRunning = true;
+}
+
+function fireBullet() {
+    // Twin lasers travelling inward down the angle line
+    playerBullets.push({
+        angle: playerAngle,
+        dist: playerRadius - 15,
+        speed: 8
+    });
+    playSound('shoot');
+}
+
+function spawnEnemy() {
+    if (enemiesSpawnedInWave >= maxEnemiesPerWave) return;
+    
+    enemies.push({
+        angle: Math.random() * Math.PI * 2,
+        dist: 5,
+        speed: 1.5 + (wave * 0.3),
+        size: 2,
+        maxSize: 18, // Slightly larger hitboxes for playability
+        shootingTimer: Math.random() * 100 + 50,
+        swirlSeed: Math.random() * 100
+    });
+    enemiesSpawnedInWave++;
+}
+
+function createExplosion(x, y, color) {
+    for (let i = 0; i < 10; i++) {
+        particles.push({
+            x: x,
+            y: y,
+            vx: (Math.random() - 0.5) * 5,
+            vy: (Math.random() - 0.5) * 5,
+            life: 25,
+            color: color
+        });
+    }
+    playSound('explosion');
+}
+
+function update() {
+    if (!gameRunning) return;
+
+    // Player Rotation (Speed tuned for control accuracy)
+    if (keys['ArrowLeft']) playerAngle -= 0.045;
+    if (keys['ArrowRight']) playerAngle += 0.045;
+
+    // Wrap angle
+    playerAngle = (playerAngle + Math.PI * 2) % (Math.PI * 2);
+
+    // Starfield warp effect
+    stars.forEach(star => {
+        star.z -= 4;
+        if (star.z <= 0) {
+            star.z = canvas.width;
+            star.x = Math.random() * canvas.width - centerX;
+            star.y = Math.random() * canvas.height - centerY;
+        }
+    });
+
+    // Enemy Spawning
+    spawnTimer++;
+    if (spawnTimer % Math.max(10, (40 - wave * 5)) === 0 && enemiesSpawnedInWave < maxEnemiesPerWave) {
+        spawnEnemy();
+    }
+
+    // Update Player Bullets (Inward toward center)
+    for (let i = playerBullets.length - 1; i >= 0; i--) {
+        let b = playerBullets[i];
+        b.dist -= b.speed;
+        if (b.dist <= 5) {
+            playerBullets.splice(i, 1);
+        }
+    }
+
+    // Player position
+    let px = centerX + Math.cos(playerAngle) * playerRadius;
+    let py = centerY + Math.sin(playerAngle) * playerRadius;
+
+    // Update Enemies
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        let e = enemies[i];
+        
+        e.dist += e.speed;
+        // Spiral pathing logic
+        e.angle += Math.sin(e.dist * 0.02 + e.swirlSeed) * 0.025;
+        
+        // Scale size dynamically based on proximity
+        e.size = (e.dist / playerRadius) * e.maxSize;
+        if (e.size < 3) e.size = 3;
+
+        let ex = centerX + Math.cos(e.angle) * e.dist;
+        let ey = centerY + Math.sin(e.angle) * e.dist;
+
+        // Enemy firing logic
+        e.shootingTimer--;
+        if (e.shootingTimer <= 0 && e.dist < playerRadius - 60) {
+            enemyBullets.push({
+                x: ex,
+                y: ey,
+                vx: Math.cos(e.angle) * 3,
+                vy: Math.sin(e.angle) * 3
+            });
+            e.shootingTimer = Math.random() * 150 + 100;
+        }
+
+        // Check Hit by Player Bullet (Enchanced hitbox mechanics)
+        for (let j = playerBullets.length - 1; j >= 0; j--) {
+            let b = playerBullets[j];
+            let bx = centerX + Math.cos(b.angle) * b.dist;
+            let by = centerY + Math.sin(b.angle) * b.dist;
+
+            let distToBullet = Math.hypot(ex - bx, ey - by);
+            // Dynamic collision check based on enemy distance and scaling
+            if (distToBullet < (e.size + 10)) { 
+                createExplosion(ex, ey, '#ff5555');
+                enemies.splice(i, 1);
+                playerBullets.splice(j, 1);
+                score += 100;
+                scoreDisplay.innerText = `SCORE: ${score}`;
+                break;
+            }
+        }
+
+        // Check Collision with Player Ship
+        if (gameRunning && enemies[i]) {
+            let distToPlayer = Math.hypot(ex - px, ey - py);
+            if (distToPlayer < e.size + 14) {
+                playerHit();
+            }
+        }
+
+        // Out of bounds cleanup
+        if (e.dist > playerRadius + 30) {
+            enemies.splice(i, 1);
+        }
+    }
+
+    // Update Enemy Bullets
+    for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        let eb = enemyBullets[i];
+        eb.x += eb.vx;
+        eb.y += eb.vy;
+
+        let distToPlayer = Math.hypot(eb.x - px, eb.y - py);
+        if (distToPlayer < 14) {
+            enemyBullets.splice(i, 1);
+            playerHit();
+            continue;
+        }
+
+        if (Math.hypot(eb.x - centerX, eb.y - centerY) > playerRadius + 40) {
+            enemyBullets.splice(i, 1);
+        }
+    }
+
+    // Particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life--;
+        if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    // Wave Progression
+    if (enemies.length === 0 && enemiesSpawnedInWave >= maxEnemiesPerWave) {
+        wave++;
+        enemiesSpawnedInWave = 0;
+        spawnTimer = 0;
+    }
+}
+
+function playerHit() {
+    playSound('playerDeath');
+    lives--;
+    livesDisplay.innerText = `LIVES: ${lives}`;
+    
+    let px = centerX + Math.cos(playerAngle) * playerRadius;
+    let py = centerY + Math.sin(playerAngle) * playerRadius;
+    createExplosion(px, py, '#00ffff');
+
+    if (lives <= 0) {
+        gameRunning = false;
+        setTimeout(() => {
+            startScreen.style.display = 'flex';
+            document.querySelector('h1').innerText = "GAME OVER";
+            document.querySelector('.controls-hint').innerHTML = `FINAL SCORE: ${score}<br><br>Press start to try again.`;
+        }, 1000);
+    }
+}
+
+function draw() {
+    // Clear Context
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw Space Grid Vectors (Gyruss perspective tracking rings)
+    ctx.strokeStyle = 'rgba(0, 0, 200, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, playerRadius * 0.3, 0, Math.PI * 2);
+    ctx.arc(centerX, centerY, playerRadius * 0.6, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // High Visibility Main Player Runway Circle
+    ctx.strokeStyle = 'rgba(0, 100, 255, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, playerRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Draw Starfield
+    ctx.fillStyle = '#fff';
+    stars.forEach(star => {
+        let sx = (star.x / star.z) * canvas.width + centerX;
+        let sy = (star.y / star.z) * canvas.height + centerY;
+        let size = (1 - star.z / canvas.width) * 3;
+        
+        if (sx >= 0 && sx <= canvas.width && sy >= 0 && sy <= canvas.height) {
+            ctx.fillRect(sx, sy, size, size);
+        }
+    });
+
+    // Draw Player Lasers
+    ctx.fillStyle = '#ffcc00';
+    playerBullets.forEach(b => {
+        let bx = centerX + Math.cos(b.angle) * b.dist;
+        let by = centerY + Math.sin(b.angle) * b.dist;
+        
+        ctx.save();
+        ctx.translate(bx, by);
+        ctx.rotate(b.angle);
+        ctx.fillRect(-1, -5, 3, 10); // Vertical length vector aiming inwards
+        ctx.restore();
+    });
+
+    // Draw Enemy Projectiles
+    ctx.fillStyle = '#ff00ff';
+    enemyBullets.forEach(eb => {
+        ctx.beginPath();
+        ctx.arc(eb.x, eb.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // Draw Alien Ships
+    enemies.forEach(e => {
+        let ex = centerX + Math.cos(e.angle) * e.dist;
+        let ey = centerY + Math.sin(e.angle) * e.dist;
+
+        ctx.fillStyle = `hsl(${(e.dist * 0.5) % 360}, 100%, 60%)`; 
+        ctx.save();
+        ctx.translate(ex, ey);
+        ctx.rotate(e.angle - Math.PI / 2); // Orient outward to face player ring
+        
+        ctx.beginPath();
+        ctx.moveTo(0, e.size);
+        ctx.lineTo(-e.size, -e.size);
+        ctx.lineTo(0, -e.size/2);
+        ctx.lineTo(e.size, -e.size);
+        ctx.closePath();
+        ctx.fill();
+        
+        ctx.restore();
+    });
+
+    // Particles
+    particles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 3, 3);
+    });
+
+    // Draw Player Ship (Inward Facing Corrected Engine)
+    if (gameRunning) {
+        let px = centerX + Math.cos(playerAngle) * playerRadius;
+        let py = centerY + Math.sin(playerAngle) * playerRadius;
+
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(playerAngle - Math.PI / 2); // Corrected to point directly at canvas center
+
+        // Core chassis
+        ctx.fillStyle = '#00ffff';
+        ctx.beginPath();
+        ctx.moveTo(0, e = -12); // nose cone facing center
+        ctx.lineTo(-11, 10);   // wing left
+        ctx.lineTo(0, 3);      // tail engine bay
+        ctx.lineTo(11, 10);    // wing right
+        ctx.closePath();
+        ctx.fill();
+
+        // Dual laser blasters
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(-9, -6, 2, 8);
+        ctx.fillRect(7, -6, 2, 8);
+
+        ctx.restore();
+    }
+}
+
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+
+</body>
+</html>

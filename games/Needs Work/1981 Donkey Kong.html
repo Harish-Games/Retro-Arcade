@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Donkey Kong - Enhanced Edition</title>
+    <style>
+        body {
+            background-color: #111;
+            color: white;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        #scoreBoard {
+            font-size: 20px;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+            color: #ffdd77;
+            text-shadow: 0 0 10px rgba(255, 200, 50, 0.3);
+        }
+        #scoreBoard span {
+            color: #ffaa33;
+        }
+        canvas {
+            border: 4px solid #333;
+            background-color: black;
+            box-shadow: 0px 0px 30px rgba(255, 0, 85, 0.2);
+            border-radius: 4px;
+        }
+        .controls {
+            margin-top: 15px;
+            color: #6688aa;
+            text-align: center;
+            font-size: 14px;
+        }
+        .controls kbd {
+            background: #1a1a3a;
+            padding: 2px 10px;
+            border-radius: 4px;
+            border: 1px solid #3a3a6a;
+            color: #cce;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="scoreBoard">
+        🏆 SCORE: <span id="score">0</span> &nbsp;|&nbsp; ❤️ LIVES: <span id="lives">3</span> &nbsp;|&nbsp; 🌀 LEVEL: <span id="level">1</span>
+    </div>
+    <canvas id="gameCanvas" width="480" height="560"></canvas>
+    <div class="controls">
+        <kbd>←</kbd> <kbd>→</kbd> Move &nbsp;|&nbsp; <kbd>↑</kbd> <kbd>↓</kbd> Climb &nbsp;|&nbsp; <kbd>SPACE</kbd> Jump
+    </div>
+
+    <script>
+        // ----- SETUP -----
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // ----- AUDIO (Web Audio) -----
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playSound(type) {
+            try {
+                initAudio();
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                switch (type) {
+                    case 'jump':
+                        osc.type = 'square';
+                        osc.frequency.setValueAtTime(300, now);
+                        osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
+                        gain.gain.setValueAtTime(0.1, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+                        osc.start(now);
+                        osc.stop(now + 0.1);
+                        break;
+                    case 'barrel':
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(150, now);
+                        osc.frequency.exponentialRampToValueAtTime(80, now + 0.15);
+                        gain.gain.setValueAtTime(0.12, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                        osc.start(now);
+                        osc.stop(now + 0.15);
+                        break;
+                    case 'hammer':
+                        osc.type = 'square';
+                        osc.frequency.setValueAtTime(800, now);
+                        osc.frequency.exponentialRampToValueAtTime(200, now + 0.2);
+                        gain.gain.setValueAtTime(0.1, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+                        osc.start(now);
+                        osc.stop(now + 0.2);
+                        break;
+                    case 'death':
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(400, now);
+                        osc.frequency.exponentialRampToValueAtTime(80, now + 0.4);
+                        gain.gain.setValueAtTime(0.15, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+                        osc.start(now);
+                        osc.stop(now + 0.4);
+                        break;
+                    case 'levelComplete':
+                        osc.type = 'square';
+                        [523, 659, 784, 1047].forEach((f, i) => {
+                            osc.frequency.setValueAtTime(f, now + i * 0.12);
+                        });
+                        gain.gain.setValueAtTime(0.08, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+                        osc.start(now);
+                        osc.stop(now + 0.5);
+                        break;
+                    default:
+                        break;
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        // ----- GAME STATE -----
+        let score = 0;
+        let lives = 3;
+        let currentLevel = 1;
+        let gameOver = false;
+        let victoryState = false;
+        let victoryTimer = 0;
+        let frameCount = 0;
+        let hammerActive = false;
+        let hammerTimer = 0;
+        const HAMMER_DURATION = 300; // 5 seconds at 60fps
+
+        // ----- INPUT -----
+        const keys = {};
+        window.addEventListener("keydown", e => {
+            keys[e.code] = true;
+            if (e.code === 'Space') e.preventDefault();
+            initAudio();
+        });
+        window.addEventListener("keyup", e => keys[e.code] = false);
+
+        // ----- PLATFORMS -----
+        const platforms = [
+            { x: 0, y: 530, w: 480, h: 12, color: '#ff0055' },
+            { x: 0, y: 450, w: 430, h: 12, color: '#ff0055' },
+            { x: 50, y: 370, w: 430, h: 12, color: '#ff0055' },
+            { x: 0, y: 290, w: 430, h: 12, color: '#ff0055' },
+            { x: 50, y: 210, w: 430, h: 12, color: '#ff0055' },
+            { x: 0, y: 130, w: 360, h: 12, color: '#ff0055' },
+            { x: 180, y: 75, w: 120, h: 12, color: '#ffaa44' }
+        ];
+
+        // ----- LADDERS -----
+        const ladders = [
+            { x: 390, y: 450, w: 18, h: 80 },
+            { x: 70, y: 370, w: 18, h: 80 },
+            { x: 390, y: 290, w: 18, h: 80 },
+            { x: 70, y: 210, w: 18, h: 80 },
+            { x: 200, y: 130, w: 18, h: 80 },
+            { x: 230, y: 75, w: 18, h: 55 }
+        ];
+
+        // ----- PLAYER -----
+        const player = {
+            x: 30,
+            y: 490,
+            w: 16,
+            h: 22,
+            vx: 0,
+            vy: 0,
+            speed: 2.5,
+            jumpForce: 7.0,
+            gravity: 0.4,
+            isGrounded: false,
+            isClimbing: false,
+            facing: 1,
+            invincible: 0
+        };
+
+        // ----- BARRELS -----
+        let barrels = [];
+        let barrelSpawnTimer = 0;
+
+        // ----- HAMMER ITEM -----
+        let hammerItem = null;
+
+        // ----- FIREBALLS (higher levels) -----
+        let fireballs = [];
+
+        // ----- HELPER FUNCTIONS -----
+        function getActiveLadder(entity) {
+            for (let l of ladders) {
+                // Use center of entity for detection
+                const cx = entity.x + entity.w / 2;
+                const cy = entity.y + entity.h / 2;
+                if (cx > l.x && cx < l.x + l.w &&
+                    cy > l.y && cy < l.y + l.h) {
+                    return l;
+                }
+            }
+            return null;
+        }
+
+        function rectCollide(a, b) {
+            return a.x < b.x + b.w &&
+                a.x + a.w > b.x &&
+                a.y < b.y + b.h &&
+                a.y + a.h > b.y;
+        }
+
+        function dist(x1, y1, x2, y2) {
+            return Math.hypot(x2 - x1, y2 - y1);
+        }
+
+        function randomBetween(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        // ----- SPAWN FUNCTIONS -----
+        function spawnBarrel() {
+            let baseSpeed = 1.6 + (currentLevel * 0.25);
+            barrels.push({
+                x: 320 + randomBetween(-20, 20),
+                y: 110,
+                r: 8,
+                vx: -baseSpeed,
+                vy: 0,
+                isFalling: false,
+                onPlatform: false
+            });
+            playSound('barrel');
+        }
+
+        function spawnFireball() {
+            if (currentLevel < 3) return;
+            const side = Math.random() < 0.5 ? -1 : 1;
+            fireballs.push({
+                x: side === -1 ? 0 : canvas.width,
+                y: 130 + Math.floor(Math.random() * 4) * 80,
+                r: 6,
+                vx: side * (1.0 + currentLevel * 0.2),
+                vy: 0,
+                active: true
+            });
+        }
+
+        function spawnHammer() {
+            // Spawn hammer on a random platform (not ground or top)
+            const validPlatforms = platforms.slice(1, -1);
+            if (validPlatforms.length === 0) return;
+            const p = validPlatforms[Math.floor(Math.random() * validPlatforms.length)];
+            hammerItem = {
+                x: p.x + 20 + Math.random() * (p.w - 60),
+                y: p.y - 20,
+                w: 24,
+                h: 20,
+                active: true,
+                bobTimer: 0
+            };
+        }
+
+        // ----- RESET FUNCTIONS -----
+        function resetPositions() {
+            player.x = 30;
+            player.y = 490;
+            player.vx = 0;
+            player.vy = 0;
+            player.isClimbing = false;
+            player.invincible = 90; // 1.5 sec invincibility
+            barrels = [];
+            fireballs = [];
+            hammerActive = false;
+            hammerTimer = 0;
+            hammerItem = null;
+            barrelSpawnTimer = 0;
+        }
+
+        function playerDeath() {
+            if (player.invincible > 0) return;
+            playSound('death');
+            lives--;
+            document.getElementById("lives").innerText = lives;
+            if (lives <= 0) {
+                gameOver = true;
+            } else {
+                resetPositions();
+            }
+        }
+
+        function nextLevel() {
+            currentLevel++;
+            document.getElementById("level").innerText = currentLevel;
+            victoryState = false;
+            resetPositions();
+            spawnHammer();
+            // More barrels at higher levels
+            barrelSpawnTimer = -100;
+        }
+
+        // ----- UPDATE -----
+        function update() {
+            if (gameOver) return;
+
+            if (victoryState) {
+                victoryTimer++;
+                if (victoryTimer > 90) {
+                    victoryTimer = 0;
+                    nextLevel();
+                }
+                return;
+            }
+
+            frameCount++;
+
+            // ---- PLAYER LOGIC ----
+            const ladder = getActiveLadder(player);
+
+            if (ladder) {
+                if (keys["ArrowUp"]) {
+                    player.isClimbing = true;
+                    player.vy = -2.2;
+                    // Center on ladder
+                    player.x = ladder.x + ladder.w / 2 - player.w / 2;
+                } else if (keys["ArrowDown"]) {
+                    player.isClimbing = true;
+                    player.vy = 2.2;
+                    player.x = ladder.x + ladder.w / 2 - player.w / 2;
+                } else if (player.isClimbing) {
+                    player.vy = 0;
+                }
+            } else {
+                player.isClimbing = false;
+            }
+
+            if (!player.isClimbing) {
+                // Horizontal movement
+                if (keys["ArrowLeft"]) {
+                    player.vx = -player.speed;
+                    player.facing = -1;
+                } else if (keys["ArrowRight"]) {
+                    player.vx = player.speed;
+                    player.facing = 1;
+                } else {
+                    player.vx *= 0.8;
+                }
+
+                // Gravity
+                player.vy += player.gravity;
+                if (player.vy > 8) player.vy = 8;
+
+                // Jump
+                if ((keys["Space"] || keys["ArrowUp"]) && player.isGrounded) {
+                    player.vy = -player.jumpForce;
+                    player.isGrounded = false;
+                    playSound('jump');
+                }
+            } else {
+                // Climbing: maintain position on ladder
+                player.vx = 0;
+            }
+
+            // Apply movement
+            player.x += player.vx;
+            player.y += player.vy;
+
+            // Clamp to canvas
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.w > canvas.width) player.x = canvas.width - player.w;
+
+            // Platform collisions
+            player.isGrounded = false;
+            if (!player.isClimbing) {
+                for (let p of platforms) {
+                    if (player.x + player.w > p.x + 4 && player.x < p.x + p.w - 4) {
+                        if (player.vy >= 0 &&
+                            player.y + player.h >= p.y &&
+                            player.y + player.h - player.vy <= p.y + 8) {
+                            player.y = p.y - player.h;
+                            player.vy = 0;
+                            player.isGrounded = true;
+                        }
+                    }
+                }
+            }
+
+            // Invincibility timer
+            if (player.invincible > 0) player.invincible--;
+
+            // ---- HAMMER ITEM ----
+            if (hammerItem && hammerItem.active) {
+                hammerItem.bobTimer += 0.04;
+                const bobY = Math.sin(hammerItem.bobTimer) * 2;
+                // Check pickup
+                if (rectCollide(player, {
+                        x: hammerItem.x,
+                        y: hammerItem.y + bobY,
+                        w: hammerItem.w,
+                        h: hammerItem.h
+                    })) {
+                    hammerItem.active = false;
+                    hammerActive = true;
+                    hammerTimer = HAMMER_DURATION;
+                    playSound('hammer');
+                    score += 500;
+                    document.getElementById("score").innerText = score;
+                    // Destroy nearby barrels
+                    for (let i = barrels.length - 1; i >= 0; i--) {
+                        if (dist(player.x + player.w / 2, player.y + player.h / 2,
+                                barrels[i].x, barrels[i].y) < 150) {
+                            barrels.splice(i, 1);
+                            score += 100;
+                            document.getElementById("score").innerText = score;
+                        }
+                    }
+                }
+            }
+
+            // ---- HAMMER ACTIVE ----
+            if (hammerActive) {
+                hammerTimer--;
+                if (hammerTimer <= 0) {
+                    hammerActive = false;
+                }
+                // Hammer smashes nearby barrels
+                if (hammerActive && frameCount % 5 === 0) {
+                    for (let i = barrels.length - 1; i >= 0; i--) {
+                        if (dist(player.x + player.w / 2, player.y + player.h / 2,
+                                barrels[i].x, barrels[i].y) < 60) {
+                            barrels.splice(i, 1);
+                            score += 150;
+                            document.getElementById("score").innerText = score;
+                            playSound('hammer');
+                        }
+                    }
+                }
+            }
+
+            // ---- BARREL LOGIC ----
+            barrelSpawnTimer++;
+            let spawnRate = Math.max(40, 140 - (currentLevel * 15));
+            if (barrelSpawnTimer > spawnRate) {
+                spawnBarrel();
+                barrelSpawnTimer = 0;
+                // Spawn extra barrels at higher levels
+                if (currentLevel > 3 && Math.random() < 0.3) {
+                    setTimeout(spawnBarrel, 300);
+                }
+            }
+
+            for (let i = barrels.length - 1; i >= 0; i--) {
+                let b = barrels[i];
+
+                // Gravity
+                b.vy += 0.3;
+                if (b.vy > 6) b.vy = 6;
+                b.y += b.vy;
+
+                if (!b.isFalling) {
+                    b.x += b.vx;
+                }
+
+                let groundedThisFrame = false;
+                for (let p of platforms) {
+                    if (b.x > p.x + 2 && b.x < p.x + p.w - 2) {
+                        if (b.y + b.r >= p.y && b.y + b.r - b.vy <= p.y + 8) {
+                            b.y = p.y - b.r;
+                            b.vy = 0;
+                            groundedThisFrame = true;
+                            if (b.isFalling) {
+                                b.isFalling = false;
+                                // Random bounce on landing
+                                if (Math.random() < 0.1) {
+                                    b.vx = -b.vx * 0.8;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (!groundedThisFrame) {
+                    b.isFalling = true;
+                }
+
+                // Off screen
+                if (b.y > canvas.height + 20) {
+                    barrels.splice(i, 1);
+                    score += 50;
+                    document.getElementById("score").innerText = score;
+                    continue;
+                }
+
+                // Player collision
+                if (player.invincible === 0) {
+                    const distX = Math.abs(b.x - (player.x + player.w / 2));
+                    const distY = Math.abs(b.y - (player.y + player.h / 2));
+                    if (distX < (player.w / 2 + b.r) && distY < (player.h / 2 + b.r)) {
+                        playerDeath();
+                        break;
+                    }
+                }
+            }
+
+            // ---- FIREBALLS ----
+            if (frameCount % 180 === 0 && currentLevel >= 3) {
+                spawnFireball();
+            }
+
+            for (let i = fireballs.length - 1; i >= 0; i--) {
+                let f = fireballs[i];
+                f.x += f.vx;
+                f.y += Math.sin(frameCount / 30 + i) * 0.5;
+
+                // Bounce off walls
+                if (f.x < 0 || f.x > canvas.width) {
+                    f.vx = -f.vx;
+                }
+
+                // Follow platforms (simple)
+                for (let p of platforms) {
+                    if (f.x > p.x && f.x < p.x + p.w &&
+                        Math.abs(f.y - p.y) < 10) {
+                        f.y = p.y - f.r;
+                    }
+                }
+
+                // Player collision
+                if (player.invincible === 0) {
+                    if (dist(f.x, f.y, player.x + player.w / 2, player.y + player.h / 2) <
+                        f.r + player.w / 2) {
+                        playerDeath();
+                        break;
+                    }
+                }
+
+                // Remove if too far
+                if (f.y > canvas.height + 50) {
+                    fireballs.splice(i, 1);
+                }
+            }
+
+            // ---- CHECK WIN ----
+            if (player.y < 100 && player.x > 170 && player.x < 310) {
+                victoryState = true;
+                playSound('levelComplete');
+                score += 5000;
+                document.getElementById("score").innerText = score;
+            }
+
+            // ---- SPAWN HAMMER ITEM ----
+            if (!hammerItem && !hammerActive && frameCount % 300 === 0 && currentLevel > 1) {
+                spawnHammer();
+            }
+        }
+
+        // ----- DRAW -----
+        function draw() {
+            ctx.fillStyle = "black";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // ---- Draw Platforms (with detail) ----
+            for (let p of platforms) {
+                ctx.fillStyle = p.color || '#ff0055';
+                ctx.fillRect(p.x, p.y, p.w, p.h);
+                // Rivets
+                ctx.fillStyle = '#111';
+                for (let j = p.x + 8; j < p.x + p.w - 6; j += 16) {
+                    ctx.fillRect(j, p.y + 2, 4, p.h - 4);
+                }
+                // Highlight
+                ctx.fillStyle = 'rgba(255,255,255,0.1)';
+                ctx.fillRect(p.x, p.y, p.w, 2);
+            }
+
+            // ---- Draw Ladders ----
+            ctx.strokeStyle = "#00ccff";
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#00ccff';
+            ctx.shadowBlur = 8;
+            for (let l of ladders) {
+                ctx.strokeRect(l.x, l.y, l.w, l.h);
+                for (let rY = l.y + 6; rY < l.y + l.h - 4; rY += 10) {
+                    ctx.beginPath();
+                    ctx.moveTo(l.x, rY);
+                    ctx.lineTo(l.x + l.w, rY);
+                    ctx.stroke();
+                }
+            }
+            ctx.shadowBlur = 0;
+
+            // ---- Draw Kong ----
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#663300';
+            // Body
+            ctx.fillStyle = "#663300";
+            ctx.fillRect(100, 70, 60, 55);
+            // Belly
+            ctx.fillStyle = "#cc8833";
+            ctx.fillRect(110, 85, 40, 30);
+            // Head
+            ctx.fillStyle = "#aa7744";
+            ctx.fillRect(115, 55, 30, 30);
+            // Eyes
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(120, 62, 8, 8);
+            ctx.fillRect(132, 62, 8, 8);
+            ctx.fillStyle = "#000";
+            ctx.fillRect(123, 65, 4, 4);
+            ctx.fillRect(135, 65, 4, 4);
+            // Mouth
+            ctx.fillStyle = "#cc3333";
+            ctx.fillRect(126, 75, 8, 4);
+            // Tie
+            ctx.fillStyle = "#cc0000";
+            ctx.fillRect(125, 82, 10, 12);
+            ctx.shadowBlur = 0;
+
+            // ---- Draw Pauline ----
+            ctx.fillStyle = "#ff69b4";
+            ctx.fillRect(230, 45, 16, 30);
+            ctx.fillStyle = "#ffcc99";
+            ctx.fillRect(234, 40, 8, 10);
+            // Hair
+            ctx.fillStyle = "#ffaa00";
+            ctx.fillRect(232, 38, 12, 4);
+
+            // ---- Draw Hammer Item ----
+            if (hammerItem && hammerItem.active) {
+                const bobY = Math.sin(hammerItem.bobTimer) * 2;
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#ffaa00';
+                ctx.fillStyle = '#cc8833';
+                ctx.fillRect(hammerItem.x, hammerItem.y + bobY + 4, hammerItem.w, 6);
+                ctx.fillStyle = '#886633';
+                ctx.fillRect(hammerItem.x + 4, hammerItem.y + bobY, 16, 8);
+                ctx.fillStyle = '#ffcc44';
+                ctx.fillRect(hammerItem.x + 6, hammerItem.y + bobY - 2, 12, 4);
+                ctx.shadowBlur = 0;
+            }
+
+            // ---- Draw Barrels ----
+            for (let b of barrels) {
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = '#884422';
+                ctx.fillStyle = "#cc7733";
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = "#aa6633";
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, b.r - 3, 0, Math.PI * 2);
+                ctx.fill();
+                // Hoops
+                ctx.fillStyle = "#886633";
+                ctx.fillRect(b.x - b.r + 3, b.y - 2, b.r * 2 - 6, 4);
+                ctx.fillRect(b.x - b.r + 3, b.y + 4, b.r * 2 - 6, 4);
+                ctx.shadowBlur = 0;
+            }
+
+            // ---- Draw Fireballs ----
+            for (let f of fireballs) {
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#ff4400';
+                ctx.fillStyle = '#ff4400';
+                ctx.beginPath();
+                ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#ff8800';
+                ctx.beginPath();
+                ctx.arc(f.x - 2, f.y - 2, f.r * 0.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+
+            // ---- Draw Player (Jumpman/Mario) ----
+            if (player.invincible === 0 || Math.floor(frameCount / 6) % 2 === 0) {
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#6666ff';
+                // Body (overalls)
+                ctx.fillStyle = "#0044cc";
+                ctx.fillRect(player.x + 2, player.y + 8, player.w - 4, player.h - 10);
+                // Head
+                ctx.fillStyle = "#ffcc99";
+                ctx.fillRect(player.x + 2, player.y, player.w - 4, 10);
+                // Hat
+                ctx.fillStyle = "#cc0000";
+                ctx.fillRect(player.x, player.y - 2, player.w, 4);
+                ctx.fillRect(player.x + 2, player.y - 6, player.w - 4, 4);
+                // Eyes
+                ctx.fillStyle = "#000";
+                const eyeOff = player.facing > 0 ? 2 : 0;
+                ctx.fillRect(player.x + 4 + eyeOff, player.y + 3, 2, 2);
+                ctx.fillRect(player.x + 10 + eyeOff, player.y + 3, 2, 2);
+                // Mustache
+                ctx.fillStyle = "#4a2a1a";
+                ctx.fillRect(player.x + 4, player.y + 6, 8, 2);
+                // Shoes
+                ctx.fillStyle = "#4a2a1a";
+                ctx.fillRect(player.x + 1, player.y + player.h - 4, 5, 4);
+                ctx.fillRect(player.x + player.w - 6, player.y + player.h - 4, 5, 4);
+                ctx.shadowBlur = 0;
+            }
+
+            // ---- Hammer active indicator ----
+            if (hammerActive) {
+                ctx.fillStyle = 'rgba(255, 200, 0, 0.2)';
+                ctx.beginPath();
+                ctx.arc(player.x + player.w / 2, player.y + player.h / 2, 40, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#ffaa00';
+                ctx.font = '12px sans-serif';
+                ctx.fillText('🔨', player.x - 4, player.y - 10);
+            }
+
+            // ---- Overlays ----
+            if (gameOver) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = "#ff3366";
+                ctx.font = "bold 40px 'Courier New'";
+                ctx.shadowBlur = 30;
+                ctx.shadowColor = '#ff3366';
+                ctx.fillText("💀 GAME OVER", canvas.width / 2, 250);
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = "#aaccee";
+                ctx.font = "18px 'Courier New'";
+                ctx.fillText("Press R to restart", canvas.width / 2, 320);
+                if (keys["KeyR"]) {
+                    location.reload();
+                }
+            }
+
+            if (victoryState) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = "#ffdd44";
+                ctx.font = "bold 30px 'Courier New'";
+                ctx.shadowBlur = 30;
+                ctx.shadowColor = '#ffaa00';
+                ctx.fillText(`🎉 STAGE ${currentLevel} CLEAR!`, canvas.width / 2, 250);
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = "#aaccee";
+                ctx.font = "18px 'Courier New'";
+                ctx.fillText("PREPARING NEXT LEVEL...", canvas.width / 2, 310);
+            }
+        }
+
+        // ----- GAME LOOP -----
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        // ----- RESTART -----
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyR' && gameOver) {
+                location.reload();
+            }
+        });
+
+        // ----- START -----
+        spawnHammer();
+        loop();
+    </script>
+</body>
+</html>

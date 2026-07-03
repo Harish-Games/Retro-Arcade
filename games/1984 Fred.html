@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FRED – Top‑Down Maze</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            background: #1a1a2e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+        .game-wrapper {
+            background: #16213e;
+            padding: 20px 30px 30px;
+            border-radius: 20px;
+            box-shadow: 0 20px 30px rgba(0,0,0,0.8);
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            border: 4px solid #e94560;
+            border-radius: 12px;
+            background: #0f3460;
+            image-rendering: pixelated;
+            width: 800px;
+            height: 600px;
+        }
+        .hud {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+            color: #eee;
+            font-size: 22px;
+            font-weight: bold;
+            text-shadow: 0 0 8px #e94560;
+            padding: 0 10px;
+        }
+        .hud span { color: #f7d44a; font-size: 26px; }
+        .controls {
+            color: #aaa;
+            font-size: 14px;
+            text-align: center;
+            margin-top: 8px;
+        }
+        .controls kbd {
+            background: #2a2a4a;
+            color: #fff;
+            padding: 2px 10px;
+            border-radius: 6px;
+            border: 1px solid #555;
+        }
+    </style>
+</head>
+<body>
+<div class="game-wrapper">
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div class="hud">
+        <div>💀 <span id="livesDisplay">3</span></div>
+        <div>🏆 <span id="scoreDisplay">0</span></div>
+        <div>⏳ <span id="levelDisplay">1</span></div>
+    </div>
+    <div class="controls">
+        <kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> move · <kbd>R</kbd> restart
+    </div>
+</div>
+<script>
+    // ---------- CANVAS ----------
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const W = 800, H = 600;
+    const TILE = 40;
+    const CAMERA_SCALE = 1.8;
+
+    // ---------- WORLD ----------
+    const WORLD_COLS = 41;
+    const WORLD_ROWS = 25;
+
+    const livesSpan = document.getElementById('livesDisplay');
+    const scoreSpan = document.getElementById('scoreDisplay');
+    const levelSpan = document.getElementById('levelDisplay');
+
+    // ---------- STATE ----------
+    let lives = 3, score = 0, level = 1;
+    let gameOver = false, win = false;
+    let exitPixelX = 0, exitPixelY = 0;
+
+    // ---------- INPUT ----------
+    const keys = {};
+    document.addEventListener('keydown', (e) => {
+        keys[e.code] = true;
+        if (e.code === 'Space') e.preventDefault();
+        if (e.code === 'KeyR') resetGame();
+    });
+    document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+    // ---------- MAZE GENERATION (Recursive Backtracking) ----------
+    let map = [];
+
+    function generateMaze() {
+        const COLS = WORLD_COLS;
+        const ROWS = WORLD_ROWS;
+        let m = Array.from({ length: ROWS }, () => Array(COLS).fill(1));
+
+        const MC = Math.floor((COLS - 1) / 2);
+        const MR = Math.floor((ROWS - 1) / 2);
+
+        let visited = Array.from({ length: MR }, () => Array(MC).fill(false));
+        let stack = [];
+
+        let startCellR = MR - 1;
+        let startCellC = Math.floor(MC / 2);
+        visited[startCellR][startCellC] = true;
+        stack.push([startCellR, startCellC]);
+
+        while (stack.length > 0) {
+            let [r, c] = stack[stack.length - 1];
+            let neighbors = [];
+            let dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+            for (let d of dirs) {
+                let nr = r + d[0], nc = c + d[1];
+                if (nr >= 0 && nr < MR && nc >= 0 && nc < MC && !visited[nr][nc]) {
+                    neighbors.push([nr, nc, d[0], d[1]]);
+                }
+            }
+            if (neighbors.length > 0) {
+                let choice = neighbors[Math.floor(Math.random() * neighbors.length)];
+                let [nr, nc, dr, dc] = choice;
+                visited[nr][nc] = true;
+                let wallR = r * 2 + 1 + dr;
+                let wallC = c * 2 + 1 + dc;
+                m[wallR][wallC] = 0;
+                m[r*2+1][c*2+1] = 0;
+                m[nr*2+1][nc*2+1] = 0;
+                stack.push([nr, nc]);
+            } else {
+                stack.pop();
+            }
+        }
+
+        const exitCellR = 0;
+        const exitCellC = Math.floor(MC / 2);
+        m[exitCellR*2+1][exitCellC*2+1] = 0;
+        m[startCellR*2+1][startCellC*2+1] = 0;
+
+        const exitRow = exitCellR * 2 + 1;
+        const exitCol = exitCellC * 2 + 1;
+        m[exitRow][exitCol] = 4;
+        exitPixelX = exitCol * TILE + TILE / 2;
+        exitPixelY = exitRow * TILE + TILE / 2;
+
+        return m;
+    }
+
+    // ---------- PLAYER CLASS ----------
+    class Player {
+        constructor() {
+            const startCellR = Math.floor((WORLD_ROWS - 1) / 2) - 1;
+            const startCellC = Math.floor((WORLD_COLS - 1) / 2 / 2);
+            const startRow = startCellR * 2 + 1;
+            const startCol = startCellC * 2 + 1;
+            this.x = startCol * TILE + TILE / 2;
+            this.y = startRow * TILE + TILE / 2;
+            this.w = 20;
+            this.h = 20;
+            this.speed = 3.5;
+            this.facing = 1;
+            this.frame = 0;
+            this.animTimer = 0;
+        }
+
+        update() {
+            let dx = 0, dy = 0;
+            if (keys['ArrowLeft']) dx = -this.speed;
+            if (keys['ArrowRight']) dx = this.speed;
+            if (keys['ArrowUp']) dy = -this.speed;
+            if (keys['ArrowDown']) dy = this.speed;
+            if (dx !== 0 && dy !== 0) {
+                dx *= 0.707;
+                dy *= 0.707;
+            }
+            if (dx !== 0) this.facing = dx > 0 ? 1 : -1;
+
+            this.x += dx;
+            if (this.collidesWithWalls()) this.x -= dx;
+            this.y += dy;
+            if (this.collidesWithWalls()) this.y -= dy;
+
+            if (this.x - this.w/2 < 0) this.x = this.w/2;
+            if (this.x + this.w/2 > WORLD_COLS*TILE) this.x = WORLD_COLS*TILE - this.w/2;
+            if (this.y - this.h/2 < 0) this.y = this.h/2;
+            if (this.y + this.h/2 > WORLD_ROWS*TILE) this.y = WORLD_ROWS*TILE - this.h/2;
+
+            if (dx !== 0 || dy !== 0) {
+                this.animTimer++;
+                if (this.animTimer % 8 === 0) this.frame = (this.frame+1)%4;
+            } else {
+                this.frame = 0;
+            }
+
+            const col = Math.floor(this.x / TILE);
+            const row = Math.floor(this.y / TILE);
+            if (row >= 0 && row < WORLD_ROWS && col >= 0 && col < WORLD_COLS && map[row][col] === 4) {
+                win = true;
+            }
+        }
+
+        collidesWithWalls() {
+            const left = this.x - this.w/2;
+            const right = this.x + this.w/2;
+            const top = this.y - this.h/2;
+            const bottom = this.y + this.h/2;
+            const startCol = Math.floor(left/TILE);
+            const endCol = Math.floor((right-0.01)/TILE);
+            const startRow = Math.floor(top/TILE);
+            const endRow = Math.floor((bottom-0.01)/TILE);
+            for (let row = startRow; row <= endRow; row++) {
+                for (let col = startCol; col <= endCol; col++) {
+                    if (row < 0 || row >= WORLD_ROWS || col < 0 || col >= WORLD_COLS) continue;
+                    if (map[row][col] === 1) {
+                        const tileLeft = col*TILE, tileRight = (col+1)*TILE;
+                        const tileTop = row*TILE, tileBottom = (row+1)*TILE;
+                        if (right > tileLeft && left < tileRight && bottom > tileTop && top < tileBottom) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        draw(ctx) {
+            const x = this.x - this.w/2, y = this.y - this.h/2;
+            ctx.fillStyle = '#2d6a4f';
+            ctx.fillRect(x, y, this.w, this.h);
+            ctx.fillStyle = '#f9c74f';
+            ctx.beginPath();
+            ctx.arc(this.x, y + this.h/2, 8, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#000';
+            const eyeOff = this.facing * 3;
+            ctx.fillRect(this.x - 5 + eyeOff, y + this.h/2 - 4, 3, 3);
+            ctx.fillRect(this.x + 2 + eyeOff, y + this.h/2 - 4, 3, 3);
+            ctx.fillStyle = '#e94560';
+            ctx.beginPath();
+            ctx.arc(this.x, y + this.h/2 + 4, 4, 0, Math.PI);
+            ctx.fill();
+        }
+    }
+
+    // ---------- ENEMIES ----------
+    class Mummy {
+        constructor(col, row) {
+            this.x = col*TILE + TILE/2;
+            this.y = row*TILE + TILE/2;
+            this.w = 24; this.h = 24;
+            this.speed = 0.8 + Math.random()*0.3;
+            this.dir = Math.random()>0.5?1:-1;
+            this.alive = true;
+            this.timer = 0;
+            this.chooseDirTimer = 0;
+            this.dx = 0;
+            this.dy = 0;
+            this.randomDir();
+        }
+
+        randomDir() {
+            const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+            const d = dirs[Math.floor(Math.random()*4)];
+            this.dx = d[0];
+            this.dy = d[1];
+        }
+
+        update() {
+            if (!this.alive) return;
+            this.chooseDirTimer--;
+            if (this.chooseDirTimer <= 0) {
+                this.randomDir();
+                this.chooseDirTimer = 60 + Math.floor(Math.random()*60);
+            }
+            this.x += this.dx * this.speed;
+            this.y += this.dy * this.speed;
+            const left = this.x - this.w/2;
+            const right = this.x + this.w/2;
+            const top = this.y - this.h/2;
+            const bottom = this.y + this.h/2;
+            let blocked = false;
+            const startCol = Math.floor(left/TILE);
+            const endCol = Math.floor((right-0.01)/TILE);
+            const startRow = Math.floor(top/TILE);
+            const endRow = Math.floor((bottom-0.01)/TILE);
+            for (let row = startRow; row <= endRow; row++) {
+                for (let col = startCol; col <= endCol; col++) {
+                    if (row < 0 || row >= WORLD_ROWS || col < 0 || col >= WORLD_COLS) continue;
+                    if (map[row][col] === 1) {
+                        const tileLeft = col*TILE, tileRight = (col+1)*TILE;
+                        const tileTop = row*TILE, tileBottom = (row+1)*TILE;
+                        if (right > tileLeft && left < tileRight && bottom > tileTop && top < tileBottom) {
+                            blocked = true;
+                            break;
+                        }
+                    }
+                }
+                if (blocked) break;
+            }
+            if (blocked) {
+                this.x -= this.dx * this.speed;
+                this.y -= this.dy * this.speed;
+                this.randomDir();
+                this.chooseDirTimer = 60 + Math.floor(Math.random()*60);
+            }
+
+            if (this.x - this.w/2 < 0) this.x = this.w/2;
+            if (this.x + this.w/2 > WORLD_COLS*TILE) this.x = WORLD_COLS*TILE - this.w/2;
+            if (this.y - this.h/2 < 0) this.y = this.h/2;
+            if (this.y + this.h/2 > WORLD_ROWS*TILE) this.y = WORLD_ROWS*TILE - this.h/2;
+            this.timer++;
+        }
+
+        draw(ctx) {
+            if (!this.alive) return;
+            const x = this.x - this.w/2, y = this.y - this.h/2;
+            ctx.fillStyle = '#d4b8a0';
+            ctx.fillRect(x, y, this.w, this.h);
+            ctx.strokeStyle = '#b8957a';
+            ctx.lineWidth = 2;
+            for (let i=0; i<3; i++) {
+                const yy = y + i*8+4;
+                ctx.beginPath();
+                ctx.moveTo(x, yy);
+                ctx.lineTo(x+this.w, yy + (i%2===0?3:-3));
+                ctx.stroke();
+            }
+            ctx.fillStyle = '#ff0';
+            ctx.beginPath();
+            ctx.arc(x+6, y+6, 4, 0, Math.PI*2);
+            ctx.arc(x+this.w-6, y+6, 4, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#000';
+            const eyeOff = this.dx*2;
+            ctx.fillRect(x+4+eyeOff, y+4, 2, 4);
+            ctx.fillRect(x+this.w-8+eyeOff, y+4, 2, 4);
+        }
+
+        collidesWith(p) {
+            if (!this.alive) return false;
+            const margin = 2;
+            return p.x - p.w/2 + margin < this.x + this.w/2 &&
+                   p.x + p.w/2 - margin > this.x - this.w/2 &&
+                   p.y - p.h/2 + margin < this.y + this.h/2 &&
+                   p.y + p.h/2 - margin > this.y - this.h/2;
+        }
+    }
+
+    class Bat {
+        constructor(col, row) {
+            this.x = col*TILE + TILE/2;
+            this.y = row*TILE + TILE/2;
+            this.w = 18; this.h = 14;
+            this.speedX = 1.0 + Math.random()*0.5;
+            this.speedY = 0.5 + Math.random()*0.3;
+            this.dirX = Math.random()>0.5?1:-1;
+            this.alive = true;
+            this.phase = Math.random()*100;
+            this.boundX = 2 + Math.floor(Math.random()*3);
+            this.boundY = 2 + Math.floor(Math.random()*2);
+            this.startX = this.x;
+            this.startY = this.y;
+        }
+        update() {
+            if (!this.alive) return;
+            this.phase += 0.05;
+            this.x += this.speedX * this.dirX;
+            this.y += Math.sin(this.phase) * this.speedY;
+            if (Math.abs(this.x - this.startX) > this.boundX*TILE) this.dirX *= -1;
+            if (this.y < 10 || this.y > WORLD_ROWS*TILE - 10) this.speedY *= -1;
+            if (Math.random() < 0.005) this.dirX *= -1;
+            if (this.x < 10) this.dirX = 1;
+            if (this.x > WORLD_COLS*TILE - 10) this.dirX = -1;
+        }
+        draw(ctx) {
+            if (!this.alive) return;
+            const x = this.x - this.w/2, y = this.y - this.h/2;
+            ctx.fillStyle = '#2b2b2b';
+            ctx.beginPath();
+            ctx.ellipse(this.x, this.y, this.w/2, this.h/2, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#3a3a3a';
+            const flap = Math.sin(this.phase*2)*0.4 + 0.6;
+            ctx.beginPath();
+            ctx.moveTo(this.x-this.w/2, this.y);
+            ctx.quadraticCurveTo(this.x-this.w/2-6*flap, this.y-10, this.x-3, this.y);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(this.x+this.w/2, this.y);
+            ctx.quadraticCurveTo(this.x+this.w/2+6*flap, this.y-10, this.x+3, this.y);
+            ctx.fill();
+            ctx.fillStyle = '#ff3333';
+            ctx.beginPath();
+            ctx.arc(this.x-4, this.y-2, 3, 0, Math.PI*2);
+            ctx.arc(this.x+4, this.y-2, 3, 0, Math.PI*2);
+            ctx.fill();
+        }
+        collidesWith(p) {
+            if (!this.alive) return false;
+            const margin = 2;
+            return p.x - p.w/2 + margin < this.x + this.w/2 &&
+                   p.x + p.w/2 - margin > this.x - this.w/2 &&
+                   p.y - p.h/2 + margin < this.y + this.h/2 &&
+                   p.y + p.h/2 - margin > this.y - this.h/2;
+        }
+    }
+
+    class Drip {
+        constructor(col) {
+            this.x = col*TILE + TILE/2 + (Math.random()-0.5)*20;
+            this.y = 0;
+            this.radius = 5 + Math.random()*3;
+            this.speed = 2 + Math.random()*2;
+            this.alive = true;
+        }
+        update() {
+            if (!this.alive) return;
+            this.y += this.speed;
+            if (this.y > WORLD_ROWS*TILE) this.alive = false;
+        }
+        draw(ctx) {
+            if (!this.alive) return;
+            const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius);
+            grad.addColorStop(0, 'rgba(0, 255, 200, 0.9)');
+            grad.addColorStop(1, 'rgba(0, 200, 255, 0.2)');
+            ctx.fillStyle = grad;
+            ctx.shadowColor = '#00ffff';
+            ctx.shadowBlur = 12;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+        collidesWith(p) {
+            if (!this.alive) return false;
+            const dx = this.x - p.x;
+            const dy = this.y - p.y;
+            return Math.sqrt(dx*dx+dy*dy) < this.radius + p.w/2 - 2;
+        }
+    }
+
+    // ---------- GAME VARIABLES ----------
+    let player, mummies, bats, drips;
+    let dripTimer = 0;
+
+    function initLevel() {
+        map = generateMaze();
+        player = new Player();
+        mummies = []; bats = []; drips = [];
+        dripTimer = 0;
+        win = false; gameOver = false;
+
+        const numMummies = Math.min(3 + level, 8);
+        const numBats = Math.min(2 + level, 5);
+
+        let passageTiles = [];
+        const startRow = Math.floor((WORLD_ROWS - 1) / 2) * 2 + 1;
+        const startCol = Math.floor((WORLD_COLS - 1) / 2 / 2) * 2 + 1;
+        const exitRow = 1;
+        const exitCol = Math.floor((WORLD_COLS - 1) / 2 / 2) * 2 + 1;
+
+        for (let r = 1; r < WORLD_ROWS - 1; r++) {
+            for (let c = 1; c < WORLD_COLS - 1; c++) {
+                if (map[r][c] === 0) {
+                    if (Math.abs(r - startRow) < 2 && Math.abs(c - startCol) < 2) continue;
+                    if (Math.abs(r - exitRow) < 2 && Math.abs(c - exitCol) < 2) continue;
+                    passageTiles.push({r, c});
+                }
+            }
+        }
+        for (let i = passageTiles.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i+1));
+            [passageTiles[i], passageTiles[j]] = [passageTiles[j], passageTiles[i]];
+        }
+
+        const totalEnemies = Math.min(numMummies + numBats, passageTiles.length);
+        const selected = passageTiles.slice(0, totalEnemies);
+        const mummySpots = selected.slice(0, Math.min(numMummies, totalEnemies));
+        const batSpots = selected.slice(mummySpots.length, totalEnemies);
+
+        mummySpots.forEach(({r, c}) => { mummies.push(new Mummy(c, r)); });
+        batSpots.forEach(({r, c}) => { bats.push(new Bat(c, r)); });
+    }
+
+    // ---------- UPDATE ----------
+    function update() {
+        if (gameOver || win) return;
+        player.update();
+
+        mummies.forEach(m => m.update());
+        bats.forEach(b => b.update());
+
+        dripTimer++;
+        const dripRate = Math.max(20, 50 - level * 2);
+        if (dripTimer > dripRate) {
+            dripTimer = 0;
+            const col = 1 + Math.floor(Math.random() * (WORLD_COLS - 2));
+            drips.push(new Drip(col));
+        }
+        drips.forEach(d => d.update());
+        drips = drips.filter(d => d.alive);
+
+        let hit = false;
+        for (let m of mummies) { if (m.collidesWith(player)) { hit = true; break; } }
+        if (!hit) { for (let b of bats) { if (b.collidesWith(player)) { hit = true; break; } } }
+        if (!hit) { for (let d of drips) { if (d.collidesWith(player)) { hit = true; break; } } }
+
+        if (hit) {
+            lives--;
+            updateHUD();
+            if (lives <= 0) {
+                gameOver = true;
+            } else {
+                const startRow = Math.floor((WORLD_ROWS - 1) / 2) * 2 + 1;
+                const startCol = Math.floor((WORLD_COLS - 1) / 2 / 2) * 2 + 1;
+                player.x = startCol * TILE + TILE / 2;
+                player.y = startRow * TILE + TILE / 2;
+                drips = [];
+                mummies.forEach(m => { m.alive = true; });
+                bats.forEach(b => { b.alive = true; });
+            }
+        }
+
+        if (win) {
+            score += 100 + level * 50;
+            level++;
+            updateHUD();
+            const savedLives = lives, savedScore = score, savedLevel = level;
+            initLevel();
+            lives = savedLives; score = savedScore; level = savedLevel;
+            updateHUD();
+        }
+    }
+
+    // ---------- DRAW (CORRECTED) ----------
+    function draw() {
+        ctx.clearRect(0, 0, W, H);
+
+        ctx.save();
+        ctx.scale(CAMERA_SCALE, CAMERA_SCALE);
+
+        const viewW = W / CAMERA_SCALE;
+        const viewH = H / CAMERA_SCALE;
+
+        let targetCamX = player.x - viewW/2;
+        let targetCamY = player.y - viewH/2;
+        targetCamX = Math.max(0, Math.min(WORLD_COLS*TILE - viewW, targetCamX));
+        targetCamY = Math.max(0, Math.min(WORLD_ROWS*TILE - viewH, targetCamY));
+
+        ctx.translate(-targetCamX, -targetCamY);
+
+        // ---- Draw tiles ----
+        const startCol = Math.floor(targetCamX/TILE), endCol = Math.ceil((targetCamX+viewW)/TILE)+1;
+        const startRow = Math.floor(targetCamY/TILE), endRow = Math.ceil((targetCamY+viewH)/TILE)+1;
+
+        for (let row = startRow; row < Math.min(endRow, WORLD_ROWS); row++) {
+            for (let col = startCol; col < Math.min(endCol, WORLD_COLS); col++) {
+                const tile = map[row][col];
+                const x = col*TILE, y = row*TILE;
+                if (tile === 1) {
+                    ctx.fillStyle = '#5c3a21';
+                    ctx.fillRect(x, y, TILE, TILE);
+                    ctx.strokeStyle = '#3d2616';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x, y, TILE, TILE);
+                } else if (tile === 4) {
+                    ctx.fillStyle = '#f7d44a';
+                    ctx.shadowColor = '#ffdd44';
+                    ctx.shadowBlur = 25;
+                    ctx.beginPath();
+                    ctx.arc(x + TILE/2, y + TILE/2, TILE/2 - 4, 0, Math.PI*2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '22px "Courier New"';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('★', x + TILE/2, y + TILE/2 + 2);
+                }
+                // Passages (0) are left as background
+            }
+        }
+
+        // ---- Draw ropes on vertical corridors ----
+        for (let c = 0; c < WORLD_COLS; c++) {
+            let r = 0;
+            while (r < WORLD_ROWS) {
+                if (map[r][c] === 0) {
+                    let startR = r;
+                    while (r < WORLD_ROWS && map[r][c] === 0) r++;
+                    let endR = r - 1;
+                    let runHeight = endR - startR + 1;
+                    if (runHeight >= 2) {
+                        const x = c * TILE + TILE / 2;
+                        const yStart = startR * TILE;
+                        const yEnd = (endR + 1) * TILE;
+                        ctx.strokeStyle = '#b08a5d';
+                        ctx.lineWidth = 3;
+                        ctx.setLineDash([4, 6]);
+                        ctx.beginPath();
+                        ctx.moveTo(x, yStart);
+                        ctx.lineTo(x, yEnd);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        // Highlight
+                        ctx.strokeStyle = '#d4b08a';
+                        ctx.lineWidth = 1.5;
+                        ctx.beginPath();
+                        ctx.moveTo(x - 2, yStart);
+                        ctx.lineTo(x - 2, yEnd);
+                        ctx.stroke();
+                    }
+                } else {
+                    r++;
+                }
+            }
+        }
+
+        // ---- Draw entities ----
+        drips.forEach(d => d.draw(ctx));
+        mummies.forEach(m => m.draw(ctx));
+        bats.forEach(b => b.draw(ctx));
+        player.draw(ctx);
+
+        ctx.restore();
+
+        // ---- HUD & compass ----
+        const cx = W - 70, cy = 70, radius = 30;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius+6, 0, Math.PI*2);
+        ctx.fill();
+        ctx.strokeStyle = '#f7d44a';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI*2);
+        ctx.stroke();
+
+        const dx = exitPixelX - player.x;
+        const dy = exitPixelY - player.y;
+        let angle = Math.atan2(dy, dx);
+        if (Math.abs(dx) < 5 && Math.abs(dy) < 5) angle = -Math.PI/2;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(angle);
+        ctx.fillStyle = '#f7d44a';
+        ctx.beginPath();
+        ctx.moveTo(radius - 6, 0);
+        ctx.lineTo(-6, -8);
+        ctx.lineTo(-6, 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(0, 0, 4, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        ctx.fillStyle = '#fff';
+        ctx.font = '12px "Courier New"';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(Math.round(dist/40) + 'm', cx, cy + radius + 6);
+
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(0, 0, 160, 50);
+        ctx.fillStyle = '#fff';
+        ctx.font = '16px "Courier New"';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText('Level '+level, 10, 10);
+        ctx.fillText('Score '+score, 10, 30);
+
+        if (gameOver) {
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(0, 0, W, H);
+            ctx.fillStyle = '#ff4d4d';
+            ctx.font = 'bold 48px "Courier New"';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('💀 GAME OVER', W/2, H/2-30);
+            ctx.fillStyle = '#ccc';
+            ctx.font = '24px "Courier New"';
+            ctx.fillText('Press R to restart', W/2, H/2+40);
+        }
+    }
+
+    function updateHUD() {
+        livesSpan.textContent = lives;
+        scoreSpan.textContent = score;
+        levelSpan.textContent = level;
+    }
+
+    function resetGame() {
+        lives = 3; score = 0; level = 1;
+        gameOver = false; win = false;
+        initLevel();
+        updateHUD();
+    }
+
+    // ---------- START ----------
+    initLevel();
+    updateHUD();
+
+    function gameLoop() {
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+    gameLoop();
+</script>
+</body>
+</html>

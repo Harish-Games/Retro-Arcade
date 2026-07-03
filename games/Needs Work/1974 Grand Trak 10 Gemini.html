@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1974 Gran Trak 10 Arcade</title>
+    <style>
+        body {
+            background-color: #111;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        h1 {
+            margin: 0 0 5px 0;
+            font-size: 24px;
+            letter-spacing: 4px;
+            color: #fff;
+            text-shadow: 0 0 5px #fff;
+        }
+
+        #dashboard {
+            width: 700px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            border: 2px solid #444;
+            padding: 8px 15px;
+            background: #1a1a1a;
+            box-sizing: border-box;
+        }
+
+        #gameContainer {
+            position: relative;
+        }
+
+        canvas {
+            background-color: #000000;
+            border: 4px solid #fff;
+            display: block;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            display: none;
+        }
+
+        #overlay h2 {
+            font-size: 36px;
+            margin-bottom: 10px;
+        }
+
+        #overlay p {
+            font-size: 20px;
+            color: #aaa;
+            margin-bottom: 20px;
+        }
+
+        .blink {
+            animation: blinker 1s linear infinite;
+        }
+        @keyframes blinker { 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+    <h1>GRAN TRAK 10</h1>
+    
+    <div id="dashboard">
+        <div>SCORE: <span id="score">00</span></div>
+        <div>TIME: <span id="timer">60</span></div>
+    </div>
+
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="700" height="500"></canvas>
+        <div id="overlay">
+            <h2>TIME EXPIRED</h2>
+            <p id="finalScore">FINAL SCORE: 00</p>
+            <div class="blink">PRESS [SPACEBAR] TO INSERT COIN</div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const scoreEl = document.getElementById('score');
+        const timerEl = document.getElementById('timer');
+        const overlay = document.getElementById('overlay');
+        const finalScoreEl = document.getElementById('finalScore');
+
+        // Game Core States
+        let gameActive = true;
+        let score = 0;
+        let timeRemaining = 60; // Seconds per game
+        let frameCount = 0;
+        let keys = {};
+
+        // Car Mechanics Variables
+        let car = {
+            x: 350,
+            y: 435,
+            vx: 0,
+            vy: 0,
+            speed: 0,
+            maxSpeed: 4.5,
+            angle: 0,           // Face right initially (0 radians)
+            turnSpeed: 0.07,
+            friction: 0.96,
+            spinoutTimer: 0,
+            width: 14,
+            height: 8,
+            passedCheckpoint: false
+        };
+
+        // Static Level Vectors: Center Coordinates for Wall Barriers (Pylons)
+        const innerWall = { x: 350, y: 250, rx: 180, ry: 100 }; // Center island track barrier
+        const outerWall = { x: 350, y: 250, rx: 310, ry: 210 }; // Outside boundary line
+
+        // Hazard Areas (Oil Slicks)
+        const oilSlicks = [
+            { x: 180, y: 160, r: 18 },
+            { x: 500, y: 340, r: 22 }
+        ];
+
+        // Scoring Lines
+        const finishLine = { x1: 350, y1: 350, x2: 350, y2: 460 };
+        const checkpointLine = { x1: 350, y1: 40, x2: 350, y2: 150 }; // Halfway mark tracking
+
+        // Keyboard Handling
+        window.addEventListener('keydown', e => {
+            keys[e.code] = true;
+            if (e.code === 'Space' && !gameActive) resetGame();
+            if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+        });
+        window.addEventListener('keyup', e => keys[e.code] = false);
+
+        function init() {
+            score = 0;
+            timeRemaining = 60;
+            frameCount = 0;
+
+            // Reset Car Profile to starting line grid positioning
+            car.x = 350;
+            car.y = 425;
+            car.vx = 0; car.vy = 0; car.speed = 0;
+            car.angle = 0; 
+            car.spinoutTimer = 0;
+            car.passedCheckpoint = false;
+
+            gameActive = true;
+            overlay.style.display = "none";
+            updateUI();
+            loop();
+        }
+
+        function update() {
+            if (!gameActive) return;
+
+            // Handle Clock System
+            frameCount++;
+            if (frameCount % 60 === 0) {
+                timeRemaining--;
+                updateUI();
+                if (timeRemaining <= 0) {
+                    endGame();
+                    return;
+                }
+            }
+
+            // Handle Spinout Mechanics (Hitting Oil)
+            if (car.spinoutTimer > 0) {
+                car.spinoutTimer--;
+                car.angle += 0.25; // Spin car wildly out of control
+                car.speed *= 0.95; // Drastically reduce momentum
+            } else {
+                // Steering Controls
+                if (keys['ArrowLeft'] || keys['KeyA']) car.angle -= car.turnSpeed;
+                if (keys['ArrowRight'] || keys['KeyD']) car.angle += car.turnSpeed;
+
+                // Throttle / Braking Controls
+                if (keys['ArrowUp'] || keys['KeyW']) {
+                    car.speed += 0.15;
+                    if (car.speed > car.maxSpeed) car.speed = car.maxSpeed;
+                } else if (keys['ArrowDown'] || keys['KeyS']) {
+                    car.speed -= 0.15;
+                    if (car.speed < -car.maxSpeed / 2) car.speed = -car.maxSpeed / 2;
+                } else {
+                    car.speed *= car.friction; // Roll to a slow stop
+                }
+            }
+
+            // Translate Speed Vector into Angular Coordinates
+            car.vx = Math.cos(car.angle) * car.speed;
+            car.vy = Math.sin(car.angle) * car.speed;
+
+            // Update positions
+            car.x += car.vx;
+            car.y += car.vy;
+
+            checkCollisions();
+            checkTrackProgress();
+        }
+
+        function checkCollisions() {
+            // Ellipse Collision Check Logic: Formula $(x-h)^2/rx^2 + (y-k)^2/ry^2 = 1$
+            let innerDist = Math.pow(car.x - innerWall.x, 2) / Math.pow(innerWall.rx, 2) + 
+                            Math.pow(car.y - innerWall.y, 2) / Math.pow(innerWall.ry, 2);
+
+            let outerDist = Math.pow(car.x - outerWall.x, 2) / Math.pow(outerWall.rx, 2) + 
+                            Math.pow(car.y - outerWall.y, 2) / Math.pow(outerWall.ry, 2);
+
+            // Crash condition: inside the inner wall ring OR outside the outer boundary line
+            if (innerDist <= 1.02 || outerDist >= 0.98) {
+                // Crash bounce reset! Stop car momentum completely and push slightly away
+                car.speed = -car.speed * 0.4;
+                car.x -= car.vx * 1.5;
+                car.y -= car.vy * 1.5;
+            }
+
+            // Oil Slick hazard checking
+            oilSlicks.forEach(slick => {
+                let dx = car.x - slick.x;
+                let dy = car.y - slick.y;
+                if (Math.sqrt(dx * dx + dy * dy) < slick.r) {
+                    if (car.spinoutTimer === 0 && Math.abs(car.speed) > 1) {
+                        car.spinoutTimer = 45; // Trigger spinout loss of control frame counter
+                    }
+                }
+            });
+        }
+
+        function checkTrackProgress() {
+            // Checkpoint validation line crossing (Top of screen)
+            if (!car.passedCheckpoint && car.x >= checkpointLine.x1 - 5 && car.x <= checkpointLine.x1 + 5 && 
+                car.y >= checkpointLine.y1 && car.y <= checkpointLine.y2) {
+                car.passedCheckpoint = true;
+            }
+
+            // Lap Finished Cross validation line (Bottom of screen heading counter-clockwise)
+            if (car.passedCheckpoint && car.x >= finishLine.x1 - 5 && car.x <= finishLine.x1 + 5 && 
+                car.y >= finishLine.y1 && car.y <= finishLine.y2) {
+                
+                // Confirm player crossed passing from bottom side upwards/left loop sequence
+                if (car.vx < 0) { 
+                    score += 10;
+                    car.passedCheckpoint = false; // Reset lap tracking sequence
+                    updateUI();
+                }
+            }
+        }
+
+        function updateUI() {
+            scoreEl.innerText = String(score).padStart(2, '0');
+            timerEl.innerText = String(Math.max(0, timeRemaining)).padStart(2, '0');
+        }
+
+        function endGame() {
+            gameActive = false;
+            finalScoreEl.innerText = `FINAL SCORE: ${String(score).padStart(2, '0')}`;
+            overlay.style.display = "flex";
+        }
+
+        function resetGame() {
+            init();
+        }
+
+        function drawTrackPart(wall, color, width, dash = []) {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            ctx.setLineDash(dash);
+            ctx.beginPath();
+            // Approximating track path rings using HTML Ellipse Methods
+            ctx.ellipse(wall.x, wall.y, wall.rx, wall.ry, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset dash values
+        }
+
+        function draw() {
+            // Screen rendering pass
+            ctx.fillStyle = "#000000";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Outfield Retaining Pylons (Solid White Boundary Outline)
+            drawTrackPart(outerWall, "#ffffff", 4);
+            drawTrackPart(innerWall, "#ffffff", 4);
+
+            // Draw Track Center Guide Markings (Dashed Line core)
+            const trackCenter = { x: 350, y: 250, rx: 245, ry: 155 };
+            drawTrackPart(trackCenter, "#444444", 2, [15, 15]);
+
+            // Draw Finish / Start line matrix
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(finishLine.x1, finishLine.y1);
+            ctx.lineTo(finishLine.x2, finishLine.y2);
+            ctx.stroke();
+
+            // Draw Checkered Grid block accents to highlight start line
+            ctx.fillStyle = "#ffffff";
+            for(let step = finishLine.y1 + 5; step < finishLine.y2; step += 16) {
+                ctx.fillRect(finishLine.x1 - 6, step, 6, 6);
+            }
+
+            // Draw Hazard Oil Slicks
+            ctx.fillStyle = "#333333";
+            oilSlicks.forEach(slick => {
+                ctx.beginPath();
+                ctx.arc(slick.x, slick.y, slick.r, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Retro inner texture rings
+                ctx.strokeStyle = "#111111";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(slick.x, slick.y, slick.r - 6, 0, Math.PI * 2);
+                ctx.stroke();
+            });
+
+            // Draw Player Retro Sprite Car Vector
+            ctx.save();
+            ctx.translate(car.x, car.y);
+            ctx.rotate(car.angle);
+
+            // Chassis Frame
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(-car.width / 2, -car.height / 2, car.width, car.height);
+
+            // Open Cockpit Center Core (Black box knockout accent)
+            ctx.fillStyle = "#000000";
+            ctx.fillRect(-2, -2, 5, 4);
+
+            // Racing tires (Four individual exposed corner blocks)
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(-car.width/2 + 1, -car.height/2 - 2, 3, 2); // Top Front
+            ctx.fillRect(car.width/2 - 4, -car.height/2 - 2, 3, 2);  // Top Rear
+            ctx.fillRect(-car.width/2 + 1, car.height/2, 3, 2);   // Bottom Front
+            ctx.fillRect(car.width/2 - 4, car.height/2, 3, 2);    // Bottom Rear
+            
+            ctx.restore();
+        }
+
+        function loop() {
+            update();
+            draw();
+            if (gameActive) {
+                requestAnimationFrame(loop);
+            }
+        }
+
+        // Run system initialization sequence
+        init();
+    </script>
+</body>
+</html>

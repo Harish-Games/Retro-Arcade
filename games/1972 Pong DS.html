@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Super Simple Pong</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0a0a12;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+        .game-wrapper {
+            background: #12121f;
+            padding: 20px 30px 25px;
+            border-radius: 16px;
+            border: 2px solid #2a2a5a;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            border: 3px solid #2a2a5a;
+            border-radius: 8px;
+            background: #0d0d1a;
+            width: 700px;
+            height: 400px;
+        }
+        .info {
+            display: flex;
+            justify-content: space-between;
+            color: #ffdd77;
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 14px;
+            padding: 0 10px;
+        }
+        .info span {
+            color: #66ddff;
+        }
+        .info .speed {
+            color: #ffaa66;
+        }
+        .controls {
+            color: #6688aa;
+            font-size: 14px;
+            margin-top: 8px;
+            text-align: center;
+            border-top: 1px solid #1a1a3a;
+            padding-top: 10px;
+        }
+        .controls kbd {
+            background: #1a1a3a;
+            padding: 2px 10px;
+            border-radius: 4px;
+            border: 1px solid #3a3a6a;
+            color: #cce;
+        }
+        .controls .player1 {
+            color: #66ddff;
+        }
+        .controls .player2 {
+            color: #ff66aa;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-wrapper">
+        <canvas id="gameCanvas" width="700" height="400"></canvas>
+        <div class="info">
+            <div>🔵 <span id="score1">0</span></div>
+            <div class="speed">⚡ <span id="speedDisplay">4.5</span></div>
+            <div>🔴 <span id="score2">0</span></div>
+        </div>
+        <div class="controls">
+            <span class="player1"><kbd>W</kbd> <kbd>S</kbd> Player 1</span> &nbsp;|&nbsp;
+            <span class="player2"><kbd>↑</kbd> <kbd>↓</kbd> Player 2</span> &nbsp;|&nbsp;
+            <kbd>Space</kbd> restart
+        </div>
+    </div>
+    <script>
+        // ----- SETUP -----
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const score1El = document.getElementById('score1');
+        const score2El = document.getElementById('score2');
+        const speedDisplay = document.getElementById('speedDisplay');
+
+        const W = 700,
+            H = 400;
+
+        // ----- GAME STATE -----
+        let score1 = 0;
+        let score2 = 0;
+        let gameOver = false;
+        let winner = '';
+        let rallyCount = 0;
+
+        // ----- PADDLE -----
+        const PADDLE_WIDTH = 12;
+        const PADDLE_HEIGHT = 80;
+        const PADDLE_SPEED = 5;
+
+        const player1 = {
+            x: 20,
+            y: H / 2 - PADDLE_HEIGHT / 2,
+            w: PADDLE_WIDTH,
+            h: PADDLE_HEIGHT,
+            dy: 0,
+            color: '#66ddff',
+        };
+
+        const player2 = {
+            x: W - 20 - PADDLE_WIDTH,
+            y: H / 2 - PADDLE_HEIGHT / 2,
+            w: PADDLE_WIDTH,
+            h: PADDLE_HEIGHT,
+            dy: 0,
+            color: '#ff66aa',
+        };
+
+        // ----- BALL -----
+        const BALL_SIZE = 10;
+        const BASE_SPEED = 4.5;
+        const MAX_SPEED = 12;
+        const SPEED_INCREMENT = 0.2; // Speed increase per paddle hit
+
+        const ball = {
+            x: W / 2,
+            y: H / 2,
+            r: BALL_SIZE / 2,
+            dx: BASE_SPEED * (Math.random() > 0.5 ? 1 : -1),
+            dy: (Math.random() - 0.5) * 4,
+            speed: BASE_SPEED,
+        };
+
+        // ----- INPUT -----
+        const keys = {
+            w: false,
+            s: false,
+            arrowup: false,
+            arrowdown: false,
+            space: false,
+        };
+
+        // ----- AUDIO -----
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playBeep(freq, duration) {
+            try {
+                initAudio();
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(freq, now);
+                gain.gain.setValueAtTime(0.08, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+                osc.start(now);
+                osc.stop(now + duration);
+            } catch (e) { /* ignore */ }
+        }
+
+        // ----- RESET -----
+        function resetBall() {
+            ball.x = W / 2;
+            ball.y = H / 2;
+            ball.speed = BASE_SPEED;
+            ball.dx = BASE_SPEED * (Math.random() > 0.5 ? 1 : -1);
+            ball.dy = (Math.random() - 0.5) * 4;
+            if (Math.abs(ball.dy) < 1) ball.dy = 1 * (Math.random() > 0.5 ? 1 : -1);
+            rallyCount = 0;
+            updateSpeedDisplay();
+        }
+
+        function resetGame() {
+            score1 = 0;
+            score2 = 0;
+            gameOver = false;
+            winner = '';
+            rallyCount = 0;
+            player1.y = H / 2 - PADDLE_HEIGHT / 2;
+            player2.y = H / 2 - PADDLE_HEIGHT / 2;
+            resetBall();
+            updateUI();
+            updateSpeedDisplay();
+        }
+
+        function scorePoint(player) {
+            if (player === 1) {
+                score1++;
+                playBeep(440, 0.15);
+            } else {
+                score2++;
+                playBeep(440, 0.15);
+            }
+            updateUI();
+
+            if (score1 >= 5) {
+                gameOver = true;
+                winner = 'Player 1';
+                playBeep(880, 0.3);
+            } else if (score2 >= 5) {
+                gameOver = true;
+                winner = 'Player 2';
+                playBeep(880, 0.3);
+            } else {
+                resetBall();
+            }
+        }
+
+        function updateUI() {
+            score1El.textContent = score1;
+            score2El.textContent = score2;
+        }
+
+        function updateSpeedDisplay() {
+            speedDisplay.textContent = ball.speed.toFixed(1);
+        }
+
+        // ----- UPDATE -----
+        function update() {
+            if (gameOver) {
+                if (keys.space) resetGame();
+                return;
+            }
+
+            // ---- Player 1 (W/S) ----
+            if (keys.w) player1.dy = -PADDLE_SPEED;
+            else if (keys.s) player1.dy = PADDLE_SPEED;
+            else player1.dy = 0;
+            player1.y += player1.dy;
+            if (player1.y < 0) player1.y = 0;
+            if (player1.y + player1.h > H) player1.y = H - player1.h;
+
+            // ---- Player 2 (Arrow keys) ----
+            if (keys.arrowup) player2.dy = -PADDLE_SPEED;
+            else if (keys.arrowdown) player2.dy = PADDLE_SPEED;
+            else player2.dy = 0;
+            player2.y += player2.dy;
+            if (player2.y < 0) player2.y = 0;
+            if (player2.y + player2.h > H) player2.y = H - player2.h;
+
+            // ---- Ball ----
+            ball.x += ball.dx;
+            ball.y += ball.dy;
+
+            // Wall collision (top/bottom)
+            if (ball.y - ball.r < 0) {
+                ball.y = ball.r;
+                ball.dy = -ball.dy;
+                playBeep(600, 0.05);
+            }
+            if (ball.y + ball.r > H) {
+                ball.y = H - ball.r;
+                ball.dy = -ball.dy;
+                playBeep(600, 0.05);
+            }
+
+            // Paddle collision (Player 1)
+            if (ball.dx < 0 &&
+                ball.x - ball.r < player1.x + player1.w &&
+                ball.x + ball.r > player1.x &&
+                ball.y > player1.y && ball.y < player1.y + player1.h) {
+                ball.x = player1.x + player1.w + ball.r;
+                ball.dx = -ball.dx;
+                // Add angle based on hit position
+                const hitPos = (ball.y - player1.y) / player1.h;
+                const angle = (hitPos - 0.5) * 1.2;
+                const speed = Math.hypot(ball.dx, ball.dy);
+                ball.dx = Math.cos(angle) * speed;
+                ball.dy = Math.sin(angle) * speed;
+
+                // INCREASE SPEED on paddle hit
+                rallyCount++;
+                ball.speed = Math.min(MAX_SPEED, ball.speed + SPEED_INCREMENT);
+                const currentSpeed = Math.hypot(ball.dx, ball.dy);
+                const ratio = ball.speed / currentSpeed;
+                ball.dx *= ratio;
+                ball.dy *= ratio;
+
+                updateSpeedDisplay();
+                playBeep(800, 0.08);
+            }
+
+            // Paddle collision (Player 2)
+            if (ball.dx > 0 &&
+                ball.x + ball.r > player2.x &&
+                ball.x - ball.r < player2.x + player2.w &&
+                ball.y > player2.y && ball.y < player2.y + player2.h) {
+                ball.x = player2.x - ball.r;
+                ball.dx = -ball.dx;
+                const hitPos = (ball.y - player2.y) / player2.h;
+                const angle = (hitPos - 0.5) * 1.2;
+                const speed = Math.hypot(ball.dx, ball.dy);
+                ball.dx = -Math.cos(angle) * speed;
+                ball.dy = Math.sin(angle) * speed;
+
+                // INCREASE SPEED on paddle hit
+                rallyCount++;
+                ball.speed = Math.min(MAX_SPEED, ball.speed + SPEED_INCREMENT);
+                const currentSpeed = Math.hypot(ball.dx, ball.dy);
+                const ratio = ball.speed / currentSpeed;
+                ball.dx *= ratio;
+                ball.dy *= ratio;
+
+                updateSpeedDisplay();
+                playBeep(800, 0.08);
+            }
+
+            // Score (left wall = player 2 scores)
+            if (ball.x - ball.r < 0) {
+                scorePoint(2);
+            }
+            // Score (right wall = player 1 scores)
+            if (ball.x + ball.r > W) {
+                scorePoint(1);
+            }
+        }
+
+        // ----- DRAW -----
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+
+            // ---- Background ----
+            ctx.fillStyle = '#0d0d1a';
+            ctx.fillRect(0, 0, W, H);
+
+            // ---- Center line ----
+            ctx.strokeStyle = '#2a2a5a';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([12, 12]);
+            ctx.beginPath();
+            ctx.moveTo(W / 2, 0);
+            ctx.lineTo(W / 2, H);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // ---- Center circle ----
+            ctx.strokeStyle = '#2a2a5a';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(W / 2, H / 2, 50, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // ---- Speed indicator ----
+            ctx.fillStyle = 'rgba(255, 170, 100, 0.3)';
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText('⚡ ' + ball.speed.toFixed(1), W / 2, H - 5);
+
+            // ---- Rally counter ----
+            if (rallyCount > 0) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.font = '14px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.fillText('Rally: ' + rallyCount, W / 2, 10);
+            }
+
+            // ---- Player 1 ----
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = player1.color;
+            ctx.fillStyle = player1.color;
+            ctx.fillRect(player1.x, player1.y, player1.w, player1.h);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
+            ctx.fillRect(player1.x + 2, player1.y + 4, 3, player1.h - 8);
+
+            // ---- Player 2 ----
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = player2.color;
+            ctx.fillStyle = player2.color;
+            ctx.fillRect(player2.x, player2.y, player2.w, player2.h);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
+            ctx.fillRect(player2.x + player2.w - 5, player2.y + 4, 3, player2.h - 8);
+
+            // ---- Ball ----
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#ffffff';
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+            ctx.fill();
+
+            // ---- Speed trail (shows speed visually) ----
+            ctx.shadowBlur = 0;
+            const trailLength = Math.min(20, ball.speed * 2);
+            ctx.fillStyle = 'rgba(255,255,255,0.1)';
+            ctx.beginPath();
+            ctx.arc(ball.x - ball.dx * 0.3 * trailLength,
+                ball.y - ball.dy * 0.3 * trailLength,
+                ball.r * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.05)';
+            ctx.beginPath();
+            ctx.arc(ball.x - ball.dx * 0.6 * trailLength,
+                ball.y - ball.dy * 0.6 * trailLength,
+                ball.r * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // ---- Game Over ----
+            if (gameOver) {
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = 'rgba(0,0,0,0.75)';
+                ctx.fillRect(0, 0, W, H);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#ffdd44';
+                ctx.font = 'bold 48px "Courier New", monospace';
+                ctx.shadowBlur = 30;
+                ctx.shadowColor = '#ffaa00';
+                ctx.fillText('🏆 ' + winner + ' WINS!', W / 2, H / 2 - 20);
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#aaccee';
+                ctx.font = '18px "Courier New", monospace';
+                ctx.fillText('Press SPACE to restart', W / 2, H / 2 + 40);
+            }
+        }
+
+        // ----- GAME LOOP -----
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ----- EVENT LISTENERS -----
+        document.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (key === 'w') { keys.w = true;
+                e.preventDefault(); }
+            if (key === 's') { keys.s = true;
+                e.preventDefault(); }
+            if (key === 'arrowup') { keys.arrowup = true;
+                e.preventDefault(); }
+            if (key === 'arrowdown') { keys.arrowdown = true;
+                e.preventDefault(); }
+            if (key === ' ') {
+                keys.space = true;
+                e.preventDefault();
+                if (gameOver) resetGame();
+            }
+            initAudio();
+        });
+
+        document.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (key === 'w') { keys.w = false;
+                e.preventDefault(); }
+            if (key === 's') { keys.s = false;
+                e.preventDefault(); }
+            if (key === 'arrowup') { keys.arrowup = false;
+                e.preventDefault(); }
+            if (key === 'arrowdown') { keys.arrowdown = false;
+                e.preventDefault(); }
+            if (key === ' ') { keys.space = false;
+                e.preventDefault(); }
+        });
+
+        // Prevent page scroll
+        window.addEventListener('keydown', (e) => {
+            if (['ArrowUp', 'ArrowDown', ' '].includes(e.key)) {
+                e.preventDefault();
+            }
+        });
+
+        // ----- START -----
+        resetGame();
+        gameLoop();
+    </script>
+</body>
+</html>

@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tennis for Two – Simple</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0a0a12;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+        .game-wrapper {
+            background: #12121f;
+            padding: 20px 30px 25px;
+            border-radius: 16px;
+            border: 2px solid #2a2a5a;
+            text-align: center;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            border: 3px solid #2a2a5a;
+            border-radius: 8px;
+            background: #0b0b18;
+            cursor: crosshair;
+            width: 700px;
+            height: 450px;
+        }
+        .info {
+            display: flex;
+            justify-content: space-between;
+            color: #aac0ff;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 12px;
+            padding: 0 10px;
+        }
+        .info .score {
+            color: #66ff88;
+        }
+        .info .status {
+            color: #ffdd77;
+        }
+        .controls {
+            color: #6688aa;
+            font-size: 13px;
+            margin-top: 10px;
+            border-top: 1px solid #1a1a3a;
+            padding-top: 10px;
+        }
+        .controls kbd {
+            background: #1a1a3a;
+            padding: 2px 10px;
+            border-radius: 4px;
+            border: 1px solid #3a3a6a;
+            color: #cce;
+        }
+        .controls button {
+            background: #1a1a3a;
+            color: #cce;
+            border: 1px solid #3a3a6a;
+            border-radius: 4px;
+            padding: 4px 14px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .controls button:hover {
+            background: #2a2a5a;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-wrapper">
+        <canvas id="gameCanvas" width="700" height="450"></canvas>
+        <div class="info">
+            <div class="status" id="statusDisplay">🎾 Click to serve!</div>
+            <div class="score">🏆 <span id="scoreDisplay">0</span></div>
+        </div>
+        <div class="controls">
+            <kbd>Click</kbd> to hit &nbsp;|&nbsp; <button id="restartBtn">New Game</button>
+        </div>
+    </div>
+    <script>
+        // ----- SETUP -----
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusDisplay = document.getElementById('statusDisplay');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+
+        const W = 700,
+            H = 450;
+        const GROUND = 400;
+        const NET_X = 350;
+        const NET_HEIGHT = 70;
+
+        // ----- GAME STATE -----
+        let score = 0;
+        let gameOver = false;
+        let rallyCount = 0;
+        let serving = true;
+        let canHit = false;
+
+        // ----- BALL -----
+        const ball = {
+            x: 380,
+            y: 200,
+            vx: 0,
+            vy: 0,
+            r: 6,
+        };
+
+        // ----- AI (left side) -----
+        const ai = {
+            x: NET_X - 60,
+            y: GROUND - 30,
+            w: 16,
+            h: 28,
+        };
+
+        // ----- HUMAN (right side) -----
+        const human = {
+            x: NET_X + 60,
+            y: GROUND - 30,
+            w: 16,
+            h: 28,
+        };
+
+        // ----- PARTICLES -----
+        let particles = [];
+        let mouseX = 400,
+            mouseY = 200;
+
+        // ----- AUDIO -----
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function beep(freq, dur) {
+            try {
+                initAudio();
+                const now = audioCtx.currentTime;
+                const o = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                o.connect(g);
+                g.connect(audioCtx.destination);
+                o.type = 'square';
+                o.frequency.setValueAtTime(freq, now);
+                g.gain.setValueAtTime(0.05, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+                o.start(now);
+                o.stop(now + dur);
+            } catch (_) {}
+        }
+
+        // ----- RESET -----
+        function resetGame() {
+            score = 0;
+            gameOver = false;
+            rallyCount = 0;
+            particles = [];
+            serveBall();
+            updateUI();
+            statusDisplay.textContent = '🎾 Click to serve!';
+        }
+
+        function serveBall() {
+            ball.x = 380;
+            ball.y = 200;
+            ball.vx = 0;
+            ball.vy = 0;
+            serving = true;
+            canHit = false;
+            // After a moment, allow hit
+            setTimeout(() => {
+                if (!gameOver) {
+                    canHit = true;
+                    statusDisplay.textContent = '🎾 Click to hit!';
+                }
+            }, 300);
+        }
+
+        function pointScored(who) {
+            if (who === 'human') {
+                score += 10;
+                statusDisplay.textContent = '✅ You scored!';
+                beep(880, 0.15);
+            } else {
+                statusDisplay.textContent = '❌ AI scored!';
+                beep(300, 0.25);
+            }
+            updateUI();
+            spawnParticles(ball.x, ball.y);
+            setTimeout(() => {
+                if (!gameOver) serveBall();
+            }, 600);
+        }
+
+        function updateUI() {
+            scoreDisplay.textContent = score;
+        }
+
+        // ----- PARTICLES -----
+        function spawnParticles(x, y) {
+            for (let i = 0; i < 20; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const s = 1 + Math.random() * 3;
+                particles.push({
+                    x: x + (Math.random() - 0.5) * 10,
+                    y: y + (Math.random() - 0.5) * 10,
+                    vx: Math.cos(a) * s,
+                    vy: Math.sin(a) * s - 1,
+                    life: 15 + Math.random() * 20,
+                    maxLife: 35,
+                    r: 1 + Math.random() * 2,
+                });
+            }
+        }
+
+        // ----- HUMAN SHOT -----
+        function humanShot() {
+            if (gameOver) return;
+            if (!canHit && !serving) return;
+            if (ball.x < NET_X) return; // ball must be on human's side
+
+            // Direction from ball to mouse
+            const dx = mouseX - ball.x;
+            const dy = mouseY - ball.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < 5) return;
+
+            // Power based on distance (clamped)
+            const power = Math.min(1, dist / 250) * 8 + 2;
+            const angle = Math.atan2(dy, dx);
+
+            ball.vx = Math.cos(angle) * power;
+            ball.vy = Math.sin(angle) * power;
+
+            // Must go toward AI side
+            if (ball.vx > -0.5) ball.vx = -0.5;
+
+            serving = false;
+            canHit = false;
+            statusDisplay.textContent = '⏳ AI returning...';
+            beep(600, 0.06);
+            spawnParticles(ball.x, ball.y);
+        }
+
+        // ----- AI SHOT -----
+        function aiShot() {
+            if (ball.x > NET_X) return; // ball must be on AI side
+
+            // Where to send it: random spot on human's side
+            const targetX = NET_X + 40 + Math.random() * 150;
+            const targetY = 150 + Math.random() * 150;
+
+            const dx = targetX - ball.x;
+            const dy = targetY - ball.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < 5) return;
+
+            const power = Math.min(1.2, dist / 250) * 7 + 2;
+            const angle = Math.atan2(dy, dx);
+
+            ball.vx = Math.cos(angle) * power;
+            ball.vy = Math.sin(angle) * power;
+
+            // Must go toward human side
+            if (ball.vx < 0.5) ball.vx = 0.5;
+
+            rallyCount++;
+            statusDisplay.textContent = '🎾 Your turn!';
+            beep(500, 0.06);
+            spawnParticles(ball.x, ball.y);
+
+            // Allow human to hit after a short delay
+            setTimeout(() => {
+                if (!gameOver && ball.x > NET_X) {
+                    canHit = true;
+                    statusDisplay.textContent = '🎾 Click to hit!';
+                }
+            }, 150);
+        }
+
+        // ----- UPDATE -----
+        function update() {
+            if (gameOver) return;
+
+            // ---- Gravity ----
+            ball.vy += 0.2;
+
+            // ---- Move ball ----
+            ball.x += ball.vx;
+            ball.y += ball.vy;
+
+            // ---- Ground collision ----
+            if (ball.y + ball.r > GROUND) {
+                ball.y = GROUND - ball.r;
+                ball.vy = -ball.vy * 0.6;
+                // Stop bouncing if very slow
+                if (Math.abs(ball.vy) < 0.5) {
+                    ball.vy = 0;
+                }
+                beep(300, 0.02);
+            }
+
+            // ---- Net collision ----
+            if (ball.x > NET_X - 3 && ball.x < NET_X + 3) {
+                const netBottom = GROUND - NET_HEIGHT;
+                if (ball.y > netBottom) {
+                    // Hit the net!
+                    if (ball.vx > 0) {
+                        // Human side → hit net → point to AI
+                        statusDisplay.textContent = '❌ Net! Point to AI';
+                        beep(200, 0.3);
+                        setTimeout(() => {
+                            if (!gameOver) serveBall();
+                        }, 600);
+                        return;
+                    } else {
+                        // AI side → hit net → point to human
+                        score += 5;
+                        statusDisplay.textContent = '✅ AI hit the net!';
+                        beep(800, 0.15);
+                        updateUI();
+                        setTimeout(() => {
+                            if (!gameOver) serveBall();
+                        }, 600);
+                        return;
+                    }
+                }
+            }
+
+            // ---- Out of bounds ----
+            if (ball.x < -20) {
+                // AI missed → point to human
+                score += 10;
+                statusDisplay.textContent = '🎉 You win the point!';
+                beep(880, 0.2);
+                updateUI();
+                spawnParticles(10, ball.y);
+                setTimeout(() => {
+                    if (!gameOver) serveBall();
+                }, 600);
+                return;
+            }
+            if (ball.x > W + 20) {
+                // Human missed → point to AI
+                statusDisplay.textContent = '😞 AI wins the point';
+                beep(300, 0.3);
+                spawnParticles(W - 10, ball.y);
+                setTimeout(() => {
+                    if (!gameOver) serveBall();
+                }, 600);
+                return;
+            }
+
+            // ---- Ball on human side ----
+            if (ball.x > NET_X + 10 && ball.vy >= 0) {
+                // Ball has crossed to human side and is coming down
+                if (!canHit && !serving) {
+                    // Allow human to hit after ball has settled a bit
+                    setTimeout(() => {
+                        if (!gameOver && ball.x > NET_X + 10 && !canHit) {
+                            canHit = true;
+                            statusDisplay.textContent = '🎾 Click to hit!';
+                        }
+                    }, 100);
+                }
+            }
+
+            // ---- Ball on AI side ----
+            if (ball.x < NET_X - 10 && ball.vy >= 0) {
+                // Ball is on AI side – AI hits it
+                // Wait for it to come down a bit
+                if (ball.y > GROUND - 80) {
+                    aiShot();
+                }
+            }
+
+            // ---- Particles ----
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.04;
+                p.life--;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            // ---- Human can hit from serve ----
+            if (serving && canHit) {
+                if (ball.x > NET_X) {
+                    // ready to serve
+                }
+            }
+        }
+
+        // ----- DRAW -----
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+
+            // Background
+            ctx.fillStyle = '#0b0b18';
+            ctx.fillRect(0, 0, W, H);
+
+            // Ground
+            ctx.strokeStyle = '#33aa55';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, GROUND);
+            ctx.lineTo(W, GROUND);
+            ctx.stroke();
+
+            // Net
+            ctx.strokeStyle = 'rgba(200,200,200,0.5)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(NET_X, GROUND);
+            ctx.lineTo(NET_X, GROUND - NET_HEIGHT);
+            ctx.stroke();
+
+            // Net posts
+            ctx.fillStyle = 'rgba(200,200,200,0.3)';
+            ctx.fillRect(NET_X - 3, GROUND - NET_HEIGHT - 2, 6, 4);
+            ctx.fillRect(NET_X - 3, GROUND - 2, 6, 4);
+
+            // ---- AI (left) ----
+            ctx.strokeStyle = '#ff6644';
+            ctx.lineWidth = 2;
+            ctx.fillStyle = 'rgba(255,102,68,0.1)';
+            ctx.fillRect(ai.x - 8, ai.y - 12, 16, 24);
+            ctx.strokeRect(ai.x - 8, ai.y - 12, 16, 24);
+            ctx.beginPath();
+            ctx.arc(ai.x, ai.y - 16, 7, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // AI label
+            ctx.fillStyle = 'rgba(255,102,68,0.2)';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText('AI', ai.x, ai.y - 22);
+
+            // ---- HUMAN (right) ----
+            ctx.strokeStyle = '#66ddff';
+            ctx.lineWidth = 2;
+            ctx.fillStyle = 'rgba(102,221,255,0.1)';
+            ctx.fillRect(human.x - 8, human.y - 12, 16, 24);
+            ctx.strokeRect(human.x - 8, human.y - 12, 16, 24);
+            ctx.beginPath();
+            ctx.arc(human.x, human.y - 16, 7, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Human label
+            ctx.fillStyle = 'rgba(102,221,255,0.2)';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText('YOU', human.x, human.y - 22);
+
+            // ---- Aim indicator ----
+            if (canHit && ball.x > NET_X) {
+                const dx = mouseX - ball.x;
+                const dy = mouseY - ball.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist > 10) {
+                    ctx.strokeStyle = 'rgba(102,221,255,0.2)';
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([4, 6]);
+                    ctx.beginPath();
+                    ctx.moveTo(ball.x, ball.y);
+                    ctx.lineTo(mouseX, mouseY);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    // Target dot
+                    ctx.fillStyle = 'rgba(102,221,255,0.15)';
+                    ctx.beginPath();
+                    ctx.arc(mouseX, mouseY, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // ---- Ball ----
+            ctx.shadowColor = '#66ffcc';
+            ctx.shadowBlur = 18;
+            ctx.fillStyle = '#66ffcc';
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            // Bright spot
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.beginPath();
+            ctx.arc(ball.x - 2, ball.y - 2, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // ---- Particles ----
+            for (const p of particles) {
+                ctx.globalAlpha = p.life / p.maxLife;
+                ctx.fillStyle = '#66ffcc';
+                ctx.fillRect(p.x - p.r / 2, p.y - p.r / 2, p.r, p.r);
+            }
+            ctx.globalAlpha = 1;
+
+            // ---- Rally counter ----
+            ctx.fillStyle = 'rgba(255,255,255,0.06)';
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText('RALLY: ' + rallyCount, 10, GROUND - 8);
+
+            // ---- Hit indicator ----
+            if (canHit && ball.x > NET_X && !gameOver) {
+                ctx.fillStyle = 'rgba(102,221,255,0.05)';
+                ctx.fillRect(NET_X + 10, 0, W - NET_X - 10, GROUND);
+                ctx.fillStyle = 'rgba(102,221,255,0.06)';
+                ctx.font = '11px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.fillText('▲ CLICK TO HIT ▲', W / 2 + 60, 12);
+            }
+
+            // ---- Game Over ----
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.fillRect(0, 0, W, H);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#ffdd44';
+                ctx.font = 'bold 36px monospace';
+                ctx.fillText('🏆 GAME OVER', W / 2, H / 2 - 20);
+                ctx.fillStyle = '#aaccee';
+                ctx.font = '18px monospace';
+                ctx.fillText('Score: ' + score + '  |  Press New Game', W / 2, H / 2 + 40);
+            }
+
+            // ---- Serve indicator ----
+            if (serving && !gameOver) {
+                ctx.fillStyle = 'rgba(255,255,255,0.06)';
+                ctx.font = '14px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                ctx.fillText('🔄 SERVE', NET_X, GROUND - NET_HEIGHT - 10);
+            }
+        }
+
+        // ----- GAME LOOP -----
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ----- EVENTS -----
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const sx = canvas.width / rect.width;
+            const sy = canvas.height / rect.height;
+            mouseX = (e.clientX - rect.left) * sx;
+            mouseY = (e.clientY - rect.top) * sy;
+            mouseX = Math.max(0, Math.min(W, mouseX));
+            mouseY = Math.max(0, Math.min(H, mouseY));
+        });
+
+        canvas.addEventListener('click', (e) => {
+            e.preventDefault();
+            initAudio();
+            if (gameOver) return;
+            if (canHit || serving) {
+                humanShot();
+            }
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            resetGame();
+            initAudio();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'r' || e.key === 'R') resetGame();
+            if ((e.key === ' ' || e.key === 'Enter') && (canHit || serving) && !gameOver) {
+                e.preventDefault();
+                humanShot();
+            }
+        });
+
+        // Prevent scroll
+        window.addEventListener('keydown', (e) => {
+            if (['ArrowUp', 'ArrowDown', ' '].includes(e.key)) e.preventDefault();
+        });
+
+        // ----- START -----
+        resetGame();
+        gameLoop();
+    </script>
+</body>
+</html>

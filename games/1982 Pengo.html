@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pengo (1982) – Improved</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+        .game-wrapper {
+            background: #0f0f2a;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 0 60px rgba(0, 150, 255, 0.15);
+        }
+        canvas {
+            display: block;
+            background: #1a2a4a;
+            border: 3px solid #2a5a8a;
+            border-radius: 4px;
+            width: 600px;
+            height: 600px;
+            image-rendering: pixelated;
+        }
+        .info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 12px;
+            color: #7a9acf;
+            font-size: 16px;
+            padding: 0 10px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .info span { color: #ffd700; font-weight: bold; }
+        .controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        button {
+            background: #2a3a6e;
+            border: none;
+            color: #fff;
+            padding: 6px 18px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover { background: #3a5a9e; }
+        .key-hint {
+            color: #4a6a9a;
+            font-size: 13px;
+            margin-top: 8px;
+            text-align: center;
+        }
+        .key-hint kbd {
+            background: #1a1a3a;
+            padding: 2px 8px;
+            border-radius: 3px;
+            border: 1px solid #3a3a5a;
+            color: #8a9aba;
+        }
+    </style>
+</head>
+<body>
+<div class="game-wrapper">
+    <canvas id="gameCanvas" width="600" height="600"></canvas>
+    <div class="info">
+        <div>🏆 Score: <span id="scoreDisplay">0</span></div>
+        <div>❤️ Lives: <span id="livesDisplay">3</span></div>
+        <div>📈 Round: <span id="roundDisplay">1</span></div>
+        <div>🐝 Enemies: <span id="enemyDisplay">0</span></div>
+        <div class="controls">
+            <button id="restartBtn">↻ Restart</button>
+        </div>
+    </div>
+    <div class="key-hint">
+        <kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> Move & Push &nbsp;·&nbsp; <kbd>R</kbd> Restart
+    </div>
+</div>
+
+<script>
+    (function() {
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = 600, H = 600;
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const livesDisplay = document.getElementById('livesDisplay');
+        const roundDisplay = document.getElementById('roundDisplay');
+        const enemyDisplay = document.getElementById('enemyDisplay');
+
+        const COLS = 10;
+        const ROWS = 10;
+        const CELL_SIZE = W / COLS;
+
+        // Game state
+        const game = {
+            running: false,
+            over: false,
+            score: 0,
+            lives: 3,
+            round: 1,
+            enemies: [],
+            diamonds: [],
+            state: 'playing', // playing, roundComplete, gameOver
+            frameCount: 0,
+            spawnTimer: 0,
+            maxEnemies: 3,
+            enemySpeed: 1.5,
+            diamondCount: 0,
+        };
+
+        // Grid: 0 = empty, 1 = ice block, 2 = wall
+        let grid = [];
+        // Sliding blocks animation
+        let slidingBlocks = [];
+
+        // Player
+        const player = {
+            x: 1,
+            y: 1,
+            targetX: 1,
+            targetY: 1,
+            moving: false,
+            moveProgress: 0,
+            dir: 'down',
+            pixelX: 0,
+            pixelY: 0,
+            // For pushing animation
+            pushBlock: null, // {row, col, startRow, startCol, endRow, endCol, progress}
+            isPushing: false,
+        };
+
+        // ---- Grid Management ----
+
+        function createLevel(round) {
+            grid = [];
+            for (let r = 0; r < ROWS; r++) {
+                grid[r] = [];
+                for (let c = 0; c < COLS; c++) {
+                    grid[r][c] = 0;
+                }
+            }
+
+            // Walls around the border
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (r === 0 || r === ROWS-1 || c === 0 || c === COLS-1) {
+                        grid[r][c] = 2;
+                    }
+                }
+            }
+
+            // Create ice blocks in a pattern – more complex with rounds
+            const blockPositions = [
+                [2,2], [2,3], [2,4], [2,5], [2,6], [2,7],
+                [3,2], [3,7],
+                [4,2], [4,3], [4,4], [4,5], [4,6], [4,7],
+                [5,2], [5,7],
+                [6,2], [6,3], [6,4], [6,5], [6,6], [6,7],
+                [7,2], [7,3], [7,4], [7,5], [7,6], [7,7],
+            ];
+
+            // Remove some blocks based on round to make it harder
+            const removeCount = Math.min(round * 2, blockPositions.length - 6);
+            const shuffled = blockPositions.sort(() => Math.random() - 0.5);
+            const toPlace = shuffled.slice(removeCount);
+
+            for (const [r, c] of toPlace) {
+                if (r > 0 && r < ROWS-1 && c > 0 && c < COLS-1) {
+                    grid[r][c] = 1;
+                }
+            }
+
+            // Ensure player start and enemy spawn areas are clear
+            grid[1][1] = 0;
+            grid[8][8] = 0;
+            grid[8][1] = 0;
+            grid[1][8] = 0;
+        }
+
+        function isWalkable(r, c) {
+            if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return false;
+            return grid[r][c] === 0;
+        }
+
+        function isBlock(r, c) {
+            if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return false;
+            return grid[r][c] === 1;
+        }
+
+        function isWall(r, c) {
+            if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return true;
+            return grid[r][c] === 2;
+        }
+
+        // ---- Enemy Class with Pathfinding and Pushing ----
+
+        class Enemy {
+            constructor(x, y, speed) {
+                this.x = x;
+                this.y = y;
+                this.targetX = x;
+                this.targetY = y;
+                this.speed = speed;
+                this.moveTimer = 0;
+                this.dir = 'up';
+                this.alive = true;
+                this.pixelX = x * CELL_SIZE + CELL_SIZE/2;
+                this.pixelY = y * CELL_SIZE + CELL_SIZE/2;
+                this.state = 'moving'; // moving, stunned
+                this.stunTimer = 0;
+                this.isPushing = false;
+                this.pushProgress = 0;
+                this.pushBlockData = null;
+            }
+
+            update() {
+                if (!this.alive) return;
+                if (this.state === 'stunned') {
+                    this.stunTimer--;
+                    if (this.stunTimer <= 0) {
+                        this.state = 'moving';
+                    }
+                    return;
+                }
+
+                // If currently pushing a block, animate the push
+                if (this.isPushing) {
+                    this.pushProgress += 0.1;
+                    if (this.pushProgress >= 1) {
+                        this.pushProgress = 1;
+                        this.isPushing = false;
+                        // Block is already moved in grid, we just need to finish
+                        // Move enemy into the vacated cell
+                        this.x = this.pushBlockData.playerRow;
+                        this.y = this.pushBlockData.playerCol;
+                        this.pixelX = this.x * CELL_SIZE + CELL_SIZE/2;
+                        this.pixelY = this.y * CELL_SIZE + CELL_SIZE/2;
+                        this.pushBlockData = null;
+                    } else {
+                        // Interpolate enemy position between start and end
+                        const t = this.pushProgress;
+                        // Enemy moves from original position to the vacated cell
+                        const startX = (this.x) * CELL_SIZE + CELL_SIZE/2;
+                        const startY = (this.y) * CELL_SIZE + CELL_SIZE/2;
+                        const endX = this.pushBlockData.playerCol * CELL_SIZE + CELL_SIZE/2;
+                        const endY = this.pushBlockData.playerRow * CELL_SIZE + CELL_SIZE/2;
+                        this.pixelX = startX + (endX - startX) * t;
+                        this.pixelY = startY + (endY - startY) * t;
+                    }
+                    return;
+                }
+
+                // Normal movement
+                this.moveTimer -= 0.02;
+                if (this.moveTimer <= 0) {
+                    this.moveTimer = 0.5 + Math.random() * 0.3;
+                    this.chooseDirection();
+                }
+
+                // Move towards target
+                const dx = this.targetX - this.x;
+                const dy = this.targetY - this.y;
+                const dist = Math.abs(dx) + Math.abs(dy);
+
+                if (dist > 0) {
+                    let step = 0.05 * (this.speed / 1.5);
+                    if (dx > 0) { this.x += step; }
+                    else if (dx < 0) { this.x -= step; }
+                    else if (dy > 0) { this.y += step; }
+                    else if (dy < 0) { this.y -= step; }
+
+                    // Snap to grid when close
+                    if (Math.abs(this.x - Math.round(this.x)) < 0.05 && 
+                        Math.abs(this.y - Math.round(this.y)) < 0.05) {
+                        this.x = Math.round(this.x);
+                        this.y = Math.round(this.y);
+                        // If we reached target, pick new direction
+                        if (this.x === this.targetX && this.y === this.targetY) {
+                            this.chooseDirection();
+                        }
+                    }
+                }
+
+                this.pixelX = this.x * CELL_SIZE + CELL_SIZE/2;
+                this.pixelY = this.y * CELL_SIZE + CELL_SIZE/2;
+            }
+
+            chooseDirection() {
+                // Greedy pathfinding: try to move towards player
+                const playerX = player.x;
+                const playerY = player.y;
+                const dirs = [
+                    {dx: 0, dy: -1, name: 'up'},
+                    {dx: 0, dy: 1, name: 'down'},
+                    {dx: -1, dy: 0, name: 'left'},
+                    {dx: 1, dy: 0, name: 'right'}
+                ];
+
+                // Sort by distance to player
+                const sorted = dirs.map(d => {
+                    const nx = Math.round(this.x) + d.dx;
+                    const ny = Math.round(this.y) + d.dy;
+                    const dist = Math.abs(nx - playerX) + Math.abs(ny - playerY);
+                    return { ...d, nx, ny, dist };
+                }).sort((a, b) => a.dist - b.dist);
+
+                // Try each direction in order of closeness to player
+                for (const d of sorted) {
+                    if (isWalkable(d.ny, d.nx)) {
+                        this.targetX = d.nx;
+                        this.targetY = d.ny;
+                        this.dir = d.name;
+                        return;
+                    }
+                    // If not walkable, check if it's a pushable block
+                    if (isBlock(d.ny, d.nx)) {
+                        // Try to push it
+                        if (this.tryPushBlock(d.ny, d.nx, d.name)) {
+                            this.targetX = d.nx;
+                            this.targetY = d.ny;
+                            this.dir = d.name;
+                            return;
+                        }
+                    }
+                }
+
+                // Fallback: random walkable direction
+                const shuffled = dirs.sort(() => Math.random() - 0.5);
+                for (const d of shuffled) {
+                    const nx = Math.round(this.x) + d.dx;
+                    const ny = Math.round(this.y) + d.dy;
+                    if (isWalkable(ny, nx)) {
+                        this.targetX = nx;
+                        this.targetY = ny;
+                        this.dir = d.name;
+                        return;
+                    }
+                }
+                // No move possible
+                this.targetX = Math.round(this.x);
+                this.targetY = Math.round(this.y);
+            }
+
+            tryPushBlock(row, col, dir) {
+                // Direction vectors
+                const dirs = {
+                    'up': {dr: -1, dc: 0},
+                    'down': {dr: 1, dc: 0},
+                    'left': {dr: 0, dc: -1},
+                    'right': {dr: 0, dc: 1}
+                };
+                const d = dirs[dir];
+                if (!d) return false;
+
+                // Find slide end
+                let slideRow = row;
+                let slideCol = col;
+                let r = row + d.dr;
+                let c = col + d.dc;
+                let canPush = false;
+                while (r > 0 && r < ROWS-1 && c > 0 && c < COLS-1) {
+                    if (grid[r][c] === 0) {
+                        slideRow = r;
+                        slideCol = c;
+                        canPush = true;
+                        r += d.dr;
+                        c += d.dc;
+                    } else {
+                        // block or wall
+                        canPush = true;
+                        break;
+                    }
+                }
+                if (!canPush) return false;
+
+                // Move the block in grid
+                grid[row][col] = 0;
+                grid[slideRow][slideCol] = 1;
+
+                // Check if this push crushes any enemy (including itself? original: enemies are immune to their own pushes)
+                // But we'll allow crushing other enemies
+                for (const enemy of game.enemies) {
+                    if (enemy === this || !enemy.alive) continue;
+                    const eRow = Math.round(enemy.y);
+                    const eCol = Math.round(enemy.x);
+                    let crushed = false;
+                    if (d.dr !== 0) {
+                        const minR = Math.min(row, slideRow);
+                        const maxR = Math.max(row, slideRow);
+                        if (eCol === col && eRow >= minR && eRow <= maxR) {
+                            crushed = true;
+                        }
+                    } else {
+                        const minC = Math.min(col, slideCol);
+                        const maxC = Math.max(col, slideCol);
+                        if (eRow === row && eCol >= minC && eCol <= maxC) {
+                            crushed = true;
+                        }
+                    }
+                    if (crushed) {
+                        enemy.alive = false;
+                        enemy.state = 'stunned';
+                        game.score += 100;
+                        spawnDiamond();
+                        updateDisplay();
+                    }
+                }
+
+                // Now schedule enemy movement into the vacated cell (row, col)
+                this.isPushing = true;
+                this.pushProgress = 0;
+                this.pushBlockData = {
+                    playerRow: row,
+                    playerCol: col,
+                };
+                // The enemy will animate moving into that cell
+
+                return true;
+            }
+
+            draw(ctx) {
+                if (!this.alive) return;
+                const x = this.pixelX;
+                const y = this.pixelY;
+                const size = CELL_SIZE * 0.7;
+
+                ctx.save();
+                ctx.shadowColor = 'rgba(0,0,0,0.3)';
+                ctx.shadowBlur = 10;
+
+                ctx.fillStyle = this.state === 'stunned' ? '#ffaa44' : '#ffcc00';
+                ctx.strokeStyle = '#cc9900';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.ellipse(x, y, size/2, size/3, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Stripes
+                ctx.strokeStyle = '#aa7700';
+                ctx.lineWidth = 2;
+                for (let i = -2; i <= 2; i++) {
+                    const sy = y + (i * size/6);
+                    ctx.beginPath();
+                    ctx.moveTo(x - size/3, sy);
+                    ctx.lineTo(x + size/3, sy);
+                    ctx.stroke();
+                }
+
+                // Eyes
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(x - size/4, y - size/6, size/6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x + size/4, y - size/6, size/6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#222';
+                ctx.beginPath();
+                ctx.arc(x - size/4 + 2, y - size/6 + 2, size/10, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x + size/4 + 2, y - size/6 + 2, size/10, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        // ---- Diamond ----
+
+        class Diamond {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.alive = true;
+                this.pixelX = x * CELL_SIZE + CELL_SIZE/2;
+                this.pixelY = y * CELL_SIZE + CELL_SIZE/2;
+                this.bobOffset = Math.random() * Math.PI * 2;
+            }
+
+            draw(ctx) {
+                if (!this.alive) return;
+                const x = this.pixelX;
+                const y = this.pixelY + Math.sin(game.frameCount / 20 + this.bobOffset) * 3;
+                const size = CELL_SIZE * 0.4;
+
+                ctx.save();
+                ctx.shadowColor = '#00ddff';
+                ctx.shadowBlur = 15;
+                ctx.fillStyle = '#00ddff';
+                ctx.strokeStyle = '#00aacc';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x, y - size);
+                ctx.lineTo(x + size, y);
+                ctx.lineTo(x, y + size);
+                ctx.lineTo(x - size, y);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.beginPath();
+                ctx.moveTo(x - size/3, y - size/3);
+                ctx.lineTo(x, y - size/2);
+                ctx.lineTo(x + size/4, y - size/4);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        // ---- Game Logic ----
+
+        function spawnEnemies() {
+            const spawnPoints = [
+                [8, 8],
+                [8, 1],
+                [1, 8]
+            ];
+            const count = Math.min(game.maxEnemies, spawnPoints.length);
+            const shuffled = spawnPoints.sort(() => Math.random() - 0.5);
+            for (let i = 0; i < count; i++) {
+                const [r, c] = shuffled[i];
+                if (isWalkable(r, c)) {
+                    const enemy = new Enemy(c, r, game.enemySpeed);
+                    game.enemies.push(enemy);
+                }
+            }
+        }
+
+        function spawnDiamond() {
+            const empty = [];
+            for (let r = 1; r < ROWS-1; r++) {
+                for (let c = 1; c < COLS-1; c++) {
+                    if (grid[r][c] === 0) {
+                        let occupied = false;
+                        if (Math.round(player.y) === r && Math.round(player.x) === c) occupied = true;
+                        for (const e of game.enemies) {
+                            if (e.alive && Math.round(e.y) === r && Math.round(e.x) === c) occupied = true;
+                        }
+                        if (!occupied) {
+                            empty.push([r, c]);
+                        }
+                    }
+                }
+            }
+            if (empty.length > 0) {
+                const [r, c] = empty[Math.floor(Math.random() * empty.length)];
+                const diamond = new Diamond(c, r);
+                game.diamonds.push(diamond);
+            }
+        }
+
+        // ---- Player Push with Animation ----
+
+        function pushBlock(row, col, dir) {
+            const dirs = {
+                'up': {dr: -1, dc: 0},
+                'down': {dr: 1, dc: 0},
+                'left': {dr: 0, dc: -1},
+                'right': {dr: 0, dc: 1}
+            };
+            const d = dirs[dir];
+            if (!d) return false;
+
+            if (!isBlock(row, col)) return false;
+
+            // Find slide end
+            let slideRow = row;
+            let slideCol = col;
+            let r = row + d.dr;
+            let c = col + d.dc;
+            let canPush = false;
+            while (r > 0 && r < ROWS-1 && c > 0 && c < COLS-1) {
+                if (grid[r][c] === 0) {
+                    slideRow = r;
+                    slideCol = c;
+                    canPush = true;
+                    r += d.dr;
+                    c += d.dc;
+                } else {
+                    canPush = true;
+                    break;
+                }
+            }
+            if (!canPush) return false;
+
+            // Move the block in grid
+            grid[row][col] = 0;
+            grid[slideRow][slideCol] = 1;
+
+            // Crush enemies in path
+            for (const enemy of game.enemies) {
+                if (!enemy.alive) continue;
+                const eRow = Math.round(enemy.y);
+                const eCol = Math.round(enemy.x);
+                let crushed = false;
+                if (d.dr !== 0) {
+                    const minR = Math.min(row, slideRow);
+                    const maxR = Math.max(row, slideRow);
+                    if (eCol === col && eRow >= minR && eRow <= maxR) {
+                        crushed = true;
+                    }
+                } else {
+                    const minC = Math.min(col, slideCol);
+                    const maxC = Math.max(col, slideCol);
+                    if (eRow === row && eCol >= minC && eCol <= maxC) {
+                        crushed = true;
+                    }
+                }
+                if (crushed) {
+                    enemy.alive = false;
+                    enemy.state = 'stunned';
+                    game.score += 100;
+                    spawnDiamond();
+                    updateDisplay();
+                }
+            }
+
+            // Animate player and block
+            // Player moves into the vacated cell (row, col)
+            player.pushBlock = {
+                startRow: player.y,
+                startCol: player.x,
+                endRow: row,
+                endCol: col,
+                progress: 0
+            };
+            player.isPushing = true;
+            player.moving = false; // override regular movement
+
+            // Block sliding will be handled in update via slidingBlocks array
+            // We'll add the block to slidingBlocks
+            slidingBlocks.push({
+                startRow: row,
+                startCol: col,
+                endRow: slideRow,
+                endCol: slideCol,
+                progress: 0,
+                speed: 0.08, // per frame
+                dir: dir
+            });
+
+            // Also we need to ensure the player's position in grid is not updated until animation completes
+            // So we keep player.x, player.y as old values until animation finishes
+
+            return true;
+        }
+
+        // ---- Player Movement ----
+
+        function movePlayer(dx, dy, dir) {
+            if (player.moving || player.isPushing || game.state !== 'playing' || game.over) return;
+            const newX = player.x + dx;
+            const newY = player.y + dy;
+            if (!isWalkable(newY, newX)) {
+                if (isBlock(newY, newX)) {
+                    if (pushBlock(newY, newX, dir)) {
+                        // pushBlock handles animation
+                    }
+                }
+                return;
+            }
+            // Simple move
+            player.targetX = newX;
+            player.targetY = newY;
+            player.dir = dir;
+            player.moving = true;
+            player.moveProgress = 0;
+        }
+
+        // ---- Update ----
+
+        function update() {
+            if (!game.running || game.over || game.state === 'roundComplete') return;
+
+            game.frameCount++;
+
+            // ---- Update sliding blocks ----
+            for (let i = slidingBlocks.length - 1; i >= 0; i--) {
+                const sb = slidingBlocks[i];
+                sb.progress += sb.speed;
+                if (sb.progress >= 1) {
+                    sb.progress = 1;
+                    slidingBlocks.splice(i, 1);
+                }
+            }
+
+            // ---- Update player animation ----
+            if (player.moving && !player.isPushing) {
+                player.moveProgress += 0.1;
+                if (player.moveProgress >= 1) {
+                    player.moveProgress = 1;
+                    player.moving = false;
+                    player.x = player.targetX;
+                    player.y = player.targetY;
+                    player.pixelX = player.x * CELL_SIZE + CELL_SIZE/2;
+                    player.pixelY = player.y * CELL_SIZE + CELL_SIZE/2;
+                    // Check collisions after move
+                    if (checkEnemyCollision()) {
+                        loseLife();
+                        return;
+                    }
+                    checkDiamondCollection();
+                    checkRoundComplete();
+                } else {
+                    const t = player.moveProgress;
+                    const startX = (player.x) * CELL_SIZE + CELL_SIZE/2;
+                    const startY = (player.y) * CELL_SIZE + CELL_SIZE/2;
+                    const endX = player.targetX * CELL_SIZE + CELL_SIZE/2;
+                    const endY = player.targetY * CELL_SIZE + CELL_SIZE/2;
+                    player.pixelX = startX + (endX - startX) * t;
+                    player.pixelY = startY + (endY - startY) * t;
+                }
+            }
+
+            // ---- Player push animation ----
+            if (player.isPushing) {
+                player.pushBlock.progress += 0.1;
+                if (player.pushBlock.progress >= 1) {
+                    player.pushBlock.progress = 1;
+                    player.isPushing = false;
+                    player.x = player.pushBlock.endRow;
+                    player.y = player.pushBlock.endCol;
+                    player.pixelX = player.x * CELL_SIZE + CELL_SIZE/2;
+                    player.pixelY = player.y * CELL_SIZE + CELL_SIZE/2;
+                    player.pushBlock = null;
+                    // Check collisions after push
+                    if (checkEnemyCollision()) {
+                        loseLife();
+                        return;
+                    }
+                    checkDiamondCollection();
+                    checkRoundComplete();
+                } else {
+                    const t = player.pushBlock.progress;
+                    const startX = player.pushBlock.startCol * CELL_SIZE + CELL_SIZE/2;
+                    const startY = player.pushBlock.startRow * CELL_SIZE + CELL_SIZE/2;
+                    const endX = player.pushBlock.endCol * CELL_SIZE + CELL_SIZE/2;
+                    const endY = player.pushBlock.endRow * CELL_SIZE + CELL_SIZE/2;
+                    player.pixelX = startX + (endX - startX) * t;
+                    player.pixelY = startY + (endY - startY) * t;
+                }
+            }
+
+            // ---- Update enemies ----
+            for (const enemy of game.enemies) {
+                enemy.update();
+            }
+
+            // ---- Check enemy-player collisions (if not animating) ----
+            if (!player.moving && !player.isPushing) {
+                if (checkEnemyCollision()) {
+                    loseLife();
+                    return;
+                }
+                checkDiamondCollection();
+            }
+
+            // ---- Spawn diamonds ----
+            game.spawnTimer++;
+            if (game.spawnTimer > 300 && game.diamonds.length < 3) {
+                spawnDiamond();
+                game.spawnTimer = 0;
+            }
+
+            // ---- Check round complete ----
+            checkRoundComplete();
+
+            // Update enemy count display
+            const alive = game.enemies.filter(e => e.alive);
+            enemyDisplay.textContent = alive.length;
+            updateDisplay();
+        }
+
+        function checkEnemyCollision() {
+            // Only if player is on grid
+            const px = Math.round(player.x);
+            const py = Math.round(player.y);
+            for (const enemy of game.enemies) {
+                if (!enemy.alive) continue;
+                const ex = Math.round(enemy.x);
+                const ey = Math.round(enemy.y);
+                if (px === ex && py === ey) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function checkDiamondCollection() {
+            const px = Math.round(player.x);
+            const py = Math.round(player.y);
+            for (const diamond of game.diamonds) {
+                if (!diamond.alive) continue;
+                if (px === diamond.x && py === diamond.y) {
+                    diamond.alive = false;
+                    game.score += 200;
+                    updateDisplay();
+                }
+            }
+        }
+
+        function checkRoundComplete() {
+            const alive = game.enemies.filter(e => e.alive);
+            if (alive.length === 0 && !player.isPushing && slidingBlocks.length === 0) {
+                game.state = 'roundComplete';
+                game.score += 500;
+                setTimeout(() => {
+                    nextRound();
+                }, 1500);
+                return true;
+            }
+            return false;
+        }
+
+        function nextRound() {
+            game.round++;
+            game.maxEnemies = Math.min(3 + Math.floor(game.round / 2), 8);
+            game.enemySpeed = 1.5 + (game.round - 1) * 0.2;
+            game.enemies = [];
+            game.diamonds = [];
+            game.state = 'playing';
+            slidingBlocks = [];
+            createLevel(game.round);
+            player.x = 1;
+            player.y = 1;
+            player.pixelX = CELL_SIZE + CELL_SIZE/2;
+            player.pixelY = CELL_SIZE + CELL_SIZE/2;
+            player.targetX = 1;
+            player.targetY = 1;
+            player.moving = false;
+            player.isPushing = false;
+            player.pushBlock = null;
+            spawnEnemies();
+            updateDisplay();
+        }
+
+        function loseLife() {
+            game.lives--;
+            if (game.lives <= 0) {
+                game.over = true;
+                game.state = 'gameOver';
+            } else {
+                // Reset positions
+                player.x = 1;
+                player.y = 1;
+                player.pixelX = CELL_SIZE + CELL_SIZE/2;
+                player.pixelY = CELL_SIZE + CELL_SIZE/2;
+                player.moving = false;
+                player.isPushing = false;
+                player.pushBlock = null;
+                slidingBlocks = [];
+                game.enemies = [];
+                game.diamonds = [];
+                spawnEnemies();
+            }
+            updateDisplay();
+        }
+
+        // ---- Draw ----
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+
+            // Draw grid
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const x = c * CELL_SIZE;
+                    const y = r * CELL_SIZE;
+                    if (grid[r][c] === 2) {
+                        ctx.fillStyle = '#2a3a5a';
+                        ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+                        ctx.strokeStyle = '#3a4a6a';
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(x, y, CELL_SIZE, CELL_SIZE);
+                    } else if (grid[r][c] === 1) {
+                        // Check if this block is currently sliding
+                        let isSliding = false;
+                        for (const sb of slidingBlocks) {
+                            if (sb.startRow === r && sb.startCol === c) {
+                                // Draw block at interpolated position
+                                const t = sb.progress;
+                                const startX = sb.startCol * CELL_SIZE;
+                                const startY = sb.startRow * CELL_SIZE;
+                                const endX = sb.endCol * CELL_SIZE;
+                                const endY = sb.endRow * CELL_SIZE;
+                                const bx = startX + (endX - startX) * t;
+                                const by = startY + (endY - startY) * t;
+                                drawIceBlock(ctx, bx, by, CELL_SIZE);
+                                isSliding = true;
+                                break;
+                            }
+                        }
+                        if (!isSliding) {
+                            drawIceBlock(ctx, x, y, CELL_SIZE);
+                        }
+                    } else {
+                        ctx.fillStyle = '#1a3a5a';
+                        ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+                        ctx.strokeStyle = 'rgba(42, 90, 138, 0.2)';
+                        ctx.lineWidth = 0.5;
+                        ctx.strokeRect(x, y, CELL_SIZE, CELL_SIZE);
+                    }
+                }
+            }
+
+            // Draw diamonds
+            for (const diamond of game.diamonds) {
+                diamond.draw(ctx);
+            }
+
+            // Draw enemies
+            for (const enemy of game.enemies) {
+                enemy.draw(ctx);
+            }
+
+            // Draw player
+            drawPengo(ctx);
+
+            // Round complete / game over messages
+            if (game.state === 'roundComplete') {
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.fillRect(0, 0, W, H);
+                ctx.fillStyle = '#4f4';
+                ctx.font = 'bold 48px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.shadowColor = '#4f4';
+                ctx.shadowBlur = 30;
+                ctx.fillText('ROUND COMPLETE!', W/2, H/2);
+                ctx.shadowBlur = 0;
+            }
+
+            if (game.over) {
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.fillRect(0, 0, W, H);
+                ctx.fillStyle = '#f44';
+                ctx.font = 'bold 48px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.shadowColor = '#f44';
+                ctx.shadowBlur = 40;
+                ctx.fillText('GAME OVER', W/2, H/2 - 20);
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#ffd700';
+                ctx.font = '24px "Courier New", monospace';
+                ctx.fillText(`Score: ${game.score}`, W/2, H/2 + 40);
+                ctx.fillStyle = '#4a6a9a';
+                ctx.font = '16px "Courier New", monospace';
+                ctx.fillText('Press RESTART or R', W/2, H/2 + 80);
+            }
+
+            // HUD
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.fillRect(0, 0, W, 25);
+            ctx.fillStyle = '#7a9acf';
+            ctx.font = '14px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(`Round ${game.round}`, 10, 18);
+            const alive = game.enemies.filter(e => e.alive);
+            ctx.textAlign = 'right';
+            ctx.fillText(`Enemies: ${alive.length}`, W - 10, 18);
+        }
+
+        function drawIceBlock(ctx, x, y, size) {
+            const grad = ctx.createLinearGradient(x, y, x + size, y + size);
+            grad.addColorStop(0, '#4a8ab5');
+            grad.addColorStop(0.5, '#5a9ac5');
+            grad.addColorStop(1, '#3a7aa5');
+            ctx.fillStyle = grad;
+            ctx.fillRect(x, y, size, size);
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
+            ctx.fillRect(x + 2, y + 2, size - 4, 4);
+            ctx.fillRect(x + 2, y + 2, 4, size - 4);
+            ctx.strokeStyle = '#2a6a8a';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, size, size);
+        }
+
+        function drawPengo(ctx) {
+            const x = player.pixelX;
+            const y = player.pixelY;
+            const size = CELL_SIZE * 0.7;
+
+            ctx.save();
+            ctx.shadowColor = 'rgba(0,0,0,0.3)';
+            ctx.shadowBlur = 10;
+
+            ctx.fillStyle = '#222';
+            ctx.beginPath();
+            ctx.ellipse(x, y + size/6, size/2, size/2.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.ellipse(x, y + size/6, size/3.5, size/3, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#222';
+            ctx.beginPath();
+            ctx.arc(x, y - size/4, size/3, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(x - size/5, y - size/3, size/6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x + size/5, y - size/3, size/6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#222';
+            ctx.beginPath();
+            ctx.arc(x - size/5 + 2, y - size/3 + 2, size/10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x + size/5 + 2, y - size/3 + 2, size/10, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#ff8800';
+            ctx.beginPath();
+            ctx.moveTo(x, y - size/6);
+            ctx.lineTo(x - size/6, y - size/8);
+            ctx.lineTo(x + size/6, y - size/8);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = '#222';
+            ctx.beginPath();
+            ctx.ellipse(x - size/2, y, size/6, size/4, -0.3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(x + size/2, y, size/6, size/4, 0.3, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#ff8800';
+            ctx.beginPath();
+            ctx.ellipse(x - size/4, y + size/2, size/5, size/8, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(x + size/4, y + size/2, size/5, size/8, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        // ---- Display ----
+
+        function updateDisplay() {
+            scoreDisplay.textContent = game.score;
+            livesDisplay.textContent = game.lives;
+            roundDisplay.textContent = game.round;
+            const alive = game.enemies.filter(e => e.alive);
+            enemyDisplay.textContent = alive.length;
+        }
+
+        // ---- Input ----
+
+        const keyState = {};
+
+        document.addEventListener('keydown', (e) => {
+            const key = e.key;
+            if (!keyState[key]) {
+                keyState[key] = true;
+            }
+            if (key === 'r' || key === 'R') {
+                resetGame();
+            }
+            if (game.over || game.state === 'roundComplete') return;
+            if (key === 'ArrowUp') {
+                e.preventDefault();
+                movePlayer(0, -1, 'up');
+            } else if (key === 'ArrowDown') {
+                e.preventDefault();
+                movePlayer(0, 1, 'down');
+            } else if (key === 'ArrowLeft') {
+                e.preventDefault();
+                movePlayer(-1, 0, 'left');
+            } else if (key === 'ArrowRight') {
+                e.preventDefault();
+                movePlayer(1, 0, 'right');
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keyState[e.key] = false;
+        });
+
+        // ---- Game Loop ----
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ---- Reset ----
+
+        function resetGame() {
+            game.running = true;
+            game.over = false;
+            game.score = 0;
+            game.lives = 3;
+            game.round = 1;
+            game.enemies = [];
+            game.diamonds = [];
+            game.state = 'playing';
+            game.frameCount = 0;
+            game.spawnTimer = 0;
+            game.maxEnemies = 3;
+            game.enemySpeed = 1.5;
+            slidingBlocks = [];
+            createLevel(game.round);
+            player.x = 1;
+            player.y = 1;
+            player.targetX = 1;
+            player.targetY = 1;
+            player.moving = false;
+            player.moveProgress = 0;
+            player.pixelX = CELL_SIZE + CELL_SIZE/2;
+            player.pixelY = CELL_SIZE + CELL_SIZE/2;
+            player.dir = 'down';
+            player.isPushing = false;
+            player.pushBlock = null;
+            spawnEnemies();
+            updateDisplay();
+        }
+
+        // ---- Init ----
+
+        resetGame();
+        gameLoop();
+
+        document.getElementById('restartBtn').addEventListener('click', resetGame);
+
+        console.log('Pengo – Improved with smooth sliding, enemy AI, and pushing');
+    })();
+</script>
+</body>
+</html>

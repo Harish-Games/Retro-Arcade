@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qix – Edge Traversal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+        .game-wrapper {
+            background: #0f0f2a;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 0 60px rgba(0, 150, 255, 0.15);
+        }
+        canvas {
+            display: block;
+            background: #050510;
+            border: 3px solid #2a3a6e;
+            border-radius: 4px;
+            width: 600px;
+            height: 600px;
+        }
+        .info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 12px;
+            color: #7a9acf;
+            font-size: 16px;
+            padding: 0 10px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .info span { color: #ffd700; font-weight: bold; }
+        .controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        button {
+            background: #2a3a6e;
+            border: none;
+            color: #fff;
+            padding: 6px 18px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover { background: #3a5a9e; }
+        .key-hint {
+            color: #4a6a9a;
+            font-size: 13px;
+            margin-top: 8px;
+            text-align: center;
+        }
+        .key-hint kbd {
+            background: #1a1a3a;
+            padding: 2px 8px;
+            border-radius: 3px;
+            border: 1px solid #3a3a5a;
+            color: #8a9aba;
+        }
+    </style>
+</head>
+<body>
+<div class="game-wrapper">
+    <canvas id="gameCanvas" width="600" height="600"></canvas>
+    <div class="info">
+        <div>🏆 Score: <span id="scoreDisplay">0</span></div>
+        <div>📊 Claimed: <span id="percentDisplay">0</span>%</div>
+        <div>❤️ Lives: <span id="livesDisplay">3</span></div>
+        <div>📈 Level: <span id="levelDisplay">1</span></div>
+        <div class="controls">
+            <button id="restartBtn">↻ Restart</button>
+        </div>
+    </div>
+    <div class="key-hint">
+        <kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> Move on edges &nbsp;·&nbsp; <kbd>Space</kbd> Start line &nbsp;·&nbsp; hold <kbd>Shift</kbd> while drawing to go fast (worth less) &nbsp;·&nbsp; reconnect to the border to capture
+    </div>
+</div>
+
+<script>
+    (function() {
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = 600, H = 600;
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const percentDisplay = document.getElementById('percentDisplay');
+        const livesDisplay = document.getElementById('livesDisplay');
+        const levelDisplay = document.getElementById('levelDisplay');
+
+        const BORDER = 20;
+        const PLAY_LEFT = BORDER;
+        const PLAY_TOP = BORDER;
+        const PLAY_RIGHT = W - BORDER;
+        const PLAY_BOTTOM = H - BORDER;
+        const PLAY_WIDTH = PLAY_RIGHT - PLAY_LEFT;
+        const PLAY_HEIGHT = PLAY_BOTTOM - PLAY_TOP;
+
+        const CELL_SIZE = 8; // evenly divides PLAY_WIDTH/PLAY_HEIGHT (560) so the grid reaches every edge exactly
+        const COLS = PLAY_WIDTH / CELL_SIZE;
+        const ROWS = PLAY_HEIGHT / CELL_SIZE;
+
+        // Game state
+        const game = {
+            running: false,
+            over: false,
+            score: 0,
+            lives: 3,
+            level: 1,
+            claimedPercent: 0,
+            nextBonusLife: 4000,
+        };
+
+        // Edge graph
+        let edgeGraph = {
+            vertices: [],
+            edges: []
+        };
+
+        // Player state
+        const player = {
+            x: PLAY_LEFT,
+            y: PLAY_TOP,
+            currentEdgeIndex: -1,
+            positionOnEdge: 0,
+            drawing: false,
+            drawLine: [],
+            fastDraw: false,
+            invulnerable: 0,
+        };
+
+        const qix = {
+            x: PLAY_LEFT + PLAY_WIDTH/2,
+            y: PLAY_TOP + PLAY_HEIGHT/2,
+            vx: 1.2,
+            vy: 0.8,
+            radius: 8,
+            trail: [],
+            maxTrail: 20,
+        };
+
+        let sparx = [];
+        let messages = [];
+        let claimed = [];
+
+        // ---- Edge Graph Management ----
+
+        function buildEdgeGraph() {
+            const vertices = [];
+            const edges = [];
+            const vertexMap = new Map();
+
+            function getVertex(x, y) {
+                const key = `${Math.round(x)},${Math.round(y)}`;
+                if (vertexMap.has(key)) return vertexMap.get(key);
+                const idx = vertices.length;
+                const v = { x: Math.round(x), y: Math.round(y), edges: [] };
+                vertices.push(v);
+                vertexMap.set(key, idx);
+                return idx;
+            }
+
+            // Add edges from claimed cells (boundary edges)
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (claimed[r][c] !== 1) continue;
+
+                    const x = PLAY_LEFT + c * CELL_SIZE;
+                    const y = PLAY_TOP + r * CELL_SIZE;
+
+                    const neighbors = [
+                        { dr: -1, dc: 0, x1: x, y1: y, x2: x + CELL_SIZE, y2: y },
+                        { dr: 0, dc: 1, x1: x + CELL_SIZE, y1: y, x2: x + CELL_SIZE, y2: y + CELL_SIZE },
+                        { dr: 1, dc: 0, x1: x, y1: y + CELL_SIZE, x2: x + CELL_SIZE, y2: y + CELL_SIZE },
+                        { dr: 0, dc: -1, x1: x, y1: y, x2: x, y2: y + CELL_SIZE }
+                    ];
+
+                    for (const n of neighbors) {
+                        const nr = r + n.dr;
+                        const nc = c + n.dc;
+                        if (!isInBounds(nc, nr) || claimed[nr][nc] !== 1) {
+                            let exists = false;
+                            for (const e of edges) {
+                                if (Math.abs(e.x1 - n.x1) < 0.1 && Math.abs(e.y1 - n.y1) < 0.1 &&
+                                    Math.abs(e.x2 - n.x2) < 0.1 && Math.abs(e.y2 - n.y2) < 0.1) {
+                                    exists = true;
+                                    break;
+                                }
+                            }
+                            if (!exists) {
+                                const v1 = getVertex(n.x1, n.y1);
+                                const v2 = getVertex(n.x2, n.y2);
+                                const isHorizontal = Math.abs(n.y1 - n.y2) < 0.1;
+                                // An edge is part of the outer boundary if it runs along
+                                // the actual play-field perimeter.
+                                const isOuter =
+                                    (isHorizontal && (Math.abs(n.y1 - PLAY_TOP) < 0.1 || Math.abs(n.y1 - PLAY_BOTTOM) < 0.1)) ||
+                                    (!isHorizontal && (Math.abs(n.x1 - PLAY_LEFT) < 0.1 || Math.abs(n.x1 - PLAY_RIGHT) < 0.1));
+                                const edgeIdx = edges.length;
+                                edges.push({
+                                    v1, v2,
+                                    x1: n.x1, y1: n.y1,
+                                    x2: n.x2, y2: n.y2,
+                                    isHorizontal,
+                                    isOuter
+                                });
+                                vertices[v1].edges.push(edgeIdx);
+                                vertices[v2].edges.push(edgeIdx);
+                            }
+                        }
+                    }
+                }
+            }
+
+            edgeGraph.vertices = vertices;
+            edgeGraph.edges = edges;
+        }
+
+        function findEdgeAtPoint(x, y, maxDist = 6) {
+            let bestEdge = -1;
+            let bestDist = maxDist;
+
+            for (let i = 0; i < edgeGraph.edges.length; i++) {
+                const e = edgeGraph.edges[i];
+                const dist = pointToSegmentDist(x, y, e.x1, e.y1, e.x2, e.y2);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestEdge = i;
+                }
+            }
+
+            return bestEdge;
+        }
+
+        function pointToSegmentDist(px, py, x1, y1, x2, y2) {
+            const dx = x2 - x1, dy = y2 - y1;
+            const lenSq = dx * dx + dy * dy;
+            if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+            let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+            t = Math.max(0, Math.min(1, t));
+            const projX = x1 + t * dx;
+            const projY = y1 + t * dy;
+            return Math.hypot(px - projX, py - projY);
+        }
+
+        function getPositionOnEdge(edgeIdx, t) {
+            const e = edgeGraph.edges[edgeIdx];
+            return {
+                x: e.x1 + (e.x2 - e.x1) * t,
+                y: e.y1 + (e.y2 - e.y1) * t
+            };
+        }
+
+        // Returns the t (0-1) value of the closest point on an edge to (x,y) -
+        // used to snap the player to their true position instead of a fixed point.
+        function projectOntoEdge(edgeIdx, x, y) {
+            const e = edgeGraph.edges[edgeIdx];
+            const dx = e.x2 - e.x1, dy = e.y2 - e.y1;
+            const lenSq = dx * dx + dy * dy;
+            if (lenSq === 0) return 0;
+            let t = ((x - e.x1) * dx + (y - e.y1) * dy) / lenSq;
+            return Math.max(0, Math.min(1, t));
+        }
+
+        // True if (x,y) is at or adjacent to already-claimed territory (the
+        // border, or any previously captured shape). Used to detect when a
+        // drawn line has reconnected to the boundary, which is the only time
+        // a capture is allowed to complete - matching the original arcade
+        // rule that a line must run from boundary to boundary.
+        function touchesClaimedArea(x, y) {
+            const samples = [[0,0],[3,0],[-3,0],[0,3],[0,-3]];
+            for (const [dx, dy] of samples) {
+                if (isClaimed(x + dx, y + dy)) return true;
+            }
+            return false;
+        }
+
+        function getNeighborEdges(edgeIdx, vertexIdx) {
+            const v = edgeGraph.vertices[vertexIdx];
+            return v.edges.filter(idx => idx !== edgeIdx);
+        }
+
+        function getOtherVertex(edgeIdx, vertexIdx) {
+            const e = edgeGraph.edges[edgeIdx];
+            return e.v1 === vertexIdx ? e.v2 : e.v1;
+        }
+
+        function findNextEdge(edgeIdx, vertexIdx, direction) {
+            const neighbors = getNeighborEdges(edgeIdx, vertexIdx);
+            if (neighbors.length === 0) return -1;
+            if (neighbors.length === 1) return neighbors[0];
+
+            const vertex = edgeGraph.vertices[vertexIdx];
+            let bestEdge = -1;
+            let bestDot = -Infinity;
+
+            for (const nIdx of neighbors) {
+                const n = edgeGraph.edges[nIdx];
+                const otherV = n.v1 === vertexIdx ? n.v2 : n.v1;
+                const otherPos = edgeGraph.vertices[otherV];
+                
+                const dx = otherPos.x - vertex.x;
+                const dy = otherPos.y - vertex.y;
+                const len = Math.hypot(dx, dy);
+                if (len === 0) continue;
+
+                const nx = dx / len;
+                const ny = dy / len;
+
+                let mx = 0, my = 0;
+                if (direction === 'up') my = -1;
+                else if (direction === 'down') my = 1;
+                else if (direction === 'left') mx = -1;
+                else if (direction === 'right') mx = 1;
+
+                const dot = nx * mx + ny * my;
+                if (dot > bestDot) {
+                    bestDot = dot;
+                    bestEdge = nIdx;
+                }
+            }
+
+            return bestEdge;
+        }
+
+        // Wall-following rule used by Sparx: at a junction, always take the
+        // most clockwise available turn relative to the direction it arrived
+        // from. This makes each Sparx trace a continuous, consistent patrol
+        // around whatever the current boundary shape is - including the
+        // edges of territory the player has just captured - rather than
+        // being locked to the original outer rectangle.
+        function findWallFollowEdge(edgeIdx, vertexIdx, inDx, inDy) {
+            const neighbors = getNeighborEdges(edgeIdx, vertexIdx);
+            if (neighbors.length === 0) return edgeIdx;
+            if (neighbors.length === 1) return neighbors[0];
+
+            const vertex = edgeGraph.vertices[vertexIdx];
+            const inAngle = Math.atan2(inDy, inDx);
+            let best = neighbors[0], bestTurn = Infinity;
+
+            for (const nIdx of neighbors) {
+                const n = edgeGraph.edges[nIdx];
+                const otherV = n.v1 === vertexIdx ? n.v2 : n.v1;
+                const op = edgeGraph.vertices[otherV];
+                const outAngle = Math.atan2(op.y - vertex.y, op.x - vertex.x);
+                const turn = ((outAngle - inAngle) + Math.PI * 3) % (Math.PI * 2);
+                if (turn < bestTurn) { bestTurn = turn; best = nIdx; }
+            }
+            return best;
+        }
+
+        // Advance a Sparx one frame along the current edge graph.
+        function advanceSparx(s) {
+            if (s.edgeIndex < 0 || s.edgeIndex >= edgeGraph.edges.length) {
+                s.edgeIndex = findEdgeAtPoint(s.x, s.y, Infinity);
+                if (s.edgeIndex < 0) return;
+                s.t = projectOntoEdge(s.edgeIndex, s.x, s.y);
+                s.dir = 1;
+            }
+            const e = edgeGraph.edges[s.edgeIndex];
+            const len = Math.hypot(e.x2 - e.x1, e.y2 - e.y1) || 1;
+            let newT = s.t + s.dir * (s.speed / len);
+
+            if (newT >= 1 || newT <= 0) {
+                const atV2 = newT >= 1;
+                const vertexIdx = atV2 ? e.v2 : e.v1;
+                const inDx = s.dir > 0 ? (e.x2 - e.x1) : (e.x1 - e.x2);
+                const inDy = s.dir > 0 ? (e.y2 - e.y1) : (e.y1 - e.y2);
+                const nextEdge = findWallFollowEdge(s.edgeIndex, vertexIdx, inDx, inDy);
+                s.edgeIndex = nextEdge;
+                const ne = edgeGraph.edges[nextEdge];
+                s.dir = ne.v1 === vertexIdx ? 1 : -1;
+                s.t = ne.v1 === vertexIdx ? 0 : 1;
+            } else {
+                s.t = newT;
+            }
+            const pos = getPositionOnEdge(s.edgeIndex, s.t);
+            s.x = pos.x;
+            s.y = pos.y;
+        }
+
+        // Re-anchor every Sparx onto the rebuilt edge graph after a capture
+        // changes the boundary shape (edge indices are not stable across a
+        // rebuild).
+        function resnapSparx() {
+            for (const s of sparx) {
+                const idx = findEdgeAtPoint(s.x, s.y, Infinity);
+                if (idx >= 0) {
+                    s.edgeIndex = idx;
+                    s.t = projectOntoEdge(idx, s.x, s.y);
+                }
+            }
+        }
+
+        // ---- Claimed Grid Management ----
+
+        function initClaimed() {
+            claimed = [];
+            for (let r = 0; r < ROWS; r++) {
+                claimed[r] = [];
+                for (let c = 0; c < COLS; c++) {
+                    // Index-based check (not pixel thresholds) so every side of the
+                    // field is marked identically regardless of grid rounding.
+                    if (c === 0 || c === COLS - 1 || r === 0 || r === ROWS - 1) {
+                        claimed[r][c] = 1;
+                    } else {
+                        claimed[r][c] = 0;
+                    }
+                }
+            }
+            buildEdgeGraph();
+            updatePercent();
+        }
+
+        function worldToGrid(wx, wy) {
+            const c = Math.floor((wx - PLAY_LEFT) / CELL_SIZE);
+            const r = Math.floor((wy - PLAY_TOP) / CELL_SIZE);
+            return { c, r };
+        }
+
+        function isInBounds(c, r) {
+            return c >= 0 && c < COLS && r >= 0 && r < ROWS;
+        }
+
+        function isClaimed(wx, wy) {
+            const { c, r } = worldToGrid(wx, wy);
+            return isInBounds(c, r) && claimed[r][c] === 1;
+        }
+
+        // ---- Claim Area ----
+
+        function claimArea(linePoints) {
+            const grid = claimed.map(row => [...row]);
+
+            for (const p of linePoints) {
+                const { c, r } = worldToGrid(p.x, p.y);
+                if (isInBounds(c, r)) grid[r][c] = 1;
+            }
+            for (let i = 0; i < linePoints.length - 1; i++) {
+                const p1 = linePoints[i], p2 = linePoints[i+1];
+                const steps = Math.max(Math.abs(p2.x - p1.x), Math.abs(p2.y - p1.y)) / 2;
+                for (let t = 0; t <= 1; t += 1/steps) {
+                    const x = p1.x + (p2.x - p1.x) * t;
+                    const y = p1.y + (p2.y - p1.y) * t;
+                    const { c, r } = worldToGrid(x, y);
+                    if (isInBounds(c, r)) grid[r][c] = 1;
+                }
+            }
+
+            // Flood fill from Qix
+            const qixC = Math.min(Math.max(Math.floor((qix.x - PLAY_LEFT) / CELL_SIZE), 0), COLS-1);
+            const qixR = Math.min(Math.max(Math.floor((qix.y - PLAY_TOP) / CELL_SIZE), 0), ROWS-1);
+            const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+            const queue = [{c: qixC, r: qixR}];
+            visited[qixR][qixC] = true;
+
+            while (queue.length > 0) {
+                const {c, r} = queue.shift();
+                const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+                for (const [dc, dr] of dirs) {
+                    const nc = c+dc, nr = r+dr;
+                    if (isInBounds(nc, nr) && !visited[nr][nc] && grid[nr][nc] === 0) {
+                        visited[nr][nc] = true;
+                        queue.push({c: nc, r: nr});
+                    }
+                }
+            }
+
+            let newlyClaimed = 0;
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (claimed[r][c] === 0 && !visited[r][c]) {
+                        claimed[r][c] = 1;
+                        newlyClaimed++;
+                    }
+                }
+            }
+
+            game.score += newlyClaimed * (player.fastDraw ? 1 : 2);
+            buildEdgeGraph();
+            resnapSparx();
+            updatePercent();
+            updateDisplay();
+
+            // Stay exactly where the capture finished - project onto the
+            // nearest point of the (now rebuilt) edge graph, which includes
+            // the new shape's own edges as well as the outer border. This
+            // search has no distance cap, so it will always find *something*
+            // and never falls back to jumping the player to a corner.
+            const newEdge = findEdgeAtPoint(player.x, player.y, Infinity);
+            if (newEdge >= 0) {
+                player.currentEdgeIndex = newEdge;
+                const t = projectOntoEdge(newEdge, player.x, player.y);
+                const pos = getPositionOnEdge(newEdge, t);
+                player.x = pos.x;
+                player.y = pos.y;
+                player.positionOnEdge = t;
+            }
+
+            if (game.claimedPercent >= 75) {
+                game.score += 500;
+                game.level++;
+                resetField();
+                addMessage('LEVEL COMPLETE!', '#4f4');
+                updateDisplay();
+            }
+            return newlyClaimed;
+        }
+
+        function updatePercent() {
+            // The 1-cell border frame is not part of the playable field, so
+            // it's excluded from the percentage - matching the original,
+            // which starts every level at 0%.
+            let total = 0;
+            let count = 0;
+            for (let r = 1; r < ROWS - 1; r++) {
+                for (let c = 1; c < COLS - 1; c++) {
+                    total++;
+                    if (claimed[r][c] === 1) count++;
+                }
+            }
+            game.claimedPercent = Math.round((count / total) * 100);
+            percentDisplay.textContent = game.claimedPercent;
+        }
+
+        function resetField() {
+            initClaimed();
+            qix.x = PLAY_LEFT + PLAY_WIDTH/2;
+            qix.y = PLAY_TOP + PLAY_HEIGHT/2;
+            qix.vx = 1.2 + (game.level-1)*0.2;
+            qix.vy = 0.8 + (game.level-1)*0.15;
+            qix.trail = [];
+            spawnSparx();
+            
+            player.currentEdgeIndex = findEdgeAtPoint(PLAY_LEFT, PLAY_TOP);
+            if (player.currentEdgeIndex >= 0) {
+                const pos = getPositionOnEdge(player.currentEdgeIndex, 0);
+                player.x = pos.x;
+                player.y = pos.y;
+                player.positionOnEdge = 0;
+            }
+            player.drawing = false;
+            player.drawLine = [];
+            player.invulnerable = 90;
+        }
+
+        function spawnSparx() {
+            const speed = 1.5 + (game.level - 1) * 0.3;
+            // Spawn away from (PLAY_LEFT, PLAY_TOP), which is always the
+            // player's own start/respawn point - spawning a Sparx there
+            // caused an instant, unavoidable collision.
+            sparx = [
+                { x: PLAY_RIGHT, y: PLAY_TOP, edgeIndex: -1, t: 0, dir: 1, speed },
+                { x: PLAY_LEFT, y: PLAY_BOTTOM, edgeIndex: -1, t: 0, dir: 1, speed }
+            ];
+            resnapSparx();
+        }
+
+        function addMessage(text, color = '#fff') {
+            messages.push({ text, color, life: 120, y: 200 });
+        }
+
+        // ---- Drawing ----
+
+        function startDrawing() {
+            if (game.over || !game.running) return;
+            if (player.drawing) return;
+            player.drawing = true;
+            player.drawLine = [{ x: player.x, y: player.y }];
+        }
+
+        function endDrawing() {
+            if (!player.drawing) return;
+            player.drawing = false;
+            const last = player.drawLine[player.drawLine.length - 1];
+            const validClose = player.drawLine.length > 1 && touchesClaimedArea(last.x, last.y);
+
+            if (validClose) {
+                claimArea(player.drawLine);
+            } else {
+                // The line hasn't reconnected to the boundary yet, so there's
+                // nothing to claim - snap back onto the nearest edge instead
+                // of creating a bogus capture out of a dangling line.
+                const edgeIdx = findEdgeAtPoint(player.x, player.y, Infinity);
+                if (edgeIdx >= 0) {
+                    player.currentEdgeIndex = edgeIdx;
+                    const t = projectOntoEdge(edgeIdx, player.x, player.y);
+                    const pos = getPositionOnEdge(edgeIdx, t);
+                    player.x = pos.x;
+                    player.y = pos.y;
+                    player.positionOnEdge = t;
+                }
+            }
+            player.drawLine = [];
+        }
+
+        function pointToLineDist(px, py, x1, y1, x2, y2) {
+            const dx = x2 - x1, dy = y2 - y1;
+            const lenSq = dx*dx + dy*dy;
+            if (lenSq === 0) return Math.hypot(px-x1, py-y1);
+            let t = ((px-x1)*dx + (py-y1)*dy) / lenSq;
+            t = Math.max(0, Math.min(1, t));
+            const projX = x1 + t*dx, projY = y1 + t*dy;
+            return Math.hypot(px-projX, py-projY);
+        }
+
+        function loseLife() {
+            game.lives--;
+            if (game.lives <= 0) {
+                game.over = true;
+                game.running = false;
+                addMessage('GAME OVER', '#f44');
+            } else {
+                player.drawing = false;
+                player.drawLine = [];
+                qix.x = PLAY_LEFT + PLAY_WIDTH/2;
+                qix.y = PLAY_TOP + PLAY_HEIGHT/2;
+                qix.vx = 1.2 + (game.level-1)*0.2;
+                qix.vy = 0.8 + (game.level-1)*0.15;
+                qix.trail = [];
+                spawnSparx();
+                
+                player.currentEdgeIndex = findEdgeAtPoint(PLAY_LEFT, PLAY_TOP);
+                if (player.currentEdgeIndex >= 0) {
+                    const pos = getPositionOnEdge(player.currentEdgeIndex, 0);
+                    player.x = pos.x;
+                    player.y = pos.y;
+                    player.positionOnEdge = 0;
+                }
+                addMessage('Life lost!', '#ff6b35');
+                player.invulnerable = 90;
+            }
+            updateDisplay();
+        }
+
+        // ---- Update ----
+
+        function update() {
+            if (!game.running || game.over) return;
+
+            // ---- Player movement ----
+            if (!player.drawing && player.currentEdgeIndex >= 0) {
+                const speed = 2.5;
+                let dx = 0, dy = 0;
+                let dir = null;
+
+                // 4-direction priority: first pressed wins
+                const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+                for (const key of keys) {
+                    if (keyState[key]) {
+                        if (key === 'ArrowUp') { dy = -speed; dir = 'up'; }
+                        else if (key === 'ArrowDown') { dy = speed; dir = 'down'; }
+                        else if (key === 'ArrowLeft') { dx = -speed; dir = 'left'; }
+                        else if (key === 'ArrowRight') { dx = speed; dir = 'right'; }
+                        break;
+                    }
+                }
+
+                if (dx !== 0 || dy !== 0) {
+                    const e = edgeGraph.edges[player.currentEdgeIndex];
+                    const len = Math.hypot(e.x2 - e.x1, e.y2 - e.y1);
+                    if (len === 0) return;
+
+                    const step = speed / len;
+                    let newPos = player.positionOnEdge;
+
+                    if (e.isHorizontal) {
+                        if (dx < 0) newPos -= step;
+                        else if (dx > 0) newPos += step;
+                        else {
+                            // Vertical key pressed on horizontal edge -> try to turn at vertex
+                            const atStart = player.positionOnEdge < 0.1;
+                            const atEnd = player.positionOnEdge > 0.9;
+                            if (atStart || atEnd) {
+                                const vertexIdx = atStart ? e.v1 : e.v2;
+                                const nextEdge = findNextEdge(player.currentEdgeIndex, vertexIdx, dir);
+                                if (nextEdge >= 0) {
+                                    player.currentEdgeIndex = nextEdge;
+                                    const nextE = edgeGraph.edges[nextEdge];
+                                    const nextPos = getPositionOnEdge(nextEdge, 
+                                        nextE.v1 === vertexIdx ? 0 : 1
+                                    );
+                                    player.x = nextPos.x;
+                                    player.y = nextPos.y;
+                                    player.positionOnEdge = nextE.v1 === vertexIdx ? 0 : 1;
+                                }
+                            }
+                            return;
+                        }
+                    } else { // vertical
+                        if (dy < 0) newPos -= step;
+                        else if (dy > 0) newPos += step;
+                        else {
+                            // Horizontal key pressed on vertical edge -> try to turn at vertex
+                            const atStart = player.positionOnEdge < 0.1;
+                            const atEnd = player.positionOnEdge > 0.9;
+                            if (atStart || atEnd) {
+                                const vertexIdx = atStart ? e.v1 : e.v2;
+                                const nextEdge = findNextEdge(player.currentEdgeIndex, vertexIdx, dir);
+                                if (nextEdge >= 0) {
+                                    player.currentEdgeIndex = nextEdge;
+                                    const nextE = edgeGraph.edges[nextEdge];
+                                    const nextPos = getPositionOnEdge(nextEdge,
+                                        nextE.v1 === vertexIdx ? 0 : 1
+                                    );
+                                    player.x = nextPos.x;
+                                    player.y = nextPos.y;
+                                    player.positionOnEdge = nextE.v1 === vertexIdx ? 0 : 1;
+                                }
+                            }
+                            return;
+                        }
+                    }
+
+                    newPos = Math.max(0, Math.min(1, newPos));
+                    if (newPos !== player.positionOnEdge) {
+                        player.positionOnEdge = newPos;
+                        const pos = getPositionOnEdge(player.currentEdgeIndex, newPos);
+                        player.x = pos.x;
+                        player.y = pos.y;
+
+                        // Check if at vertex
+                        if (newPos <= 0 || newPos >= 1) {
+                            const vertexIdx = newPos <= 0 ? e.v1 : e.v2;
+                            const nextEdge = findNextEdge(player.currentEdgeIndex, vertexIdx, dir);
+                            if (nextEdge >= 0) {
+                                player.currentEdgeIndex = nextEdge;
+                                const nextE = edgeGraph.edges[nextEdge];
+                                const startPos = nextE.v1 === vertexIdx ? 0 : 1;
+                                player.positionOnEdge = startPos;
+                                const pos2 = getPositionOnEdge(nextEdge, startPos);
+                                player.x = pos2.x;
+                                player.y = pos2.y;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ---- Drawing movement ----
+            if (player.drawing) {
+                player.fastDraw = !!keyState['Shift'];
+                const speed = player.fastDraw ? 4.5 : 2.2;
+                let dx = 0, dy = 0;
+                const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+                for (const key of keys) {
+                    if (keyState[key]) {
+                        if (key === 'ArrowUp') dy = -speed;
+                        else if (key === 'ArrowDown') dy = speed;
+                        else if (key === 'ArrowLeft') dx = -speed;
+                        else if (key === 'ArrowRight') dx = speed;
+                        break;
+                    }
+                }
+
+                if (dx !== 0 || dy !== 0) {
+                    let newX = player.x + dx;
+                    let newY = player.y + dy;
+                    newX = Math.min(Math.max(newX, PLAY_LEFT + 1), PLAY_RIGHT - 1);
+                    newY = Math.min(Math.max(newY, PLAY_TOP + 1), PLAY_BOTTOM - 1);
+                    if (Math.hypot(newX - player.x, newY - player.y) > 0.5) {
+                        player.x = newX;
+                        player.y = newY;
+                        player.drawLine.push({ x: newX, y: newY });
+
+                        // Once the line has traveled far enough from its
+                        // starting point (so it can't complete against its
+                        // own start), reaching any claimed territory again
+                        // automatically finishes the capture - exactly like
+                        // the original, where there's no separate "close the
+                        // shape" button.
+                        const start = player.drawLine[0];
+                        const traveled = Math.hypot(player.x - start.x, player.y - start.y);
+                        if (traveled > CELL_SIZE * 1.5 && touchesClaimedArea(player.x, player.y)) {
+                            endDrawing();
+                        }
+                    }
+                }
+            }
+
+            // ---- Qix movement ----
+            let testX = qix.x + qix.vx;
+            let testY = qix.y;
+            let blockedX = false;
+            for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+                const px = testX + Math.cos(angle) * qix.radius;
+                const py = testY + Math.sin(angle) * qix.radius;
+                if (isClaimed(px, py)) {
+                    blockedX = true;
+                    break;
+                }
+            }
+            if (!blockedX) {
+                qix.x = testX;
+            } else {
+                qix.vx *= -1;
+            }
+
+            testX = qix.x;
+            testY = qix.y + qix.vy;
+            let blockedY = false;
+            for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+                const px = testX + Math.cos(angle) * qix.radius;
+                const py = testY + Math.sin(angle) * qix.radius;
+                if (isClaimed(px, py)) {
+                    blockedY = true;
+                    break;
+                }
+            }
+            if (!blockedY) {
+                qix.y = testY;
+            } else {
+                qix.vy *= -1;
+            }
+
+            if (qix.x - qix.radius < PLAY_LEFT) { qix.x = PLAY_LEFT + qix.radius; qix.vx *= -1; }
+            if (qix.x + qix.radius > PLAY_RIGHT) { qix.x = PLAY_RIGHT - qix.radius; qix.vx *= -1; }
+            if (qix.y - qix.radius < PLAY_TOP) { qix.y = PLAY_TOP + qix.radius; qix.vy *= -1; }
+            if (qix.y + qix.radius > PLAY_BOTTOM) { qix.y = PLAY_BOTTOM - qix.radius; qix.vy *= -1; }
+
+            qix.trail.push({x: qix.x, y: qix.y});
+            if (qix.trail.length > qix.maxTrail) qix.trail.shift();
+
+            // ---- Collision detection ----
+            if (player.invulnerable <= 0) {
+                if (player.drawing && player.drawLine.length >= 2) {
+                    const line = player.drawLine;
+                    for (let i = 0; i < line.length - 1; i++) {
+                        const p1 = line[i], p2 = line[i+1];
+                        if (pointToLineDist(qix.x, qix.y, p1.x, p1.y, p2.x, p2.y) < qix.radius + 3) {
+                            loseLife();
+                            return;
+                        }
+                    }
+                    for (const s of sparx) {
+                        for (let i = 0; i < line.length - 1; i++) {
+                            const p1 = line[i], p2 = line[i+1];
+                            if (pointToLineDist(s.x, s.y, p1.x, p1.y, p2.x, p2.y) < 6) {
+                                loseLife();
+                                return;
+                            }
+                        }
+                    }
+                } else {
+                    // Sparx patrol the border itself, so running into one
+                    // while you're just walking the boundary is also fatal -
+                    // matching the original, where the border is not a safe
+                    // zone from them.
+                    for (const s of sparx) {
+                        if (Math.hypot(s.x - player.x, s.y - player.y) < 11) {
+                            loseLife();
+                            return;
+                        }
+                    }
+                }
+            } else {
+                player.invulnerable--;
+            }
+
+            // ---- Sparx update ----
+            for (const s of sparx) {
+                advanceSparx(s);
+            }
+
+            for (let i = messages.length-1; i>=0; i--) {
+                messages[i].life--;
+                if (messages[i].life <= 0) messages.splice(i,1);
+            }
+
+            updateDisplay();
+        }
+
+        // ---- Draw ----
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            ctx.fillStyle = '#050510';
+            ctx.fillRect(0, 0, W, H);
+
+            // Claimed area
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (claimed[r][c] === 1) {
+                        ctx.fillStyle = '#1a2a4a';
+                        ctx.fillRect(PLAY_LEFT + c*CELL_SIZE, PLAY_TOP + r*CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                    }
+                }
+            }
+
+            // Draw edge graph (debug visualization)
+            ctx.strokeStyle = 'rgba(100, 150, 255, 0.15)';
+            ctx.lineWidth = 1;
+            for (const e of edgeGraph.edges) {
+                ctx.beginPath();
+                ctx.moveTo(e.x1, e.y1);
+                ctx.lineTo(e.x2, e.y2);
+                ctx.stroke();
+            }
+
+            // Draw outer border as a box (thick, semi-transparent)
+            ctx.strokeStyle = '#2a5a8a';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(PLAY_LEFT, PLAY_TOP, PLAY_WIDTH, PLAY_HEIGHT);
+
+            // Qix trail
+            for (let i = 0; i < qix.trail.length; i++) {
+                const alpha = i / qix.trail.length * 0.7;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = '#ffaa33';
+                ctx.beginPath();
+                ctx.arc(qix.trail[i].x, qix.trail[i].y, 3, 0, Math.PI*2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            // Qix
+            ctx.fillStyle = '#ffaa33';
+            ctx.shadowColor = '#ffaa33';
+            ctx.shadowBlur = 20;
+            ctx.beginPath();
+            ctx.arc(qix.x, qix.y, qix.radius, 0, Math.PI*2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Sparx
+            ctx.fillStyle = '#ff4444';
+            ctx.shadowColor = '#ff4444';
+            ctx.shadowBlur = 10;
+            for (const s of sparx) {
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, 5, 0, Math.PI*2);
+                ctx.fill();
+            }
+            ctx.shadowBlur = 0;
+
+            // Player (on edge)
+            if (player.invulnerable <= 0 || Math.floor(player.invulnerable / 6) % 2 === 0) {
+                ctx.fillStyle = '#4af';
+                ctx.shadowColor = '#4af';
+                ctx.shadowBlur = 15;
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, 8, 0, Math.PI*2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+
+            // Highlight current edge (only when not drawing)
+            if (!player.drawing && player.currentEdgeIndex >= 0) {
+                const e = edgeGraph.edges[player.currentEdgeIndex];
+                ctx.strokeStyle = 'rgba(68, 170, 255, 0.3)';
+                ctx.lineWidth = 6;
+                ctx.beginPath();
+                ctx.moveTo(e.x1, e.y1);
+                ctx.lineTo(e.x2, e.y2);
+                ctx.stroke();
+            }
+
+            // Drawing line
+            if (player.drawing && player.drawLine.length > 0) {
+                ctx.strokeStyle = '#4af';
+                ctx.lineWidth = 3;
+                ctx.shadowColor = '#4af';
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.moveTo(player.drawLine[0].x, player.drawLine[0].y);
+                for (let i = 1; i < player.drawLine.length; i++) {
+                    ctx.lineTo(player.drawLine[i].x, player.drawLine[i].y);
+                }
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+                
+                // Crosshair at current position
+                const last = player.drawLine[player.drawLine.length-1];
+                ctx.strokeStyle = '#4af';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(last.x-8, last.y);
+                ctx.lineTo(last.x+8, last.y);
+                ctx.moveTo(last.x, last.y-8);
+                ctx.lineTo(last.x, last.y+8);
+                ctx.stroke();
+            }
+
+            // Messages
+            for (const msg of messages) {
+                const alpha = Math.min(1, msg.life/30);
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = msg.color;
+                ctx.font = 'bold 32px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.shadowColor = msg.color;
+                ctx.shadowBlur = 30;
+                ctx.fillText(msg.text, W/2, msg.y);
+                ctx.shadowBlur = 0;
+            }
+            ctx.globalAlpha = 1;
+
+            // Game over overlay
+            if (game.over) {
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.fillRect(0,0,W,H);
+                ctx.fillStyle = '#f44';
+                ctx.font = 'bold 48px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.shadowColor = '#f44';
+                ctx.shadowBlur = 40;
+                ctx.fillText('GAME OVER', W/2, H/2 - 20);
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#ffd700';
+                ctx.font = '24px "Courier New", monospace';
+                ctx.fillText(`Score: ${game.score}`, W/2, H/2 + 40);
+                ctx.fillStyle = '#4a6a9a';
+                ctx.font = '16px "Courier New", monospace';
+                ctx.fillText('Press RESTART or R', W/2, H/2 + 80);
+            }
+
+            ctx.fillStyle = '#7a9acf';
+            ctx.font = '14px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(`Claimed: ${game.claimedPercent}%`, PLAY_LEFT+10, PLAY_TOP-10);
+        }
+
+        // ---- Display ----
+
+        function updateDisplay() {
+            while (game.running && !game.over && game.score >= game.nextBonusLife) {
+                game.lives++;
+                game.nextBonusLife += 4000;
+                addMessage('EXTRA LIFE!', '#4f4');
+            }
+            scoreDisplay.textContent = game.score;
+            livesDisplay.textContent = game.lives;
+            levelDisplay.textContent = game.level;
+            updatePercent();
+        }
+
+        // ---- Input ----
+
+        const keyState = {};
+
+        document.addEventListener('keydown', (e) => {
+            const key = e.key;
+            if (!keyState[key]) {
+                keyState[key] = true;
+            }
+            
+            if (key === ' ' || key === 'Space') {
+                e.preventDefault();
+                if (game.over || !game.running) return;
+                if (player.drawing) {
+                    endDrawing();
+                } else {
+                    startDrawing();
+                }
+            }
+            if (key === 'r' || key === 'R') {
+                if (game.over) resetGame();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keyState[e.key] = false;
+        });
+
+        // ---- Game Loop ----
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ---- Reset ----
+
+        function resetGame() {
+            game.running = true;
+            game.over = false;
+            game.score = 0;
+            game.lives = 3;
+            game.level = 1;
+            game.nextBonusLife = 4000;
+            initClaimed();
+            qix.x = PLAY_LEFT + PLAY_WIDTH/2;
+            qix.y = PLAY_TOP + PLAY_HEIGHT/2;
+            qix.vx = 1.2;
+            qix.vy = 0.8;
+            qix.trail = [];
+            spawnSparx();
+            messages = [];
+            
+            player.currentEdgeIndex = findEdgeAtPoint(PLAY_LEFT, PLAY_TOP);
+            if (player.currentEdgeIndex >= 0) {
+                const pos = getPositionOnEdge(player.currentEdgeIndex, 0);
+                player.x = pos.x;
+                player.y = pos.y;
+                player.positionOnEdge = 0;
+            }
+            player.drawing = false;
+            player.drawLine = [];
+            player.invulnerable = 90;
+            
+            updateDisplay();
+        }
+
+        // ---- Init ----
+
+        initClaimed();
+        spawnSparx();
+        resetGame();
+        gameLoop();
+
+        document.getElementById('restartBtn').addEventListener('click', resetGame);
+
+        console.log('Qix: Fixed edge traversal and outer border as box');
+    })();
+</script>
+</body>
+</html>

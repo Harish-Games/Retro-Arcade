@@ -1,0 +1,311 @@
+<!-- Created with CoPilot -->
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Tron Light Cycles</title>
+<style>
+  body {
+    background: black;
+    margin: 0;
+    overflow: hidden;
+    font-family: monospace;
+    color: white;
+    text-align: center;
+  }
+  #hud {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+  }
+</style>
+</head>
+<body>
+
+<div id="hud"></div>
+<canvas id="game" width="800" height="600"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const W = canvas.width;
+const H = canvas.height;
+const CELL = 4;
+
+// Occupancy grid
+let board;
+
+// Player
+let player;
+
+// All possible AIs (we spawn 1 per level)
+const allAIs = [
+  { color: "orange",  id: 2 },
+  { color: "magenta", id: 3 },
+  { color: "yellow",  id: 4 },
+  { color: "green",   id: 5 }
+];
+
+let ais = []; // active AIs for current level
+
+let level = 1;
+let speed = 0.6; // slow start
+let score = 0;
+let highScore = parseInt(localStorage.getItem("tronHighScore") || "0", 10);
+
+let keys = {};
+let loopID = null;
+
+let survivalTimer = 0; // counts frames survived
+
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+function updateHUD(message = "") {
+  const hud = document.getElementById("hud");
+  hud.innerHTML =
+    `Level: ${level} | Score: ${score} | High Score: ${highScore}<br>${message}`;
+}
+
+// Draw neon border
+function drawBorder() {
+  ctx.strokeStyle = "#0ff";
+  ctx.lineWidth = 6;
+  ctx.strokeRect(0, 0, W, H);
+}
+
+// Player input
+function handleInput() {
+  if (keys["ArrowUp"] && player.dy === 0) {
+    player.dx = 0; player.dy = -1;
+  }
+  if (keys["ArrowDown"] && player.dy === 0) {
+    player.dx = 0; player.dy = 1;
+  }
+  if (keys["ArrowLeft"] && player.dx === 0) {
+    player.dx = -1; player.dy = 0;
+  }
+  if (keys["ArrowRight"] && player.dx === 0) {
+    player.dx = 1; player.dy = 0;
+  }
+}
+
+// AI logic
+function aiLogic(ai) {
+  if (ai.dead) return;
+
+  let fx = ai.x + ai.dx * CELL;
+  let fy = ai.y + ai.dy * CELL;
+
+  if (!isBlocked(fx, fy)) return;
+
+  let left = turnLeft(ai.dx, ai.dy);
+  let lx = ai.x + left.dx * CELL;
+  let ly = ai.y + left.dy * CELL;
+  if (!isBlocked(lx, ly)) {
+    ai.dx = left.dx;
+    ai.dy = left.dy;
+    return;
+  }
+
+  let right = turnRight(ai.dx, ai.dy);
+  let rx = ai.x + right.dx * CELL;
+  let ry = ai.y + right.dy * CELL;
+  if (!isBlocked(rx, ry)) {
+    ai.dx = right.dx;
+    ai.dy = right.dy;
+    return;
+  }
+}
+
+function turnLeft(dx, dy) {
+  return { dx: -dy, dy: dx };
+}
+
+function turnRight(dx, dy) {
+  return { dx: dy, dy: -dx };
+}
+
+function isBlocked(x, y) {
+  if (x < CELL || y < CELL || x >= W - CELL || y >= H - CELL) return true;
+  const cx = Math.floor(x / CELL);
+  const cy = Math.floor(y / CELL);
+  return board[cx][cy] !== 0;
+}
+
+// Move cycle and handle collisions
+function moveCycle(cycle) {
+  if (cycle.dead) return false;
+
+  cycle.x += cycle.dx * CELL;
+  cycle.y += cycle.dy * CELL;
+
+  // wall collision
+  if (cycle.x < CELL || cycle.y < CELL || cycle.x >= W - CELL || cycle.y >= H - CELL) {
+    cycle.dead = true;
+    if (cycle.id === 1) {
+      gameOver("You crashed into the wall!");
+    } else {
+      score += 100;
+      checkRoundEnd();
+    }
+    return true;
+  }
+
+  let cx = Math.floor(cycle.x / CELL);
+  let cy = Math.floor(cycle.y / CELL);
+
+  // trail collision
+  if (board[cx][cy] !== 0) {
+    cycle.dead = true;
+    if (cycle.id === 1) {
+      gameOver("You hit a trail!");
+    } else {
+      score += 100;
+      checkRoundEnd();
+    }
+    return true;
+  }
+
+  // leave trail
+  board[cx][cy] = cycle.id;
+
+  ctx.fillStyle = cycle.color;
+  ctx.fillRect(cx * CELL, cy * CELL, CELL, CELL);
+
+  return false;
+}
+
+function checkRoundEnd() {
+  const aliveAIs = ais.filter(ai => !ai.dead);
+  if (aliveAIs.length === 0) {
+    score += 500;
+    if (level < 4) {
+      level++;
+      startNextRound();
+    } else {
+      gameOver("You cleared all levels!");
+    }
+  }
+}
+
+function clearBoard() {
+  board = [];
+  for (let x = 0; x < W / CELL; x++) {
+    board[x] = [];
+    for (let y = 0; y < H / CELL; y++) {
+      board[x][y] = 0;
+    }
+  }
+  ctx.clearRect(0, 0, W, H);
+}
+
+function resetPlayer() {
+  player = {
+    x: 200,
+    y: H / 2,
+    dx: 1,
+    dy: 0,
+    color: "cyan",
+    id: 1,
+    dead: false
+  };
+}
+
+function resetAIs() {
+  ais = [];
+  const count = Math.min(level, allAIs.length);
+
+  for (let i = 0; i < count; i++) {
+    ais.push({
+      x: W - 200,
+      y: H / 2 + (i * 80) - 80,
+      dx: -1,
+      dy: 0,
+      color: allAIs[i].color,
+      id: allAIs[i].id,
+      dead: false
+    });
+  }
+}
+
+function startNextRound() {
+  clearBoard();
+  resetPlayer();
+  resetAIs();
+
+  speed = 0.6 + 0.15 * (level - 1);
+  survivalTimer = 0;
+
+  updateHUD("Next round!");
+}
+
+function gameOver(msg) {
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem("tronHighScore", highScore);
+  }
+
+  updateHUD(msg + " | Press SPACE to restart");
+
+  ctx.fillStyle = "white";
+  ctx.font = "40px monospace";
+  ctx.fillText(msg, W / 2 - 200, H / 2);
+
+  cancelAnimationFrame(loopID);
+
+  document.addEventListener("keydown", restartOnSpace);
+}
+
+function restartOnSpace(e) {
+  if (e.key === " ") {
+    document.removeEventListener("keydown", restartOnSpace);
+    restartGame();
+  }
+}
+
+function restartGame() {
+  cancelAnimationFrame(loopID);   // IMPORTANT FIX
+  level = 1;
+  score = 0;
+  speed = 0.6;
+  survivalTimer = 0;
+
+  clearBoard();
+  resetPlayer();
+  resetAIs();
+
+  updateHUD("Game restarted");
+
+  loopID = requestAnimationFrame(loop);
+}
+
+function loop() {
+  drawBorder();
+  updateHUD();
+
+  // survival scoring
+  survivalTimer++;
+  if (survivalTimer % 60 === 0) score += 10;
+
+  handleInput();
+
+  ais.forEach(ai => aiLogic(ai));
+
+  if (!player.dead) moveCycle(player);
+  ais.forEach(ai => {
+    if (!ai.dead) moveCycle(ai);
+  });
+
+  loopID = requestAnimationFrame(loop);
+}
+
+// init
+startNextRound();
+loopID = requestAnimationFrame(loop);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,313 @@
+//Gemini Created
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1973 Space Race Arcade</title>
+    <style>
+        body {
+            background-color: #111;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        h1 {
+            margin: 0 0 5px 0;
+            font-size: 24px;
+            letter-spacing: 6px;
+            color: #ddd;
+        }
+
+        #scoreboard {
+            display: flex;
+            justify-content: space-between;
+            width: 600px;
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            padding: 0 50px;
+            box-sizing: border-box;
+        }
+
+        #gameContainer {
+            position: relative;
+        }
+
+        canvas {
+            background-color: #000000;
+            border: 4px solid #444;
+            display: block;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            display: none;
+        }
+
+        #overlay h2 {
+            font-size: 36px;
+            color: #fff;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+        }
+
+        #overlay p {
+            color: #aaa;
+            font-size: 18px;
+            margin-bottom: 25px;
+        }
+
+        .blink {
+            animation: blinker 1s linear infinite;
+        }
+
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>SPACE RACE</h1>
+    
+    <div id="scoreboard">
+        <div id="p1Score">00</div>
+        <div id="p2Score">00</div>
+    </div>
+
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="600" height="500"></canvas>
+        <div id="overlay">
+            <h2 id="winnerText">GAME OVER</h2>
+            <p id="finalScores">P1: 00 | P2: 00</p>
+            <div class="blink" style="color: #fff; font-size: 16px;">PRESS [SPACEBAR] TO REMATCH</div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const p1ScoreEl = document.getElementById('p1Score');
+        const p2ScoreEl = document.getElementById('p2Score');
+        const overlay = document.getElementById('overlay');
+        const winnerText = document.getElementById('winnerText');
+        const finalScores = document.getElementById('finalScores');
+
+        // Game Configuration
+        let gameActive = true;
+        let keys = {};
+        
+        // Match Timer (Classic vertical bar system)
+        let gameDuration = 4500; // Total frames (~75 seconds at 60fps)
+        let timerHeight = canvas.height - 40;
+
+        // Player Specs
+        const ROCKET_WIDTH = 12;
+        const ROCKET_HEIGHT = 24;
+        const MOVE_SPEED = 3;
+        const RESPAWN_TIME = 90; // Frames spent dead
+
+        let p1 = { x: 150, y: 450, score: 0, deadFrames: 0 };
+        let p2 = { x: 450, y: 450, score: 0, deadFrames: 0 };
+
+        // Asteroids/Star Field array
+        let asteroids = [];
+        const MAX_ASTEROIDS = 22;
+
+        // Key Listeners
+        window.addEventListener('keydown', e => {
+            keys[e.code] = true;
+            if (e.code === 'Space' && !gameActive) {
+                resetGame();
+            }
+            if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) {
+                e.preventDefault();
+            }
+        });
+        window.addEventListener('keyup', e => keys[e.code] = false);
+
+        function spawnAsteroid(proceduralY = null) {
+            // Alternates directions randomly (left-to-right vs right-to-left)
+            let side = Math.random() < 0.5; 
+            return {
+                x: side ? -10 : canvas.width + 10,
+                y: proceduralY !== null ? proceduralY : 40 + Math.random() * (canvas.height - 100),
+                vx: (side ? 1 : -1) * (1.2 + Math.random() * 2.5),
+                size: 3 + Math.random() * 4
+            };
+        }
+
+        function init() {
+            p1.score = 0; p1.y = canvas.height - 40; p1.deadFrames = 0;
+            p2.score = 0; p2.y = canvas.height - 40; p2.deadFrames = 0;
+            gameDuration = 4500;
+            asteroids = [];
+
+            // Disperse initial asteroids down the vertical lanes
+            for (let i = 0; i < MAX_ASTEROIDS; i++) {
+                let targetY = 40 + (i * (canvas.height - 100) / MAX_ASTEROIDS);
+                let ast = spawnAsteroid(targetY);
+                ast.x = Math.random() * canvas.width; // Spread across screen
+                asteroids.push(ast);
+            }
+
+            gameActive = true;
+            overlay.style.display = "none";
+            updateUI();
+            loop();
+        }
+
+        function update() {
+            if (!gameActive) return;
+
+            // Tick Timer
+            gameDuration--;
+            if (gameDuration <= 0) {
+                endGame();
+                return;
+            }
+
+            // Player 1 Logic
+            if (p1.deadFrames > 0) {
+                p1.deadFrames--;
+                if (p1.deadFrames === 0) p1.y = canvas.height - 40; // Respawn
+            } else {
+                if (keys['KeyW'] && p1.y > 10) p1.y -= MOVE_SPEED;
+                if (keys['KeyS'] && p1.y < canvas.height - ROCKET_HEIGHT) p1.y += MOVE_SPEED;
+                
+                // Scored! Reached the top
+                if (p1.y <= 15) {
+                    p1.score++;
+                    p1.y = canvas.height - 40;
+                    updateUI();
+                }
+            }
+
+            // Player 2 Logic
+            if (p2.deadFrames > 0) {
+                p2.deadFrames--;
+                if (p2.deadFrames === 0) p2.y = canvas.height - 40;
+            } else {
+                if (keys['ArrowUp'] && p2.y > 10) p2.y -= MOVE_SPEED;
+                if (keys['ArrowDown'] && p2.y < canvas.height - ROCKET_HEIGHT) p2.y += MOVE_SPEED;
+
+                if (p2.y <= 15) {
+                    p2.score++;
+                    p2.y = canvas.height - 40;
+                    updateUI();
+                }
+            }
+
+            // Asteroids physics and bounds recycling
+            for (let i = 0; i < asteroids.length; i++) {
+                let ast = asteroids[i];
+                ast.x += ast.vx;
+
+                // Recycle offscreen stars
+                if ((ast.vx > 0 && ast.x > canvas.width + 15) || (ast.vx < 0 && ast.x < -15)) {
+                    asteroids[i] = spawnAsteroid(ast.y); // Keep the row profile structured
+                }
+
+                // Hit boxes (Bounding Box vs Circle Center math)
+                if (p1.deadFrames === 0 && checkCollision(p1, ast)) {
+                    p1.deadFrames = RESPAWN_TIME;
+                    p1.y = -500; // Temp offscreen
+                }
+                if (p2.deadFrames === 0 && checkCollision(p2, ast)) {
+                    p2.deadFrames = RESPAWN_TIME;
+                    p2.y = -500;
+                }
+            }
+        }
+
+        function checkCollision(player, ast) {
+            // Custom precise collision for tiny 1973 retro vectors
+            return (ast.x >= player.x - ast.size && ast.x <= player.x + ROCKET_WIDTH + ast.size &&
+                    ast.y >= player.y - ast.size && ast.y <= player.y + ROCKET_HEIGHT + ast.size);
+        }
+
+        function updateUI() {
+            p1ScoreEl.innerText = String(p1.score).padStart(2, '0');
+            p2ScoreEl.innerText = String(p2.score).padStart(2, '0');
+        }
+
+        function endGame() {
+            gameActive = false;
+            if (p1.score > p2.score) winnerText.innerText = "PLAYER 1 WINS";
+            else if (p2.score > p1.score) winnerText.innerText = "PLAYER 2 WINS";
+            else winnerText.innerText = "TIE RACE";
+
+            finalScores.innerText = `P1: ${String(p1.score).padStart(2, '0')} | P2: ${String(p2.score).padStart(2, '0')}`;
+            overlay.style.display = "flex";
+        }
+
+        function resetGame() {
+            init();
+        }
+
+        function drawRocket(x, y) {
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            
+            // Draw angular vector rocket frame
+            ctx.moveTo(x + ROCKET_WIDTH / 2, y); // Nose cone
+            ctx.lineTo(x, y + ROCKET_HEIGHT * 0.7);
+            ctx.lineTo(x - 3, y + ROCKET_HEIGHT); // Left fin
+            ctx.lineTo(x + ROCKET_WIDTH + 3, y + ROCKET_HEIGHT); // Right fin
+            ctx.lineTo(x + ROCKET_WIDTH, y + ROCKET_HEIGHT * 0.7);
+            ctx.closePath();
+            ctx.stroke();
+        }
+
+        function draw() {
+            // Clean slate (True monochrome CRT feel)
+            ctx.fillStyle = "#000000";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Central Time Keep Bar (Shrinks downward as frames pass)
+            ctx.fillStyle = "#ffffff";
+            let currentTimerHeight = (gameDuration / 4500) * timerHeight;
+            ctx.fillRect(canvas.width / 2 - 2, canvas.height - currentTimerHeight - 20, 4, currentTimerHeight);
+
+            // Draw Ships
+            if (p1.deadFrames === 0) drawRocket(p1.x, p1.y);
+            if (p2.deadFrames === 0) drawRocket(p2.x, p2.y);
+
+            // Draw Asteroid fields (Square dots simulating old pixels)
+            ctx.fillStyle = "#ffffff";
+            asteroids.forEach(ast => {
+                ctx.fillRect(ast.x, ast.y, ast.size, ast.size);
+            });
+        }
+
+        function loop() {
+            update();
+            draw();
+            if (gameActive) {
+                requestAnimationFrame(loop);
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Space Race (1973) - FINALLY</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0a0a12;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+        .game-wrapper {
+            background: #12121f;
+            padding: 20px 30px 25px;
+            border-radius: 16px;
+            border: 2px solid #2a2a5a;
+            text-align: center;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            border: 3px solid #2a2a5a;
+            border-radius: 8px;
+            background: #0b0b18;
+            width: 400px;
+            height: 600px;
+        }
+        .info {
+            display: flex;
+            justify-content: space-between;
+            color: #aac0ff;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 12px;
+            padding: 0 10px;
+        }
+        .info .p1 { color: #66ddff; }
+        .info .p2 { color: #ff66aa; }
+        .info .status { color: #ffdd77; }
+        .controls {
+            color: #6688aa;
+            font-size: 13px;
+            margin-top: 10px;
+            border-top: 1px solid #1a1a3a;
+            padding-top: 10px;
+        }
+        .controls kbd {
+            background: #1a1a3a;
+            padding: 2px 10px;
+            border-radius: 4px;
+            border: 1px solid #3a3a6a;
+            color: #cce;
+        }
+        .controls .p1 { color: #66ddff; }
+        .controls .p2 { color: #ff66aa; }
+        .controls button {
+            background: #1a1a3a;
+            color: #cce;
+            border: 1px solid #3a3a6a;
+            border-radius: 4px;
+            padding: 4px 14px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .controls button:hover { background: #2a2a5a; }
+    </style>
+</head>
+<body>
+    <div class="game-wrapper">
+        <canvas id="gameCanvas" width="400" height="600"></canvas>
+        <div class="info">
+            <div class="p1">🔵 P1 <span id="score1">0</span></div>
+            <div class="status" id="statusDisplay">🏁 RACE!</div>
+            <div class="p2">🔴 P2 <span id="score2">0</span></div>
+        </div>
+        <div class="controls">
+            <span class="p1"><kbd>W</kbd> up <kbd>S</kbd> down</span> &nbsp;|&nbsp;
+            <span class="p2"><kbd>↑</kbd> up <kbd>↓</kbd> down</span> &nbsp;|&nbsp;
+            <button id="restartBtn">New Race</button>
+        </div>
+    </div>
+    <script>
+        // ----- SETUP -----
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const score1El = document.getElementById('score1');
+        const score2El = document.getElementById('score2');
+        const statusEl = document.getElementById('statusDisplay');
+
+        const W = 400,
+            H = 600;
+        const R = 14;
+        const WIN = 5;
+
+        // ----- PLAYERS (fixed horizontal positions, only vertical) -----
+        const P1_X = 150;
+        const P2_X = 250;
+
+        let p1 = { x: P1_X, y: H - 40, vy: 0, speed: 4, alive: true, hitTimer: 0 };
+        let p2 = { x: P2_X, y: H - 40, vy: 0, speed: 4, alive: true, hitTimer: 0 };
+
+        // ----- ASTEROIDS -----
+        let asteroids = [];
+        let spawnTimer = 0;
+
+        // ----- SCORE -----
+        let score1 = 0,
+            score2 = 0;
+        let gameOver = false;
+
+        // ----- INPUT (only up/down) -----
+        const keys = { w: false, s: false, arrowup: false, arrowdown: false };
+
+        // ----- AUDIO -----
+        let audioCtx = null;
+
+        function beep(freq, dur) {
+            try {
+                if (!audioCtx) audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+                const now = audioCtx.currentTime;
+                const o = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                o.connect(g);
+                g.connect(audioCtx.destination);
+                o.type = 'square';
+                o.frequency.setValueAtTime(freq, now);
+                g.gain.setValueAtTime(0.05, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+                o.start(now);
+                o.stop(now + dur);
+            } catch (_) {}
+        }
+
+        // ----- RESET -----
+        function resetGame() {
+            score1 = 0;
+            score2 = 0;
+            gameOver = false;
+            p1.y = H - 40;
+            p1.alive = true;
+            p1.hitTimer = 0;
+            p2.y = H - 40;
+            p2.alive = true;
+            p2.hitTimer = 0;
+            asteroids = [];
+            spawnTimer = 0;
+            updateUI();
+            statusEl.textContent = '🏁 RACE!';
+        }
+
+        function spawnAsteroid() {
+            const side = Math.random() < 0.5 ? -1 : 1;
+            const y = 30 + Math.random() * (H - 100);
+            const size = 10 + Math.random() * 14;
+            asteroids.push({
+                x: side === -1 ? -size : W + size,
+                y: y,
+                vx: -side * (1.2 + Math.random() * 2), // move toward/across screen, opposite of spawn side
+                size: size,
+                alive: true,
+            });
+        }
+
+        function updateUI() {
+            score1El.textContent = score1;
+            score2El.textContent = score2;
+        }
+
+        function dist(a, b) {
+            return Math.hypot(a.x - b.x, a.y - b.y);
+        }
+
+        // ----- UPDATE -----
+        function update() {
+            if (gameOver) return;
+
+            // ---- Player 1 movement (W/S) ----
+            p1.vy = 0;
+            if (keys.w) p1.vy = -p1.speed;
+            if (keys.s) p1.vy = p1.speed;
+            if (p1.alive) p1.y += p1.vy;
+
+            // ---- Player 2 movement (Up/Down) ----
+            p2.vy = 0;
+            if (keys.arrowup) p2.vy = -p2.speed;
+            if (keys.arrowdown) p2.vy = p2.speed;
+            if (p2.alive) p2.y += p2.vy;
+
+            // ---- Clamp ----
+            if (p1.y < R) p1.y = R;
+            if (p1.y > H - R) p1.y = H - R;
+            if (p2.y < R) p2.y = R;
+            if (p2.y > H - R) p2.y = H - R;
+
+            // ---- Hit timer (brief invincibility after being hit) ----
+            if (p1.hitTimer > 0) p1.hitTimer--;
+            if (p2.hitTimer > 0) p2.hitTimer--;
+
+            // ---- Reach the top! ----
+            if (p1.alive && p1.hitTimer === 0 && p1.y <= R + 2) {
+                score1++;
+                beep(800, 0.15);
+                updateUI();
+                p1.y = H - 40;
+                statusEl.textContent = '🔵 P1 scores! ' + score1 + '–' + score2;
+                if (score1 >= WIN) { gameOver = true;
+                    statusEl.textContent = '🏆 P1 WINS!';
+                    beep(880, 0.3); return; }
+            }
+            if (p2.alive && p2.hitTimer === 0 && p2.y <= R + 2) {
+                score2++;
+                beep(800, 0.15);
+                updateUI();
+                p2.y = H - 40;
+                statusEl.textContent = '🔴 P2 scores! ' + score1 + '–' + score2;
+                if (score2 >= WIN) { gameOver = true;
+                    statusEl.textContent = '🏆 P2 WINS!';
+                    beep(880, 0.3); return; }
+            }
+
+            // ---- Spawn asteroids (every 15-30 frames) ----
+            spawnTimer--;
+            if (spawnTimer <= 0) {
+                spawnAsteroid();
+                if (Math.random() < 0.3) spawnAsteroid(); // sometimes two
+                spawnTimer = 18 + Math.floor(Math.random() * 25);
+            }
+
+            // ---- Move asteroids ----
+            for (let i = asteroids.length - 1; i >= 0; i--) {
+                const a = asteroids[i];
+                a.x += a.vx;
+                if (a.x < -50 || a.x > W + 50) {
+                    asteroids.splice(i, 1);
+                    continue;
+                }
+
+                // ---- Collision ----
+                if (p1.alive && p1.hitTimer === 0 && dist(p1, a) < R + a.size) {
+                    p1.alive = false;
+                    p1.hitTimer = 30;
+                    p1.y = H - 40;
+                    beep(200, 0.25);
+                    asteroids.splice(i, 1);
+                    statusEl.textContent = '💥 P1 hit!';
+                    setTimeout(() => {
+                        if (!gameOver) {
+                            p1.alive = true;
+                            statusEl.textContent = '🏁 RACE!';
+                        }
+                    }, 500);
+                    continue;
+                }
+                if (p2.alive && p2.hitTimer === 0 && dist(p2, a) < R + a.size) {
+                    p2.alive = false;
+                    p2.hitTimer = 30;
+                    p2.y = H - 40;
+                    beep(200, 0.25);
+                    asteroids.splice(i, 1);
+                    statusEl.textContent = '💥 P2 hit!';
+                    setTimeout(() => {
+                        if (!gameOver) {
+                            p2.alive = true;
+                            statusEl.textContent = '🏁 RACE!';
+                        }
+                    }, 500);
+                    continue;
+                }
+            }
+        }
+
+        // ----- DRAW -----
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            ctx.fillStyle = '#0b0b18';
+            ctx.fillRect(0, 0, W, H);
+
+            // ---- Stars ----
+            ctx.fillStyle = 'rgba(255,255,255,0.08)';
+            for (let i = 0; i < 60; i++) {
+                const sx = (i * 37 + 13) % W;
+                const sy = (i * 53 + 7) % H;
+                ctx.fillRect(sx, sy, 1 + (i % 2), 1 + (i % 2));
+            }
+
+            // ---- Finish line ----
+            ctx.setLineDash([6, 8]);
+            ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(10, 15);
+            ctx.lineTo(W - 10, 15);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = 'rgba(255,255,255,0.1)';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText('★ FINISH ★', W / 2, 12);
+
+            // ---- ASTEROIDS (big, orange, with glow) ----
+            for (const a of asteroids) {
+                // Outer glow
+                ctx.shadowColor = '#ff6633';
+                ctx.shadowBlur = 35;
+                ctx.fillStyle = '#ff6633';
+                ctx.beginPath();
+                ctx.arc(a.x, a.y, a.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                // Inner core
+                ctx.fillStyle = '#ffaa66';
+                ctx.beginPath();
+                ctx.arc(a.x - 2, a.y - 2, a.size * 0.4, 0, Math.PI * 2);
+                ctx.fill();
+                // Trail
+                ctx.globalAlpha = 0.3;
+                ctx.fillStyle = '#ff6633';
+                ctx.beginPath();
+                ctx.arc(a.x - a.vx * 2, a.y, a.size * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+
+            // ---- Players ----
+            if (p1.alive || p1.hitTimer > 0) {
+                const visible = p1.hitTimer === 0 || Math.floor(p1.hitTimer / 5) % 2 === 0;
+                if (visible) {
+                    ctx.shadowColor = '#66ddff';
+                    ctx.shadowBlur = 20;
+                    ctx.strokeStyle = '#66ddff';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(p1.x, p1.y, R, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
+            }
+
+            if (p2.alive || p2.hitTimer > 0) {
+                const visible = p2.hitTimer === 0 || Math.floor(p2.hitTimer / 5) % 2 === 0;
+                if (visible) {
+                    ctx.shadowColor = '#ff66aa';
+                    ctx.shadowBlur = 20;
+                    ctx.strokeStyle = '#ff66aa';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(p2.x, p2.y, R, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
+            }
+
+            // ---- Labels ----
+            ctx.fillStyle = 'rgba(102,221,255,0.3)';
+            ctx.font = '11px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            if (p1.alive || p1.hitTimer > 0) ctx.fillText('P1', p1.x, p1.y + R + 4);
+            ctx.fillStyle = 'rgba(255,102,170,0.3)';
+            if (p2.alive || p2.hitTimer > 0) ctx.fillText('P2', p2.x, p2.y + R + 4);
+
+            // ---- Progress bars ----
+            const p1P = 1 - (p1.y - R) / (H - R * 2);
+            const p2P = 1 - (p2.y - R) / (H - R * 2);
+            ctx.fillStyle = 'rgba(102,221,255,0.1)';
+            ctx.fillRect(8, 30, 6, H - 60);
+            ctx.fillStyle = 'rgba(102,221,255,0.5)';
+            ctx.fillRect(8, H - 30 - (H - 60) * Math.min(1, p1P), 6, (H - 60) * Math.min(1, p1P));
+            ctx.fillStyle = 'rgba(255,102,170,0.1)';
+            ctx.fillRect(W - 14, 30, 6, H - 60);
+            ctx.fillStyle = 'rgba(255,102,170,0.5)';
+            ctx.fillRect(W - 14, H - 30 - (H - 60) * Math.min(1, p2P), 6, (H - 60) * Math.min(1, p2P));
+
+            // ---- Game Over ----
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.fillRect(0, 0, W, H);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#ffdd44';
+                ctx.font = 'bold 36px monospace';
+                ctx.shadowBlur = 30;
+                ctx.shadowColor = '#ffdd44';
+                ctx.fillText('🏆 ' + (score1 >= WIN ? 'P1' : 'P2') + ' WINS!', W / 2, H / 2 - 20);
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#aaccee';
+                ctx.font = '16px monospace';
+                ctx.fillText('Score: ' + score1 + '–' + score2 + '  |  New Race', W / 2, H / 2 + 40);
+            }
+        }
+
+        // ----- LOOP -----
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ----- EVENTS -----
+        const trackedKeys = ['w', 's', 'arrowup', 'arrowdown'];
+
+        document.addEventListener('keydown', (e) => {
+            const k = e.key.toLowerCase();
+            if (!trackedKeys.includes(k)) return;
+            keys[k] = true;
+            e.preventDefault();
+            // Resume/create audio context on first user gesture (autoplay policy)
+            if (!audioCtx) {
+                try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+                catch (_) {}
+            } else if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            const k = e.key.toLowerCase();
+            if (!trackedKeys.includes(k)) return;
+            keys[k] = false;
+            e.preventDefault();
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', resetGame);
+        canvas.addEventListener('click', () => { if (gameOver) resetGame(); });
+
+        // ----- START -----
+        resetGame();
+        gameLoop();
+    </script>
+</body>
+</html>

@@ -1,0 +1,357 @@
+//Gemini Created
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Circus 1977 - Arrow Controls</title>
+    <style>
+        body {
+            background-color: #111;
+            color: white;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        h1 {
+            margin: 5px 0;
+            font-size: 24px;
+            letter-spacing: 3px;
+        }
+        #gameCanvas {
+            background-color: #000;
+            border: 4px solid #fff;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+        }
+        .instructions {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #aaa;
+            text-align: center;
+            max-width: 500px;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>CIRCUS 1977</h1>
+    <canvas id="gameCanvas" width="600" height="500"></canvas>
+    <div class="instructions">
+        <strong>Controls:</strong> Use <strong>LEFT / RIGHT ARROWS</strong> to slide.<br>
+        Press <strong>SPACEBAR</strong> to launch the clown!<br>
+        Catch the airborne clown on the high, empty side to catapult the sitting clown.
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Game State
+        let score = 0;
+        let lives = 3;
+        let gameOver = false;
+
+        // Keyboard Input Tracking
+        const keys = { Left: false, Right: false };
+
+        // Seesaw / Trampoline Settings
+        const seesaw = {
+            x: 250,
+            y: 450,
+            width: 110,
+            height: 10,
+            speed: 7, // How fast the keyboard moves the paddle
+            angle: -0.25, // Tilted down on left, up on right initially
+            clownOnSide: 'left' // Sitting on the lower side
+        };
+
+        // Airborne Clown Settings
+        const clown = {
+            x: 0,
+            y: 0,
+            radius: 8,
+            vx: 0,
+            vy: 0,
+            isAirborne: false
+        };
+
+        // Moving Balloon Rows
+        const balloonRows = [
+            { color: '#ff0055', points: 100, speed: 1.2, y: 70, balloons: [] }, 
+            { color: '#00ff66', points: 50,  speed: -0.8, y: 100, balloons: [] }, 
+            { color: '#ffff00', points: 20,  speed: 0.6, y: 130, balloons: [] }  
+        ];
+
+        const BALLOONS_PER_ROW = 12;
+        const BALLOON_RADIUS_X = 18;
+        const BALLOON_RADIUS_Y = 12;
+
+        function initBalloons() {
+            balloonRows.forEach(row => {
+                row.balloons = [];
+                for(let i = 0; i < BALLOONS_PER_ROW; i++) {
+                    row.balloons.push({
+                        offsetX: i * (BALLOON_RADIUS_X * 2 + 12), 
+                        alive: true
+                    });
+                }
+            });
+        }
+
+        // Keyboard Event Listeners
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') keys.Left = true;
+            if (e.key === 'ArrowRight') keys.Right = true;
+            
+            if (e.key === ' ' || e.key === 'Spacebar') {
+                e.preventDefault(); // Stop screen scrolling
+                triggerLaunch();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft') keys.Left = false;
+            if (e.key === 'ArrowRight') keys.Right = false;
+        });
+
+        function triggerLaunch() {
+            if (gameOver) {
+                score = 0;
+                lives = 3;
+                gameOver = false;
+                initBalloons();
+                resetClown();
+                return;
+            }
+            if (!clown.isAirborne) {
+                clown.isAirborne = true;
+                if (seesaw.clownOnSide === 'left') {
+                    clown.x = seesaw.x + 20;
+                    clown.vx = 2.5;
+                    seesaw.angle = 0.25; // Flip tilt right
+                } else {
+                    clown.x = seesaw.x + seesaw.width - 20;
+                    clown.vx = -2.5;
+                    seesaw.angle = -0.25; // Flip tilt left
+                }
+                clown.y = seesaw.y - 25;
+                clown.vy = -12; // HIGH LAUNCH VELOCITY
+                seesaw.clownOnSide = 'none';
+            }
+        }
+
+        function resetClown() {
+            clown.isAirborne = false;
+            seesaw.clownOnSide = Math.random() > 0.5 ? 'left' : 'right';
+            // Force angle to keep the sitting clown on the absolute lowest side
+            seesaw.angle = seesaw.clownOnSide === 'left' ? -0.25 : 0.25; 
+        }
+
+        function updateBalloons() {
+            balloonRows.forEach(row => {
+                row.balloons.forEach(b => {
+                    b.currentX = (b.offsetX + row.speed * 25) % (canvas.width + 40);
+                    if (b.currentX < -40) b.currentX = canvas.width;
+                });
+            });
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            // Move Seesaw with Keyboard
+            if (keys.Left) seesaw.x -= seesaw.speed;
+            if (keys.Right) seesaw.x += seesaw.speed;
+
+            // Keep platform in bounds
+            if (seesaw.x < 0) seesaw.x = 0;
+            if (seesaw.x > canvas.width - seesaw.width) seesaw.x = canvas.width - seesaw.width;
+
+            updateBalloons();
+
+            if (clown.isAirborne) {
+                // Tuned gravity for high arc trajectory
+                clown.vy += 0.18; 
+                clown.x += clown.vx;
+                clown.y += clown.vy;
+
+                // Side Wall Bounces
+                if (clown.x - clown.radius < 0 || clown.x + clown.radius > canvas.width) {
+                    clown.vx *= -1;
+                }
+                // Ceiling bounce
+                if (clown.y - clown.radius < 0) {
+                    clown.vy = Math.abs(clown.vy); // Snap downward bounce
+                    clown.y = clown.radius;
+                }
+
+                // Piercing balloon collision mechanics
+                balloonRows.forEach(row => {
+                    row.balloons.forEach(b => {
+                        if (b.alive) {
+                            let dist = Math.hypot(clown.x - b.currentX, clown.y - row.y);
+                            if (dist < clown.radius + BALLOON_RADIUS_X) {
+                                b.alive = false; 
+                                score += row.points;
+                            }
+                        }
+                    });
+                });
+
+                // Seesaw Collision Detection
+                if (clown.y + clown.radius >= seesaw.y - 12 && clown.y - clown.radius <= seesaw.y + seesaw.height) {
+                    if (clown.x >= seesaw.x && clown.x <= seesaw.x + seesaw.width) {
+                        
+                        let landingX = clown.x - seesaw.x;
+                        let hitCorrectSide = false;
+
+                        // Check if clown successfully hit the elevated side
+                        if (seesaw.angle > 0 && landingX < seesaw.width / 2) {
+                            hitCorrectSide = true;
+                            seesaw.clownOnSide = 'right'; // Stays on the new lower side
+                            seesaw.angle = -0.25; // Seesaw pivots down on left
+                        } else if (seesaw.angle < 0 && landingX >= seesaw.width / 2) {
+                            hitCorrectSide = true;
+                            seesaw.clownOnSide = 'left'; // Stays on the new lower side
+                            seesaw.angle = 0.25; // Seesaw pivots down on right
+                        }
+
+                        if (hitCorrectSide) {
+                            // High energy return velocity based on depth of plunge
+                            clown.vy = -13; 
+                            
+                            // Angle dynamic based on exact offset distance from center fulcrum
+                            clown.vx = ((landingX / seesaw.width) - 0.5) * 8;
+                            
+                            // Instantly transfer airborne tag to the newly catapulted clown
+                            clown.x = seesaw.clownOnSide === 'left' ? seesaw.x + 20 : seesaw.x + seesaw.width - 20;
+                            clown.y = seesaw.y - 25;
+                            seesaw.clownOnSide = 'none'; // The lower clown launched away!
+                        } else {
+                            // Hit the wrong side / crushed sitting clown
+                            handleMiss();
+                        }
+                    }
+                }
+
+                // Past the floor limits
+                if (clown.y > canvas.height) {
+                    handleMiss();
+                }
+            }
+        }
+
+        function handleMiss() {
+            lives--;
+            if (lives <= 0) {
+                gameOver = true;
+            } else {
+                resetClown();
+            }
+        }
+
+        function draw() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // UI Text Layout
+            ctx.fillStyle = '#fff';
+            ctx.font = '20px "Courier New"';
+            ctx.fillText(`SCORE: ${score.toString().padStart(4, '0')}`, 20, 35);
+            ctx.fillText(`LIVES: ${lives}`, canvas.width - 120, 35);
+
+            // Render Balloons
+            balloonRows.forEach(row => {
+                ctx.fillStyle = row.color;
+                row.balloons.forEach(b => {
+                    if (b.alive) {
+                        ctx.beginPath();
+                        ctx.ellipse(b.currentX, row.y, BALLOON_RADIUS_X, BALLOON_RADIUS_Y, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Tiny knots
+                        ctx.beginPath();
+                        ctx.moveTo(b.currentX, row.y + BALLOON_RADIUS_Y);
+                        ctx.lineTo(b.currentX - 3, row.y + BALLOON_RADIUS_Y + 4);
+                        ctx.lineTo(b.currentX + 3, row.y + BALLOON_RADIUS_Y + 4);
+                        ctx.closePath();
+                        ctx.fillStyle = '#fff';
+                        ctx.fill();
+                        ctx.fillStyle = row.color;
+                    }
+                });
+            });
+
+            // Draw Seesaw Assembly
+            ctx.save();
+            ctx.translate(seesaw.x + seesaw.width / 2, seesaw.y);
+            ctx.rotate(seesaw.angle);
+
+            // Plank
+            ctx.fillStyle = '#00ffcc';
+            ctx.fillRect(-seesaw.width / 2, -seesaw.height / 2, seesaw.width, seesaw.height);
+
+            // Clown updates on the LOWER side
+            ctx.fillStyle = '#ff3333';
+            if (seesaw.clownOnSide === 'left') {
+                // When angle is negative (-0.25), left side is low
+                ctx.beginPath(); ctx.arc(-seesaw.width / 2 + 20, -12, 8, 0, Math.PI * 2); ctx.fill();
+            }
+            if (seesaw.clownOnSide === 'right') {
+                // When angle is positive (0.25), right side is low
+                ctx.beginPath(); ctx.arc(seesaw.width / 2 - 20, -12, 8, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.restore(); 
+
+            // Static Fulcrum Pivot base
+            ctx.fillStyle = '#666';
+            ctx.beginPath();
+            ctx.moveTo(seesaw.x + seesaw.width / 2, seesaw.y);
+            ctx.lineTo(seesaw.x + seesaw.width / 2 - 12, seesaw.y + 22);
+            ctx.lineTo(seesaw.x + seesaw.width / 2 + 12, seesaw.y + 22);
+            ctx.closePath();
+            ctx.fill();
+
+            // Draw Airborne Flying Clown
+            if (clown.isAirborne) {
+                ctx.fillStyle = '#ff3333';
+                ctx.beginPath();
+                ctx.arc(clown.x, clown.y, clown.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(clown.x - 3, clown.y - 12, 6, 5); // Hat
+            }
+
+            // Game Over Text Layout
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#ff3333';
+                ctx.font = '40px "Courier New"';
+                ctx.textAlign = 'center';
+                ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 20);
+                ctx.fillStyle = '#fff';
+                ctx.font = '20px "Courier New"';
+                ctx.fillText("Press SPACEBAR to Restart", canvas.width / 2, canvas.height / 2 + 30);
+                ctx.textAlign = 'left';
+            }
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        initBalloons();
+        resetClown();
+        gameLoop();
+    </script>
+</body>
+</html>

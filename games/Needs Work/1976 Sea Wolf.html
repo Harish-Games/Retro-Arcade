@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sea Wolf (1976) - Periscope View</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0a0a12;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+        .game-wrapper {
+            background: #0a0a18;
+            padding: 20px 30px 25px;
+            border-radius: 16px;
+            border: 2px solid #1a2a4a;
+            text-align: center;
+            box-shadow: 0 0 60px rgba(0, 50, 100, 0.2);
+        }
+        .periscope-container {
+            position: relative;
+            display: inline-block;
+            border-radius: 50%;
+            box-shadow: 0 0 40px rgba(0, 100, 200, 0.15), inset 0 0 60px rgba(0, 0, 0, 0.5);
+            border: 8px solid #1a2a3a;
+            background: #0a0a12;
+        }
+        .periscope-container::before {
+            content: '';
+            position: absolute;
+            top: -12px;
+            left: -12px;
+            right: -12px;
+            bottom: -12px;
+            border-radius: 50%;
+            background: radial-gradient(ellipse at center, rgba(0, 50, 100, 0.1) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 10;
+        }
+        canvas {
+            display: block;
+            border-radius: 50%;
+            background: #0a0a12;
+            width: 550px;
+            height: 550px;
+            cursor: crosshair;
+        }
+        .info {
+            display: flex;
+            justify-content: space-between;
+            color: #66ddff;
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 14px;
+            padding: 0 10px;
+            background: rgba(10, 20, 40, 0.8);
+            border-radius: 8px;
+            padding: 8px 14px;
+            border: 1px solid #1a2a4a;
+        }
+        .info .score { color: #66ff88; }
+        .info .time { color: #ffdd77; }
+        .info .torpedo { color: #66ddff; }
+        .info .high { color: #ffaa66; }
+        .controls {
+            color: #446688;
+            font-size: 12px;
+            margin-top: 10px;
+            border-top: 1px solid #1a2a3a;
+            padding-top: 10px;
+        }
+        .controls kbd {
+            background: #1a1a3a;
+            padding: 2px 10px;
+            border-radius: 4px;
+            border: 1px solid #2a3a5a;
+            color: #88bbdd;
+        }
+        .controls button {
+            background: #1a2a3a;
+            color: #88bbdd;
+            border: 1px solid #2a3a5a;
+            border-radius: 4px;
+            padding: 4px 14px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .controls button:hover { background: #2a3a5a; }
+    </style>
+</head>
+<body>
+    <div class="game-wrapper">
+        <div class="periscope-container">
+            <canvas id="gameCanvas" width="550" height="550"></canvas>
+        </div>
+        <div class="info">
+            <div class="score">🏆 <span id="scoreDisplay">0</span></div>
+            <div class="torpedo">💣 <span id="torpedoDisplay">5</span></div>
+            <div class="time">⏱️ <span id="timeDisplay">120</span>s</div>
+            <div class="high">⭐ <span id="highDisplay">0</span></div>
+        </div>
+        <div class="controls">
+            <kbd>Mouse</kbd> aim periscope &nbsp;|&nbsp; <kbd>Click</kbd> or <kbd>Space</kbd> fire &nbsp;|&nbsp;
+            <button id="restartBtn">NEW GAME</button>
+        </div>
+    </div>
+    <script>
+        // ----- SETUP -----
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const torpedoDisplay = document.getElementById('torpedoDisplay');
+        const timeDisplay = document.getElementById('timeDisplay');
+        const highDisplay = document.getElementById('highDisplay');
+
+        const W = canvas.width,
+            H = canvas.height;
+        const CX = W / 2,
+            CY = H / 2;
+        const VIEW_RADIUS = 240;
+
+        // ----- AUDIO -----
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playSound(type) {
+            try {
+                initAudio();
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                switch (type) {
+                    case 'sonar':
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(800, now);
+                        osc.frequency.exponentialRampToValueAtTime(600, now + 0.08);
+                        gain.gain.setValueAtTime(0.03, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                        osc.start(now);
+                        osc.stop(now + 0.08);
+                        break;
+                    case 'torpedo':
+                        osc.type = 'square';
+                        osc.frequency.setValueAtTime(200, now);
+                        osc.frequency.exponentialRampToValueAtTime(80, now + 0.15);
+                        gain.gain.setValueAtTime(0.05, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                        osc.start(now);
+                        osc.stop(now + 0.15);
+                        break;
+                    case 'explosion':
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(300, now);
+                        osc.frequency.exponentialRampToValueAtTime(40, now + 0.3);
+                        gain.gain.setValueAtTime(0.08, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+                        osc.start(now);
+                        osc.stop(now + 0.3);
+                        break;
+                    case 'ptboat':
+                        osc.type = 'square';
+                        osc.frequency.setValueAtTime(600, now);
+                        osc.frequency.exponentialRampToValueAtTime(900, now + 0.05);
+                        osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
+                        gain.gain.setValueAtTime(0.03, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+                        osc.start(now);
+                        osc.stop(now + 0.1);
+                        break;
+                    case 'gameover':
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(440, now);
+                        osc.frequency.exponentialRampToValueAtTime(110, now + 0.6);
+                        gain.gain.setValueAtTime(0.08, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+                        osc.start(now);
+                        osc.stop(now + 0.6);
+                        break;
+                    default:
+                        break;
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        // ----- GAME STATE -----
+        let score = 0;
+        let highScore = parseInt(localStorage.getItem('seawolf_high')) || 0;
+        let timeLeft = 120;
+        let gameOver = false;
+        let frameCount = 0;
+        let torpedoCount = 5;
+        let maxTorpedoes = 5;
+        let reloading = false;
+        let reloadTimer = 0;
+        let sonarTimer = 0;
+        let scanAngle = 0;
+
+        // ----- SUBMARINE (periscope aim) -----
+        const sub = {
+            x: CX,
+            y: H - 40,
+            aimX: CX,
+            aimY: 120,
+        };
+
+        // ----- TORPEDOES -----
+        let torpedoes = [];
+        const TORPEDO_SPEED = 5.5;
+
+        // ----- SHIPS -----
+        let ships = [];
+        let shipSpawnTimer = 0;
+        const MAX_SHIPS = 4;
+
+        // ----- MINES -----
+        let mines = [];
+
+        // ----- PARTICLES -----
+        let particles = [];
+
+        // ----- INPUT -----
+        let mouseX = CX,
+            mouseY = 120;
+        let mouseDown = false;
+
+        // ----- HIGH SCORE -----
+        function updateHighScore() {
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('seawolf_high', highScore.toString());
+                highDisplay.textContent = highScore;
+            }
+        }
+
+        // ----- SHIP TYPES -----
+        const SHIP_TYPES = [
+            { name: 'Freighter', points: 100, width: 44, height: 12, speed: 0.4, color: '#44aa66' },
+            { name: 'Warship', points: 300, width: 34, height: 10, speed: 0.7, color: '#66cc88' },
+            { name: 'PT Boat', points: 700, width: 22, height: 8, speed: 1.2, color: '#88dd99' },
+        ];
+
+        // ----- RESET -----
+        function resetGame() {
+            score = 0;
+            timeLeft = 120;
+            gameOver = false;
+            frameCount = 0;
+            torpedoCount = maxTorpedoes;
+            reloading = false;
+            reloadTimer = 0;
+            torpedoes = [];
+            ships = [];
+            mines = [];
+            particles = [];
+            shipSpawnTimer = 0;
+            sub.aimX = CX;
+            sub.aimY = 120;
+            updateUI();
+            highDisplay.textContent = highScore;
+            playSound('sonar');
+        }
+
+        function spawnShip() {
+            const type = SHIP_TYPES[Math.floor(Math.random() * SHIP_TYPES.length)];
+            const x = -20 + Math.random() * 20;
+            const y = 40 + Math.random() * 80;
+            const speed = type.speed * (Math.random() < 0.5 ? 1 : -1);
+            ships.push({
+                x: x,
+                y: y,
+                w: type.width,
+                h: type.height,
+                speed: speed,
+                points: type.points,
+                type: type,
+                alive: true,
+            });
+            if (type.name === 'PT Boat') {
+                playSound('ptboat');
+            }
+        }
+
+        function spawnMine() {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 100 + Math.random() * 180;
+            const x = CX + Math.cos(angle) * dist;
+            const y = CY + Math.sin(angle) * dist;
+            mines.push({
+                x: x,
+                y: y,
+                speed: (0.2 + Math.random() * 0.3) * (Math.random() < 0.5 ? 1 : -1),
+                r: 10,
+                alive: true,
+                angle: angle,
+                dist: dist,
+            });
+        }
+
+        function updateUI() {
+            scoreDisplay.textContent = score;
+            torpedoDisplay.textContent = torpedoCount;
+            timeDisplay.textContent = Math.ceil(timeLeft);
+        }
+
+        // ----- FIRE TORPEDO -----
+        function fireTorpedo() {
+            if (gameOver) return;
+            if (reloading) return;
+            if (torpedoCount <= 0) {
+                reloading = true;
+                reloadTimer = 60;
+                return;
+            }
+
+            const angle = Math.atan2(sub.aimY - sub.y, sub.aimX - sub.x);
+            const speed = TORPEDO_SPEED;
+            torpedoes.push({
+                x: sub.x + Math.cos(angle) * 8 - 3,
+                y: sub.y + Math.sin(angle) * 8 - 3,
+                w: 8,
+                h: 8,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 120,
+            });
+            torpedoCount--;
+            playSound('torpedo');
+            updateUI();
+            if (torpedoCount <= 0) {
+                reloading = true;
+                reloadTimer = 60;
+            }
+        }
+
+        // ----- UPDATE -----
+        function update() {
+            if (gameOver) return;
+
+            frameCount++;
+
+            // ---- Time ----
+            if (frameCount % 60 === 0) {
+                timeLeft--;
+                if (timeLeft <= 0) {
+                    gameOver = true;
+                    playSound('gameover');
+                    updateHighScore();
+                    return;
+                }
+                updateUI();
+            }
+
+            // ---- Reload ----
+            if (reloading) {
+                reloadTimer--;
+                if (reloadTimer <= 0) {
+                    reloading = false;
+                    torpedoCount = maxTorpedoes;
+                    updateUI();
+                }
+            }
+
+            // ---- Aim ----
+            sub.aimX = mouseX;
+            sub.aimY = Math.min(Math.max(mouseY, 30), H - 60);
+
+            // ---- Fire ----
+            if (mouseDown) {
+                fireTorpedo();
+                mouseDown = false;
+            }
+
+            // ---- Sonar ping ----
+            sonarTimer--;
+            if (sonarTimer <= 0) {
+                playSound('sonar');
+                sonarTimer = 150 + Math.random() * 60;
+            }
+
+            // ---- Scan angle ----
+            scanAngle += 0.005;
+
+            // ---- Spawn ships ----
+            shipSpawnTimer--;
+            if (shipSpawnTimer <= 0 && ships.length < MAX_SHIPS) {
+                spawnShip();
+                shipSpawnTimer = 50 + Math.random() * 80;
+            }
+
+            // ---- Spawn mines ----
+            if (frameCount % 100 === 0 && mines.length < 4) {
+                spawnMine();
+            }
+
+            // ---- Move ships ----
+            for (let i = ships.length - 1; i >= 0; i--) {
+                const s = ships[i];
+                s.x += s.speed;
+                if (s.x < -60 || s.x > W + 60) {
+                    ships.splice(i, 1);
+                    continue;
+                }
+            }
+
+            // ---- Move mines ----
+            for (let i = mines.length - 1; i >= 0; i--) {
+                const m = mines[i];
+                m.angle += m.speed * 0.01;
+                m.x = CX + Math.cos(m.angle) * m.dist;
+                m.y = CY + Math.sin(m.angle) * m.dist;
+                if (m.x < -30 || m.x > W + 30 || m.y < -30 || m.y > H + 30) {
+                    mines.splice(i, 1);
+                    continue;
+                }
+            }
+
+            // ---- Move torpedoes ----
+            for (let i = torpedoes.length - 1; i >= 0; i--) {
+                const t = torpedoes[i];
+                t.x += t.vx;
+                t.y += t.vy;
+                t.life--;
+                if (t.life <= 0 || t.x < -30 || t.x > W + 30 || t.y < -30 || t.y > H + 30) {
+                    torpedoes.splice(i, 1);
+                    continue;
+                }
+
+                // ---- Check mine collision ----
+                let hitMine = false;
+                for (let j = mines.length - 1; j >= 0; j--) {
+                    const m = mines[j];
+                    if (!m.alive) continue;
+                    if (Math.hypot(t.x - m.x, t.y - m.y) < m.r + 5) {
+                        m.alive = false;
+                        hitMine = true;
+                        mines.splice(j, 1);
+                        torpedoes.splice(i, 1);
+                        playSound('explosion');
+                        spawnParticles(m.x, m.y, '#ff8844', 20);
+                        break;
+                    }
+                }
+                if (hitMine) continue;
+
+                // ---- Check ship collision ----
+                let hitShip = false;
+                for (let j = ships.length - 1; j >= 0; j--) {
+                    const s = ships[j];
+                    if (!s.alive) continue;
+                    if (t.x < s.x + s.w && t.x + t.w > s.x &&
+                        t.y < s.y + s.h && t.y + t.h > s.y) {
+                        s.alive = false;
+                        hitShip = true;
+                        score += s.points;
+                        spawnParticles(s.x + s.w / 2, s.y + s.h / 2, '#ff8844', 30);
+                        playSound('explosion');
+                        ships.splice(j, 1);
+                        updateUI();
+                        updateHighScore();
+                        if (s.points >= 300) {
+                            timeLeft = Math.min(180, timeLeft + 5);
+                        }
+                        break;
+                    }
+                }
+                if (hitShip) {
+                    torpedoes.splice(i, 1);
+                }
+            }
+
+            // ---- Particles ----
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.02;
+                p.life--;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+        }
+
+        function spawnParticles(x, y, color, count) {
+            for (let i = 0; i < count; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const s = 1 + Math.random() * 4;
+                particles.push({
+                    x: x + (Math.random() - 0.5) * 10,
+                    y: y + (Math.random() - 0.5) * 10,
+                    vx: Math.cos(a) * s,
+                    vy: Math.sin(a) * s - 0.5,
+                    life: 20 + Math.random() * 30,
+                    maxLife: 50,
+                    r: 2 + Math.random() * 4,
+                    color: color || '#ff8844',
+                });
+            }
+        }
+
+        // ----- DRAW (Periscope View) -----
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+
+            // ---- Clip to circular periscope view ----
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(CX, CY, VIEW_RADIUS, 0, Math.PI * 2);
+            ctx.clip();
+
+            // ---- Ocean background (blue gradient) ----
+            const grad = ctx.createRadialGradient(CX, CY, 20, CX, CY, VIEW_RADIUS);
+            grad.addColorStop(0, '#0d2848');
+            grad.addColorStop(0.5, '#0a2040');
+            grad.addColorStop(1, '#061830');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+
+            // ---- Water surface (waves) ----
+            ctx.strokeStyle = 'rgba(51, 170, 255, 0.12)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let i = -20; i < W + 20; i += 2) {
+                const waveY = 35 + Math.sin(i * 0.025 + frameCount * 0.008) * 4 +
+                    Math.sin(i * 0.04 + frameCount * 0.012) * 2.5;
+                if (i === -20) ctx.moveTo(i, waveY);
+                else ctx.lineTo(i, waveY);
+            }
+            ctx.stroke();
+
+            // ---- Surface line ----
+            ctx.strokeStyle = 'rgba(51, 170, 255, 0.25)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(-10, 40);
+            ctx.lineTo(W + 10, 40);
+            ctx.stroke();
+
+            // ---- Depth markings (left side) ----
+            ctx.fillStyle = 'rgba(51, 170, 255, 0.08)';
+            ctx.font = '8px monospace';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            for (let i = 0; i < 6; i++) {
+                const y = 50 + i * 35;
+                ctx.fillStyle = 'rgba(51, 170, 255, 0.06)';
+                ctx.fillRect(10, y, 20, 1);
+                ctx.fillStyle = 'rgba(51, 170, 255, 0.08)';
+                ctx.fillText((i + 1) * 10 + 'm', 12, y + 1);
+            }
+
+            // ---- Ships ----
+            for (const s of ships) {
+                if (!s.alive) continue;
+                const x = s.x,
+                    y = s.y;
+                ctx.strokeStyle = s.type.color || '#44aa66';
+                ctx.lineWidth = 1.5;
+                ctx.shadowColor = 'rgba(51,170,85,0.08)';
+                ctx.shadowBlur = 5;
+                ctx.strokeRect(x, y, s.w, s.h);
+                ctx.strokeRect(x + 4, y - 4, s.w * 0.3, 4);
+                if (s.type.name === 'Warship') {
+                    ctx.strokeRect(x + s.w * 0.35, y - 8, 4, 4);
+                }
+                if (s.type.name === 'PT Boat') {
+                    ctx.fillStyle = 'rgba(51,170,85,0.08)';
+                    ctx.fillRect(x + s.w - 6, y - 6, 4, 4);
+                }
+                ctx.fillStyle = 'rgba(51,170,85,0.15)';
+                ctx.font = '7px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                ctx.fillText('' + s.points, x + s.w / 2, y - 2);
+                ctx.shadowBlur = 0;
+            }
+
+            // ---- Mines ----
+            for (const m of mines) {
+                ctx.strokeStyle = 'rgba(255, 80, 50, 0.4)';
+                ctx.lineWidth = 1.5;
+                ctx.shadowColor = 'rgba(255,80,50,0.15)';
+                ctx.shadowBlur = 8;
+                ctx.beginPath();
+                const safeR = Math.max(0.1, m.r);
+                ctx.arc(m.x, m.y, safeR, 0, Math.PI * 2);
+                ctx.stroke();
+                for (let i = 0; i < 8; i++) {
+                    const a = i * Math.PI / 4 + frameCount * 0.02;
+                    ctx.beginPath();
+                    ctx.moveTo(m.x + Math.cos(a) * safeR * 0.6, m.y + Math.sin(a) * safeR * 0.6);
+                    ctx.lineTo(m.x + Math.cos(a) * safeR, m.y + Math.sin(a) * safeR);
+                    ctx.stroke();
+                }
+                ctx.shadowBlur = 0;
+            }
+
+            // ---- Torpedoes ----
+            for (const t of torpedoes) {
+                ctx.fillStyle = 'rgba(51, 170, 255, 0.7)';
+                ctx.shadowColor = 'rgba(51,170,255,0.2)';
+                ctx.shadowBlur = 6;
+                ctx.fillRect(t.x, t.y, t.w, t.h);
+                ctx.shadowBlur = 0;
+            }
+
+            // ---- Periscope crosshair ----
+            const cx = sub.aimX,
+                cy = sub.aimY;
+            // Outer ring
+            ctx.strokeStyle = 'rgba(51, 170, 255, 0.15)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(cx, cy, 20, 0, Math.PI * 2);
+            ctx.stroke();
+            // Crosshair lines
+            ctx.strokeStyle = 'rgba(51, 170, 255, 0.2)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(cx - 30, cy);
+            ctx.lineTo(cx + 30, cy);
+            ctx.moveTo(cx, cy - 30);
+            ctx.lineTo(cx, cy + 30);
+            ctx.stroke();
+            // Center dot
+            ctx.fillStyle = 'rgba(51, 170, 255, 0.15)';
+            ctx.beginPath();
+            ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+            ctx.fill();
+            // Range rings
+            ctx.strokeStyle = 'rgba(51, 170, 255, 0.05)';
+            ctx.lineWidth = 1;
+            for (let r = 40; r < 160; r += 40) {
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // ---- Aim line (from sub to crosshair) ----
+            ctx.strokeStyle = 'rgba(51, 170, 255, 0.04)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 8]);
+            ctx.beginPath();
+            ctx.moveTo(sub.x, sub.y);
+            ctx.lineTo(cx, cy);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // ---- Submarine (bottom) ----
+            ctx.strokeStyle = 'rgba(51, 170, 255, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(sub.x - 30, sub.y);
+            ctx.lineTo(sub.x + 30, sub.y);
+            ctx.stroke();
+            ctx.strokeStyle = 'rgba(51, 170, 255, 0.2)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(sub.x, sub.y);
+            ctx.lineTo(sub.x, sub.y - 20);
+            ctx.stroke();
+
+            // ---- Particles ----
+            for (const p of particles) {
+                ctx.globalAlpha = p.life / p.maxLife;
+                ctx.fillStyle = p.color || '#ff8844';
+                ctx.fillRect(p.x - p.r / 2, p.y - p.r / 2, p.r, p.r);
+            }
+            ctx.globalAlpha = 1;
+
+            // ---- Reload indicator ----
+            if (reloading) {
+                ctx.fillStyle = 'rgba(255, 50, 50, 0.3)';
+                ctx.font = '12px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                ctx.fillText('🔄 RELOAD', CX, H - 15);
+            }
+
+            // ---- Periscope frame overlay (circular mask edge) ----
+            ctx.restore();
+
+            // ---- Periscope ring (dark vignette) ----
+            const grad2 = ctx.createRadialGradient(CX, CY, VIEW_RADIUS - 2, CX, CY, VIEW_RADIUS);
+            grad2.addColorStop(0, 'rgba(0,0,0,0)');
+            grad2.addColorStop(0.7, 'rgba(0,0,0,0)');
+            grad2.addColorStop(1, 'rgba(0,0,0,0.6)');
+            ctx.fillStyle = grad2;
+            ctx.beginPath();
+            ctx.arc(CX, CY, VIEW_RADIUS, 0, Math.PI * 2);
+            ctx.fill();
+
+            // ---- Periscope frame ----
+            ctx.strokeStyle = 'rgba(30, 60, 90, 0.6)';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(CX, CY, VIEW_RADIUS, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // ---- Periscope edge bolts ----
+            ctx.fillStyle = 'rgba(30, 60, 90, 0.4)';
+            for (let i = 0; i < 12; i++) {
+                const a = i * Math.PI / 6;
+                const bx = CX + Math.cos(a) * (VIEW_RADIUS - 6);
+                const by = CY + Math.sin(a) * (VIEW_RADIUS - 6);
+                ctx.beginPath();
+                ctx.arc(bx, by, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // ---- Torpedo count (periscope overlay) ----
+            ctx.fillStyle = 'rgba(51, 170, 255, 0.15)';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'bottom';
+            const torpedoText = 'TORPEDOES: ' + torpedoCount + '/' + maxTorpedoes;
+            ctx.fillText(torpedoText, 20, H - 10);
+
+            // ---- Sonar ping ring ----
+            if (sonarTimer > 60) {
+                const ringProgress = 1 - (sonarTimer / 180);
+                const ringSize = 20 + ringProgress * 200;
+                ctx.strokeStyle = `rgba(51, 170, 255, ${0.08 * (1 - ringProgress)})`;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(CX, CY, ringSize, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // ---- Game Over ----
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.beginPath();
+                ctx.arc(CX, CY, VIEW_RADIUS, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#ff4444';
+                ctx.font = 'bold 36px monospace';
+                ctx.shadowBlur = 30;
+                ctx.shadowColor = '#ff4444';
+                ctx.fillText('GAME OVER', CX, CY - 30);
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#66ff88';
+                ctx.font = '20px monospace';
+                ctx.fillText('SCORE: ' + score, CX, CY + 30);
+                ctx.fillStyle = '#ffaa66';
+                ctx.font = '16px monospace';
+                ctx.fillText('HIGH SCORE: ' + highScore, CX, CY + 65);
+            }
+        }
+
+        // ----- LOOP -----
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ----- EVENTS -----
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            mouseX = (e.clientX - rect.left) * scaleX;
+            mouseY = (e.clientY - rect.top) * scaleY;
+            // Clamp to periscope view
+            const dx = mouseX - CX,
+                dy = mouseY - CY;
+            if (Math.hypot(dx, dy) > VIEW_RADIUS - 10) {
+                const angle = Math.atan2(dy, dx);
+                mouseX = CX + Math.cos(angle) * (VIEW_RADIUS - 10);
+                mouseY = CY + Math.sin(angle) * (VIEW_RADIUS - 10);
+            }
+            mouseX = Math.max(0, Math.min(W, mouseX));
+            mouseY = Math.max(0, Math.min(H, mouseY));
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            mouseDown = true;
+            initAudio();
+        });
+
+        canvas.addEventListener('mouseup', () => { mouseDown = false; });
+        canvas.addEventListener('mouseleave', () => { mouseDown = false; });
+
+        document.addEventListener('keydown', (e) => {
+            const k = e.key;
+            if (k === ' ') {
+                e.preventDefault();
+                if (gameOver) {
+                    resetGame();
+                    return;
+                }
+                fireTorpedo();
+            }
+            if (k === 'r' || k === 'R') { resetGame(); }
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', resetGame);
+
+        window.addEventListener('keydown', (e) => {
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+                e.preventDefault();
+            }
+        });
+
+        // ----- START -----
+        resetGame();
+        highDisplay.textContent = highScore;
+        gameLoop();
+    </script>
+</body>
+</html>

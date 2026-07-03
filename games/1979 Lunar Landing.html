@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lunar Lander - Terrain Edition</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0a0a12;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+        .game-wrapper {
+            background: #12121f;
+            padding: 20px 30px 25px;
+            border-radius: 16px;
+            border: 2px solid #2a2a5a;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            border: 3px solid #2a2a5a;
+            border-radius: 8px;
+            background: #0b0b18;
+            width: 700px;
+            height: 500px;
+        }
+        .info {
+            display: flex;
+            justify-content: space-between;
+            color: #aac0ff;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 12px;
+            padding: 0 10px;
+        }
+        .info span {
+            color: #ffcc77;
+        }
+        .info .fuel {
+            color: #66ff88;
+        }
+        .info .lives {
+            color: #ff6688;
+        }
+        .controls {
+            color: #6688aa;
+            font-size: 13px;
+            margin-top: 10px;
+            text-align: center;
+            border-top: 1px solid #1a1a3a;
+            padding-top: 10px;
+        }
+        .controls kbd {
+            background: #1a1a3a;
+            padding: 2px 10px;
+            border-radius: 4px;
+            border: 1px solid #3a3a6a;
+            color: #cce;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-wrapper">
+        <canvas id="gameCanvas" width="700" height="500"></canvas>
+        <div class="info">
+            <div>🌀 LEVEL <span id="levelDisplay">1</span></div>
+            <div class="fuel">⛽ FUEL <span id="fuelDisplay">120</span></div>
+            <div class="lives">❤️ <span id="livesDisplay">3</span></div>
+            <div>🏆 SCORE <span id="scoreDisplay">0</span></div>
+        </div>
+        <div class="controls">
+            <kbd>←</kbd> <kbd>→</kbd> rotate &nbsp;|&nbsp; <kbd>↑</kbd> or <kbd>Space</kbd> thrust &nbsp;|&nbsp; <kbd>R</kbd> restart
+        </div>
+    </div>
+    <script>
+        // ----- SETUP -----
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const levelSpan = document.getElementById('levelDisplay');
+        const fuelSpan = document.getElementById('fuelDisplay');
+        const livesSpan = document.getElementById('livesDisplay');
+        const scoreSpan = document.getElementById('scoreDisplay');
+
+        const W = 700,
+            H = 500;
+        const GROUND = 460;
+
+        // ----- LEVELS -----
+        const LEVELS = [{
+            name: 'Highlands',
+            gravity: 0.030,
+            fuel: 120,
+            windChance: 0,
+            terrainType: 'hills',
+            pads: [
+                { x: 350, width: 80, points: 100, label: 'EASY' },
+                { x: 550, width: 40, points: 200, label: 'MEDIUM' },
+            ],
+        }, {
+            name: 'Craters',
+            gravity: 0.035,
+            fuel: 110,
+            windChance: 0.05,
+            terrainType: 'craters',
+            pads: [
+                { x: 200, width: 60, points: 120, label: 'EASY' },
+                { x: 400, width: 35, points: 220, label: 'HARD' },
+                { x: 580, width: 20, points: 350, label: 'EXTREME' },
+            ],
+        }, {
+            name: 'Ridge',
+            gravity: 0.038,
+            fuel: 100,
+            windChance: 0.15,
+            terrainType: 'ridge',
+            pads: [
+                { x: 150, width: 50, points: 150, label: 'EASY' },
+                { x: 380, width: 25, points: 280, label: 'HARD' },
+                { x: 600, width: 15, points: 400, label: 'EXTREME' },
+            ],
+        }, {
+            name: 'Canyon',
+            gravity: 0.042,
+            fuel: 90,
+            windChance: 0.25,
+            terrainType: 'canyon',
+            pads: [
+                { x: 250, width: 40, points: 180, label: 'MEDIUM' },
+                { x: 480, width: 20, points: 320, label: 'HARD' },
+            ],
+        }, {
+            name: 'Chaos',
+            gravity: 0.048,
+            fuel: 80,
+            windChance: 0.35,
+            terrainType: 'chaos',
+            pads: [
+                { x: 180, width: 30, points: 250, label: 'HARD' },
+                { x: 420, width: 15, points: 450, label: 'EXTREME' },
+                { x: 600, width: 10, points: 600, label: 'INSANE' },
+            ],
+        }, ];
+
+        // ----- GAME STATE -----
+        let currentLevel = 0;
+        let score = 0;
+        let lives = 3;
+        let ship, gameOver, landed, levelComplete;
+        let terrain = [];
+        let pads = [];
+        let particles = [];
+        let wind = { x: 0, y: 0 };
+        let deathFlash = 0;
+
+        // ----- RESET -----
+        function resetGame() {
+            currentLevel = 0;
+            score = 0;
+            lives = 3;
+            levelComplete = false;
+            resetLevel();
+        }
+
+        function resetLevel() {
+            const level = LEVELS[currentLevel];
+            ship = {
+                x: 350,
+                y: 80,
+                vx: 0.3 * (Math.random() - 0.5),
+                vy: 0,
+                angle: 0,
+                fuel: level.fuel,
+                maxFuel: level.fuel,
+                thrusting: false,
+                grounded: false,
+                sliding: false,
+            };
+            gameOver = false;
+            landed = false;
+            deathFlash = 0;
+            particles = [];
+            wind = { x: 0, y: 0 };
+            generateTerrain(level);
+            updateUI();
+        }
+
+        function crashAndRespawn() {
+            lives--;
+            deathFlash = 30; // red flash frames
+            updateUI();
+
+            if (lives <= 0) {
+                gameOver = true;
+                return;
+            }
+
+            // Respawn on same level with fresh fuel
+            const level = LEVELS[currentLevel];
+            ship.x = 350;
+            ship.y = 80;
+            ship.vx = 0.3 * (Math.random() - 0.5);
+            ship.vy = 0;
+            ship.angle = 0;
+            ship.fuel = level.fuel;
+            ship.maxFuel = level.fuel;
+            ship.thrusting = false;
+            ship.grounded = false;
+            ship.sliding = false;
+            landed = false;
+            particles = [];
+            wind = { x: 0, y: 0 };
+            // Keep terrain and pads as they were (pads already used stay used)
+            generateTerrain(level);
+            // Reapply pad usage
+            for (const p of pads) {
+                // Find the matching pad in the level data
+                const levelPad = level.pads.find(lp => lp.x === p.x);
+                if (levelPad && levelPad.used) {
+                    p.used = true;
+                }
+            }
+            updateUI();
+        }
+
+        function generateTerrain(level) {
+            terrain = [];
+            pads = [];
+            const type = level.terrainType;
+
+            const steps = 350;
+            let heights = [];
+
+            for (let i = 0; i <= steps; i++) {
+                const x = (i / steps) * W;
+                let h = 0;
+
+                switch (type) {
+                    case 'hills':
+                        h = Math.sin(x * 0.008) * 30 +
+                            Math.sin(x * 0.015 + 1.5) * 15 +
+                            Math.sin(x * 0.025 + 3.2) * 8;
+                        break;
+                    case 'craters':
+                        h = Math.sin(x * 0.004) * 20 +
+                            Math.sin(x * 0.012 + 2.1) * 12 +
+                            (Math.sin(x * 0.035 + 0.5) > 0.7 ? -25 : 0) +
+                            (Math.sin(x * 0.04 + 2.8) > 0.8 ? -20 : 0) +
+                            (Math.sin(x * 0.03 + 4.2) > 0.75 ? -30 : 0);
+                        break;
+                    case 'ridge':
+                        h = Math.sin(x * 0.006) * 25 +
+                            Math.sin(x * 0.01 + 1.2) * 20 +
+                            (Math.sin(x * 0.03 + 0.8) > 0.85 ? -15 : 0) +
+                            (Math.sin(x * 0.025 + 3.5) > 0.9 ? -18 : 0);
+                        break;
+                    case 'canyon':
+                        h = Math.sin(x * 0.005) * 15 +
+                            (x > 200 && x < 500 ? -20 - Math.sin((x - 350) * 0.02) * 15 : 0) +
+                            Math.sin(x * 0.02 + 2.0) * 10;
+                        break;
+                    case 'chaos':
+                        h = Math.sin(x * 0.007) * 20 +
+                            Math.sin(x * 0.02 + 1.8) * 18 +
+                            Math.sin(x * 0.035 + 3.3) * 12 +
+                            (Math.sin(x * 0.04 + 0.2) > 0.8 ? -22 : 0) +
+                            (Math.sin(x * 0.045 + 2.5) > 0.7 ? -18 : 0) +
+                            (Math.sin(x * 0.03 + 4.8) > 0.85 ? -28 : 0);
+                        break;
+                }
+
+                h = Math.max(h, -50);
+                heights.push({ x, h });
+            }
+
+            for (const p of heights) {
+                const y = GROUND - (p.h + 60);
+                terrain.push({ x: p.x, y: y });
+            }
+
+            // ---- PLACE LANDING PADS ----
+            for (const padData of level.pads) {
+                const padX = padData.x;
+                const halfW = padData.width / 2;
+
+                let padY = GROUND;
+                for (const t of terrain) {
+                    if (Math.abs(t.x - padX) < 2) {
+                        padY = t.y;
+                        break;
+                    }
+                }
+
+                for (const t of terrain) {
+                    if (t.x > padX - halfW - 4 && t.x < padX + halfW + 4) {
+                        const dist = Math.abs(t.x - padX);
+                        if (dist < halfW) {
+                            t.y = padY;
+                        } else {
+                            const blend = (dist - halfW) / 4;
+                            if (blend < 1) {
+                                const origY = GROUND - (60 + Math.sin(t.x * 0.01) * 30);
+                                t.y = padY + (origY - padY) * blend;
+                            }
+                        }
+                    }
+                }
+
+                pads.push({
+                    x: padX,
+                    y: padY,
+                    width: padData.width,
+                    halfW: halfW,
+                    points: padData.points,
+                    label: padData.label,
+                    used: padData.used || false,
+                });
+            }
+        }
+
+        // ----- GET TERRAIN HEIGHT -----
+        function getTerrainHeight(x) {
+            if (x < 0 || x > W) return GROUND;
+            for (let i = 0; i < terrain.length - 1; i++) {
+                if (x >= terrain[i].x && x <= terrain[i + 1].x) {
+                    const t = (x - terrain[i].x) / (terrain[i + 1].x - terrain[i].x);
+                    return terrain[i].y + (terrain[i + 1].y - terrain[i].y) * t;
+                }
+            }
+            return GROUND;
+        }
+
+        function getTerrainSlope(x) {
+            const h1 = getTerrainHeight(x - 3);
+            const h2 = getTerrainHeight(x + 3);
+            return (h2 - h1) / 6;
+        }
+
+        // ----- PARTICLES -----
+        function spawnThrustParticles() {
+            const angle = ship.angle;
+            for (let i = 0; i < 4; i++) {
+                const spread = (Math.random() - 0.5) * 0.6;
+                const speed = 1 + Math.random() * 2;
+                particles.push({
+                    x: ship.x + Math.sin(angle) * 6 + (Math.random() - 0.5) * 3,
+                    y: ship.y + Math.cos(angle) * 6 + (Math.random() - 0.5) * 3,
+                    vx: Math.sin(angle + spread) * speed + ship.vx * 0.15,
+                    vy: Math.cos(angle + spread) * speed + ship.vy * 0.15,
+                    life: 12 + Math.random() * 14,
+                    maxLife: 26,
+                    radius: 1 + Math.random() * 1.5,
+                });
+            }
+        }
+
+        function spawnCrashParticles(x, y) {
+            for (let i = 0; i < 50; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 1 + Math.random() * 5;
+                particles.push({
+                    x: x + (Math.random() - 0.5) * 20,
+                    y: y + (Math.random() - 0.5) * 20,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed - 1,
+                    life: 25 + Math.random() * 35,
+                    maxLife: 60,
+                    radius: 1 + Math.random() * 2.5,
+                });
+            }
+        }
+
+        function spawnLandingDust(x, y) {
+            for (let i = 0; i < 20; i++) {
+                const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.5;
+                const speed = 0.5 + Math.random() * 1.5;
+                particles.push({
+                    x: x + (Math.random() - 0.5) * 30,
+                    y: y + 4,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed - 0.5,
+                    life: 20 + Math.random() * 20,
+                    maxLife: 40,
+                    radius: 1 + Math.random() * 2,
+                });
+            }
+        }
+
+        // ----- UI -----
+        function updateUI() {
+            levelSpan.textContent = currentLevel + 1;
+            fuelSpan.textContent = Math.floor(ship.fuel);
+            livesSpan.textContent = lives;
+            scoreSpan.textContent = score;
+        }
+
+        // ----- UPDATE -----
+        function update() {
+            if (gameOver) return;
+            if (levelComplete) return;
+
+            const level = LEVELS[currentLevel];
+
+            // ---- WIND ----
+            if (level.windChance > 0 && Math.random() < level.windChance * 0.02) {
+                wind.x = (Math.random() - 0.5) * 0.15;
+            }
+            wind.x *= 0.995;
+
+            // ---- ROTATION ----
+            if (keys.left) ship.angle -= 0.035;
+            if (keys.right) ship.angle += 0.035;
+
+            // ---- THRUST ----
+            ship.thrusting = false;
+            if ((keys.up || keys.space) && ship.fuel > 0) {
+                ship.thrusting = true;
+                ship.vx += Math.sin(ship.angle) * 0.065 + wind.x * 0.01;
+                ship.vy -= Math.cos(ship.angle) * 0.065;
+                ship.fuel -= 0.18;
+                if (ship.fuel < 0) ship.fuel = 0;
+                spawnThrustParticles();
+            }
+
+            // ---- GRAVITY ----
+            ship.vy += level.gravity;
+
+            // ---- MAX SPEED ----
+            const spd = Math.hypot(ship.vx, ship.vy);
+            if (spd > 5.5) {
+                ship.vx = (ship.vx / spd) * 5.5;
+                ship.vy = (ship.vy / spd) * 5.5;
+            }
+
+            // ---- MOVE ----
+            ship.x += ship.vx;
+            ship.y += ship.vy;
+
+            // ---- BOUNDARIES ----
+            if (ship.x < 0) { ship.x = 0;
+                ship.vx = 0; }
+            if (ship.x > W) { ship.x = W;
+                ship.vx = 0; }
+            if (ship.y < 0) { ship.y = 0;
+                ship.vy = 0; }
+
+            // ---- GROUND COLLISION ----
+            const radius = 11;
+            const groundY = getTerrainHeight(ship.x);
+            const slope = getTerrainSlope(ship.x);
+
+            if (ship.y + radius > groundY) {
+                ship.y = groundY - radius;
+                const speed = Math.hypot(ship.vx, ship.vy);
+
+                const pad = getNearestPad(ship.x);
+                const onPad = pad && Math.abs(ship.x - pad.x) < pad.halfW;
+
+                if (onPad && speed < 1.8 && Math.abs(ship.angle) < 0.35) {
+                    // LANDED!
+                    landed = true;
+                    const bonus = Math.floor(ship.fuel * 2);
+                    const padBonus = pad.points;
+                    const totalScore = 100 + bonus + padBonus;
+                    score += totalScore;
+                    pad.used = true;
+                    spawnLandingDust(ship.x, groundY);
+                    updateUI();
+
+                    const allUsed = pads.every(p => p.used);
+                    if (allUsed) {
+                        levelComplete = true;
+                        lives = 3; // Reset lives for next level
+                        updateUI();
+                    }
+                    ship.vx = 0;
+                    ship.vy = 0;
+                    return;
+                }
+
+                if (Math.abs(slope) > 0.15 && speed < 0.5) {
+                    ship.vx += slope * 0.02;
+                    ship.angle += slope * 0.01;
+                    ship.sliding = true;
+                } else if (speed > 1.8 || Math.abs(ship.angle) > 0.35) {
+                    // CRASH!
+                    spawnCrashParticles(ship.x, groundY);
+                    crashAndRespawn();
+                    return;
+                } else {
+                    ship.vx *= 0.9;
+                    ship.vy = 0;
+                    ship.sliding = false;
+                }
+            }
+
+            // ---- PARTICLES ----
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.015;
+                p.vx *= 0.99;
+                p.life--;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            if (deathFlash > 0) deathFlash--;
+
+            updateUI();
+        }
+
+        function getNearestPad(x) {
+            let nearest = null;
+            let minDist = Infinity;
+            for (const p of pads) {
+                if (p.used) continue;
+                const dist = Math.abs(x - p.x);
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearest = p;
+                }
+            }
+            return nearest;
+        }
+
+        // ----- DRAW -----
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+
+            // ---- Stars ----
+            ctx.fillStyle = 'rgba(255,255,255,0.6)';
+            for (let i = 0; i < 80; i++) {
+                const sx = (i * 131 + 23) % W;
+                const sy = (i * 279 + 17) % H;
+                ctx.fillRect(sx, sy, 1 + (i % 2), 1 + (i % 2));
+            }
+
+            // ---- Terrain ----
+            ctx.beginPath();
+            ctx.moveTo(0, GROUND);
+            for (const p of terrain) {
+                ctx.lineTo(p.x, p.y);
+            }
+            ctx.lineTo(W, GROUND);
+            ctx.closePath();
+            const grad = ctx.createLinearGradient(0, GROUND - 80, 0, GROUND);
+            grad.addColorStop(0, 'rgba(40,35,30,0)');
+            grad.addColorStop(0.2, 'rgba(50,45,40,0.4)');
+            grad.addColorStop(1, 'rgba(40,35,30,0.9)');
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            ctx.strokeStyle = '#55aa77';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            for (let i = 0; i < terrain.length; i++) {
+                if (i === 0) ctx.moveTo(terrain[i].x, terrain[i].y);
+                else ctx.lineTo(terrain[i].x, terrain[i].y);
+            }
+            ctx.stroke();
+
+            // ---- Landing Pads ----
+            for (const p of pads) {
+                const isUsed = p.used;
+                const isNear = !isUsed && Math.abs(ship.x - p.x) < p.halfW + 30;
+
+                if (!isUsed) {
+                    ctx.fillStyle = isNear ? 'rgba(255,221,68,0.08)' : 'rgba(255,221,68,0.03)';
+                    ctx.fillRect(p.x - p.halfW - 15, p.y - 30, p.halfW * 2 + 30, 40);
+                }
+
+                ctx.strokeStyle = isUsed ? 'rgba(255,221,68,0.2)' :
+                    isNear ? '#ffdd44' : 'rgba(255,221,68,0.5)';
+                ctx.lineWidth = isNear ? 3 : 2;
+                ctx.beginPath();
+                ctx.moveTo(p.x - p.halfW, p.y);
+                ctx.lineTo(p.x + p.halfW, p.y);
+                ctx.stroke();
+
+                if (!isUsed) {
+                    for (let x = p.x - p.halfW + 4; x < p.x + p.halfW - 4; x += 6) {
+                        ctx.fillStyle = isNear ? 'rgba(255,221,68,0.4)' : 'rgba(255,221,68,0.15)';
+                        ctx.fillRect(x, p.y - 2, 2, 4);
+                    }
+                }
+
+                if (!isUsed) {
+                    ctx.fillStyle = isNear ? 'rgba(255,221,68,0.6)' : 'rgba(255,221,68,0.3)';
+                    ctx.font = '8px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(p.label + ' ' + p.points + 'pts', p.x, p.y - 6);
+                    ctx.fillStyle = isNear ? 'rgba(255,221,68,0.15)' : 'rgba(255,221,68,0.05)';
+                    ctx.fillRect(p.x - p.halfW, p.y - 1, p.halfW * 2, 2);
+                }
+
+                if (isUsed) {
+                    ctx.fillStyle = 'rgba(100,255,100,0.3)';
+                    ctx.font = '12px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText('✓', p.x, p.y - 4);
+                }
+            }
+
+            // ---- Wind ----
+            if (Math.abs(wind.x) > 0.005) {
+                ctx.fillStyle = 'rgba(255,200,100,0.3)';
+                ctx.font = '12px monospace';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'bottom';
+                const dir = wind.x > 0 ? '→' : '←';
+                ctx.fillText('WIND ' + dir + ' ' + (Math.abs(wind.x) * 100).toFixed(0) + '%', 12, GROUND - 10);
+                ctx.strokeStyle = 'rgba(255,200,100,0.1)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                const wStart = 120;
+                const wLen = Math.abs(wind.x) * 300;
+                ctx.moveTo(wStart, GROUND - 4);
+                ctx.lineTo(wStart + wLen * (wind.x > 0 ? 1 : -1), GROUND - 4);
+                ctx.stroke();
+            }
+
+            // ---- SHIP COLOUR LOGIC ----
+            const pad = getNearestPad(ship.x);
+            const onPad = pad && Math.abs(ship.x - pad.x) < pad.halfW;
+            const speed = Math.hypot(ship.vx, ship.vy);
+            const angleOk = Math.abs(ship.angle) < 0.35;
+            const speedOk = speed < 1.8;
+
+            let shipColor = '#88ddff'; // default blue-white
+            let glowColor = 'rgba(100, 200, 255, 0.15)';
+
+            // Only change colour if alive and not already landed
+            if (!landed && ship.fuel > 0) {
+                if (onPad && !pad.used) {
+                    if (speedOk && angleOk) {
+                        shipColor = '#66ff88'; // GREEN – perfect landing!
+                        glowColor = 'rgba(100, 255, 150, 0.4)';
+                    } else {
+                        shipColor = '#ffaa44'; // ORANGE – warning! too fast or tilted
+                        glowColor = 'rgba(255, 170, 68, 0.4)';
+                    }
+                } else {
+                    // Not on a pad – default blue
+                    shipColor = '#88ddff';
+                    glowColor = 'rgba(100, 200, 255, 0.15)';
+                }
+            }
+
+            // If landed, keep it green
+            if (landed) {
+                shipColor = '#66ff88';
+                glowColor = 'rgba(100, 255, 150, 0.4)';
+            }
+
+            // ---- DRAW SHIP ----
+            if (!gameOver) {
+                ctx.save();
+                ctx.translate(ship.x, ship.y);
+                ctx.rotate(ship.angle);
+                ctx.shadowColor = glowColor;
+                ctx.shadowBlur = 18;
+
+                // Ship hull
+                ctx.strokeStyle = shipColor;
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.moveTo(0, -11);
+                ctx.lineTo(-7, 7);
+                ctx.lineTo(7, 7);
+                ctx.closePath();
+                ctx.stroke();
+
+                // Inner glow line
+                ctx.strokeStyle = shipColor;
+                ctx.globalAlpha = 0.3;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(0, -9);
+                ctx.lineTo(-4, 5);
+                ctx.lineTo(4, 5);
+                ctx.closePath();
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+
+                // Thruster flame
+                if (ship.thrusting && ship.fuel > 0) {
+                    ctx.shadowColor = 'rgba(255, 150, 50, 0.6)';
+                    ctx.shadowBlur = 22;
+                    const flicker = 3 + Math.random() * 6;
+                    ctx.strokeStyle = '#ff8800';
+                    ctx.lineWidth = 1.8;
+                    ctx.beginPath();
+                    ctx.moveTo(-3, 7);
+                    ctx.lineTo(0, 7 + flicker);
+                    ctx.lineTo(3, 7);
+                    ctx.stroke();
+                    ctx.strokeStyle = '#ffcc44';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(-1.5, 7);
+                    ctx.lineTo(0, 7 + flicker * 0.6);
+                    ctx.lineTo(1.5, 7);
+                    ctx.stroke();
+                }
+                ctx.shadowBlur = 0;
+                ctx.restore();
+            }
+
+            // ---- Particles ----
+            for (const p of particles) {
+                ctx.globalAlpha = p.life / p.maxLife;
+                const color = p.life > p.maxLife * 0.5 ? '#ffaa44' : '#ff6633';
+                ctx.fillStyle = color;
+                ctx.fillRect(p.x - p.radius / 2, p.y - p.radius / 2, p.radius, p.radius);
+            }
+            ctx.globalAlpha = 1;
+
+            // ---- Red flash on death ----
+            if (deathFlash > 0) {
+                ctx.fillStyle = `rgba(255, 0, 0, ${deathFlash / 30 * 0.25})`;
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            // ---- HUD ----
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+
+            const spd = Math.hypot(ship.vx, ship.vy);
+            const angleDeg = (ship.angle / Math.PI * 180) % 360;
+            ctx.fillText(`SPD ${spd.toFixed(2)}`, 12, 12);
+            ctx.fillText(`VX ${ship.vx.toFixed(2)}`, 12, 26);
+            ctx.fillText(`VY ${ship.vy.toFixed(2)}`, 12, 40);
+            ctx.fillText(`ANG ${angleDeg.toFixed(1)}°`, 12, 54);
+
+            // ---- Fuel Bar ----
+            const fuelPct = ship.fuel / ship.maxFuel;
+            ctx.fillStyle = 'rgba(255,255,255,0.08)';
+            ctx.fillRect(12, 80, 120, 10);
+            const fuelColor = fuelPct > 0.3 ? 'rgba(100,255,200,0.7)' : 'rgba(255,80,80,0.7)';
+            ctx.fillStyle = fuelColor;
+            ctx.fillRect(14, 82, Math.max(0, fuelPct * 116), 6);
+            ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(12, 80, 120, 10);
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.font = '7px monospace';
+            ctx.fillText('FUEL', 16, 82);
+
+            // ---- Pads remaining ----
+            const remaining = pads.filter(p => !p.used).length;
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.font = '10px monospace';
+            ctx.fillText('PADS: ' + remaining, 12, 100);
+
+            // ---- Level name ----
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
+            ctx.font = '12px monospace';
+            ctx.fillText(LEVELS[currentLevel].name, W - 12, 12);
+
+            // ---- GAME OVER / WIN ----
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.fillRect(0, 0, W, H);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#ff4477';
+                ctx.font = 'bold 36px monospace';
+                ctx.fillText('💀 GAME OVER', W / 2, H / 2 - 40);
+                ctx.fillStyle = '#aaccee';
+                ctx.font = '18px monospace';
+                ctx.fillText(`Final Score: ${score}  |  Press R to restart`, W / 2, H / 2 + 30);
+            }
+
+            if (levelComplete) {
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.fillRect(0, 0, W, H);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#88ff88';
+                ctx.font = 'bold 36px monospace';
+                if (currentLevel + 1 < LEVELS.length) {
+                    ctx.fillText('🌟 LEVEL COMPLETE!', W / 2, H / 2 - 50);
+                    ctx.fillStyle = '#aaccee';
+                    ctx.font = '18px monospace';
+                    ctx.fillText(`Score: ${score}  |  Press SPACE for next level`, W / 2, H / 2 + 20);
+                } else {
+                    ctx.fillText('🏆 ALL LEVELS COMPLETE!', W / 2, H / 2 - 50);
+                    ctx.fillStyle = '#aaccee';
+                    ctx.font = '18px monospace';
+                    ctx.fillText(`Final Score: ${score}  |  Press R to restart`, W / 2, H / 2 + 20);
+                }
+            }
+
+            if (landed && !levelComplete && !gameOver) {
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.fillRect(0, 0, W, 30);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#88ff88';
+                ctx.font = '14px monospace';
+                ctx.fillText('🛸 LANDED! Find the next landing pad →', W / 2, 15);
+            }
+        }
+
+        // ----- GAME LOOP -----
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ----- INPUT -----
+        const keys = {
+            left: false,
+            right: false,
+            up: false,
+            space: false,
+        };
+
+        document.addEventListener('keydown', (e) => {
+            const key = e.key;
+            if (key === 'ArrowLeft') { keys.left = true;
+                e.preventDefault(); }
+            if (key === 'ArrowRight') { keys.right = true;
+                e.preventDefault(); }
+            if (key === 'ArrowUp') { keys.up = true;
+                e.preventDefault(); }
+            if (key === ' ') {
+                keys.space = true;
+                e.preventDefault();
+                if (levelComplete && currentLevel + 1 < LEVELS.length) {
+                    currentLevel++;
+                    lives = 3;
+                    levelComplete = false;
+                    resetLevel();
+                } else if (levelComplete && currentLevel + 1 >= LEVELS.length) {
+                    resetGame();
+                }
+                if (gameOver) resetGame();
+            }
+            if (key === 'r' || key === 'R') {
+                resetGame();
+                e.preventDefault();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            const key = e.key;
+            if (key === 'ArrowLeft') { keys.left = false;
+                e.preventDefault(); }
+            if (key === 'ArrowRight') { keys.right = false;
+                e.preventDefault(); }
+            if (key === 'ArrowUp') { keys.up = false;
+                e.preventDefault(); }
+            if (key === ' ') { keys.space = false;
+                e.preventDefault(); }
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+                e.preventDefault();
+            }
+        });
+
+        // ----- START -----
+        resetGame();
+        gameLoop();
+    </script>
+</body>
+</html>

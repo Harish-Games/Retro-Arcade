@@ -1,0 +1,374 @@
+<!-- Gemini Created -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Donkey Kong - Endless Arcade Edition</title>
+    <style>
+        body {
+            background-color: #111;
+            color: white;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        #scoreBoard {
+            font-size: 18px;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+        }
+        canvas {
+            border: 4px solid #333;
+            background-color: black;
+            box-shadow: 0px 0px 20px rgba(255, 0, 85, 0.3);
+        }
+        .controls {
+            margin-top: 15px;
+            color: #aaa;
+            text-align: center;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="scoreBoard">SCORE: <span id="score">0</span> | LIVES: <span id="lives">3</span> | LEVEL: <span id="level">1</span></div>
+    <canvas id="gameCanvas" width="480" height="560"></canvas>
+    <div class="controls">
+        <strong>Controls:</strong> Arrow Keys to Move/Climb | <strong>Spacebar</strong> to Jump
+    </div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // Game State
+        let score = 0;
+        let lives = 3;
+        let currentLevel = 1;
+        let gameOver = false;
+        let victoryState = false;
+        let victoryTimer = 0;
+
+        const keys = {};
+        window.addEventListener("keydown", e => keys[e.code] = true);
+        window.addEventListener("keyup", e => keys[e.code] = false);
+
+        // Grid Layout
+        const platforms = [
+            { x: 0,   y: 530, w: 480, h: 12 }, // Ground (Level 0)
+            { x: 0,   y: 450, w: 430, h: 12 }, // Level 1 (Gap on Right)
+            { x: 50,  y: 370, w: 430, h: 12 }, // Level 2 (Gap on Left)
+            { x: 0,   y: 290, w: 430, h: 12 }, // Level 3 (Gap on Right)
+            { x: 50,  y: 210, w: 430, h: 12 }, // Level 4 (Gap on Left)
+            { x: 0,   y: 130, w: 360, h: 12 }, // Level 5 (Kong's floor)
+            { x: 180, y: 75,  w: 120, h: 12 }  // Pauline's Top Safety Perch
+        ];
+
+        // Ladders
+        const ladders = [
+            { x: 390, y: 450, w: 18, h: 80 }, 
+            { x: 70,  y: 370, w: 18, h: 80 }, 
+            { x: 390, y: 290, w: 18, h: 80 }, 
+            { x: 70,  y: 210, w: 18, h: 80 }, 
+            { x: 200, y: 130, w: 18, h: 80 }, 
+            { x: 230, y: 75,  w: 18, h: 55 }  
+        ];
+
+        // Jumpman Player
+        const player = {
+            x: 30,
+            y: 490,
+            w: 16,
+            h: 22,
+            vx: 0,
+            vy: 0,
+            speed: 2.2,
+            jumpForce: 6.8,
+            gravity: 0.35,
+            isGrounded: false,
+            isClimbing: false
+        };
+
+        // Barrels
+        let barrels = [];
+        let barrelSpawnTimer = 0;
+
+        function spawnBarrel() {
+            let baseSpeed = 1.6 + (currentLevel * 0.3);
+            barrels.push({
+                x: 320,       
+                y: 110,
+                r: 8,
+                vx: -baseSpeed, 
+                vy: 0,
+                isFalling: false
+            });
+        }
+
+        function getActiveLadder(entity) {
+            for (let l of ladders) {
+                if (entity.x + entity.w/2 > l.x && entity.x + entity.w/2 < l.x + l.w &&
+                    entity.y + entity.h > l.y && entity.y < l.y + l.h) {
+                    return l;
+                }
+            }
+            return null;
+        }
+
+        function playerDeath() {
+            lives--;
+            document.getElementById("lives").innerText = lives;
+            if (lives <= 0) {
+                gameOver = true;
+            } else {
+                resetPositions();
+            }
+        }
+
+        function resetPositions() {
+            player.x = 30;
+            player.y = 490;
+            player.vx = 0;
+            player.vy = 0;
+            player.isClimbing = false;
+            barrels = [];
+        }
+
+        function nextLevel() {
+            currentLevel++;
+            document.getElementById("level").innerText = currentLevel;
+            victoryState = false;
+            resetPositions();
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            if (victoryState) {
+                victoryTimer++;
+                if (victoryTimer > 90) { 
+                    victoryTimer = 0;
+                    nextLevel();
+                }
+                return; 
+            }
+
+            // --- PLAYER LOGIC ---
+            const ladder = getActiveLadder(player);
+
+            if (ladder) {
+                if (keys["ArrowUp"]) {
+                    player.isClimbing = true;
+                    player.vy = -2;
+                } else if (keys["ArrowDown"]) {
+                    player.isClimbing = true;
+                    player.vy = 2;
+                } else if (player.isClimbing) {
+                    player.vy = 0;
+                }
+            } else {
+                player.isClimbing = false;
+            }
+
+            if (!player.isClimbing) {
+                if (keys["ArrowLeft"]) player.vx = -player.speed;
+                else if (keys["ArrowRight"]) player.vx = player.speed;
+                else player.vx = 0;
+
+                player.vy += player.gravity;
+
+                if (keys["Space"] && player.isGrounded) {
+                    player.vy = -player.jumpForce;
+                    player.isGrounded = false;
+                }
+            } else {
+                if (keys["ArrowUp"] || keys["ArrowDown"]) {
+                    player.vx = 0;
+                    player.x = ladder.x + ladder.w/2 - player.w/2;
+                }
+            }
+
+            player.x += player.vx;
+            player.y += player.vy;
+
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.w > canvas.width) player.x = canvas.width - player.w;
+
+            // Player Platform Collisions
+            player.isGrounded = false;
+            if (!player.isClimbing) {
+                for (let p of platforms) {
+                    if (player.x + player.w > p.x && player.x < p.x + p.w) {
+                        if (player.y + player.h >= p.y && player.y + player.h - player.vy <= p.y + 6) {
+                            player.y = p.y - player.h;
+                            player.vy = 0;
+                            player.isGrounded = true;
+                        }
+                    }
+                }
+            }
+
+            // Check Win Condition
+            if (player.y < 100 && player.x > 170 && player.x < 310) {
+                victoryState = true;
+                score += 5000;
+                document.getElementById("score").innerText = score;
+            }
+
+            // --- BARREL LOGIC ---
+            barrelSpawnTimer++;
+            let spawnRate = Math.max(60, 150 - (currentLevel * 15));
+            if (barrelSpawnTimer > spawnRate) { 
+                spawnBarrel();
+                barrelSpawnTimer = 0;
+            }
+
+            for (let i = barrels.length - 1; i >= 0; i--) {
+                let b = barrels[i];
+
+                b.vy += 0.35; 
+                b.y += b.vy;
+                
+                if (!b.isFalling) {
+                    b.x += b.vx;
+                }
+
+                let groundedThisFrame = false;
+
+                for (let p of platforms) {
+                    if (b.x > p.x && b.x < p.x + p.w) {
+                        if (b.y + b.r >= p.y && b.y + b.r - b.vy <= p.y + 8) {
+                            b.y = p.y - b.r;
+                            b.vy = 0;
+                            groundedThisFrame = true;
+
+                            if (b.isFalling) {
+                                b.isFalling = false;
+                                b.vx = -b.vx; 
+                            }
+                        }
+                    }
+                }
+
+                if (!groundedThisFrame) {
+                    b.isFalling = true;
+                }
+
+                if (b.y > canvas.height) {
+                    barrels.splice(i, 1);
+                    score += 100;
+                    document.getElementById("score").innerText = score;
+                    continue;
+                }
+
+                // Collision Check
+                let distX = Math.abs(b.x - (player.x + player.w/2));
+                let distY = Math.abs(b.y - (player.y + player.h/2));
+                if (distX < (player.w/2 + b.r) && distY < (player.h/2 + b.r)) {
+                    playerDeath();
+                    break; // CRITICAL FIX: Breaks loop instantly so undefined variables aren't read
+                }
+            }
+        }
+
+        function draw() {
+            ctx.fillStyle = "black";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Draw Blue Ladders
+            ctx.strokeStyle = "#00ffff";
+            ctx.lineWidth = 2;
+            for (let l of ladders) {
+                ctx.strokeRect(l.x, l.y, l.w, l.h);
+                for (let rY = l.y + 4; rY < l.y + l.h; rY += 8) {
+                    ctx.beginPath();
+                    ctx.moveTo(l.x, rY);
+                    ctx.lineTo(l.x + l.w, rY);
+                    ctx.stroke();
+                }
+            }
+
+            // 2. Draw Crimson Girders
+            ctx.fillStyle = "#ff0055";
+            for (let p of platforms) {
+                ctx.fillRect(p.x, p.y, p.w, p.h);
+                ctx.fillStyle = "#111";
+                for (let j = p.x + 6; j < p.x + p.w - 4; j += 14) {
+                    ctx.fillRect(j, p.y + 2, 4, p.h - 4);
+                }
+                ctx.fillStyle = "#ff0055";
+            }
+
+            // 3. Draw Kong
+            ctx.fillStyle = "#663300"; 
+            ctx.fillRect(100, 70, 55, 60); 
+            ctx.fillStyle = "#ffcc99"; 
+            ctx.fillRect(112, 85, 30, 30);
+            ctx.fillStyle = "#ff0000"; 
+            ctx.fillRect(118, 92, 4, 4);
+            ctx.fillRect(132, 92, 4, 4);
+
+            // 4. Draw Pauline
+            ctx.fillStyle = "#ff69b4";
+            ctx.fillRect(230, 45, 16, 30);
+
+            // 5. Draw Jumpman (Mario)
+            ctx.fillStyle = "#0000ff"; 
+            ctx.fillRect(player.x, player.y + 8, player.w, player.h - 8);
+            ctx.fillStyle = "#ff0000"; 
+            ctx.fillRect(player.x, player.y, player.w, 10);
+            ctx.fillStyle = "#ffe0bd"; 
+            ctx.fillRect(player.x + 4, player.y + 3, 8, 6);
+
+            // 6. Draw Rolling Barrels
+            ctx.fillStyle = "#cc6600";
+            for (let b of barrels) {
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = "#221100";
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, b.r - 3, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Screen Overlays
+            if (gameOver) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = "red";
+                ctx.font = "bold 32px 'Courier New'";
+                ctx.fillText("GAME OVER", 150, 280);
+            }
+
+            if (victoryState) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = "yellow";
+                ctx.font = "bold 24px 'Courier New'";
+                ctx.fillText(`STAGE ${currentLevel} CLEAR!`, 130, 260);
+                ctx.fillStyle = "white";
+                ctx.font = "16px 'Courier New'";
+                ctx.fillText("PREPARING NEXT LEVEL...", 130, 300);
+            }
+        }
+
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>

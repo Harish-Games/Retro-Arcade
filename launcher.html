@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🕹️ Retro Arcade</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0a0a12;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+        .arcade {
+            background: #12121f;
+            padding: 40px 50px 50px;
+            border-radius: 30px;
+            border: 3px solid #2a2a5a;
+            box-shadow: 0 0 80px rgba(0, 100, 255, 0.08), inset 0 0 40px rgba(0, 50, 150, 0.05);
+            max-width: 1100px;
+            width: 100%;
+        }
+        .arcade-header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #2a2a5a;
+            padding-bottom: 15px;
+        }
+        .arcade-header h1 {
+            color: #ffcc77;
+            font-size: 32px;
+            letter-spacing: 4px;
+            text-shadow: 0 0 20px rgba(255, 200, 100, 0.1);
+        }
+        .arcade-header .subtitle {
+            color: #667799;
+            font-size: 14px;
+            letter-spacing: 2px;
+            margin-top: 4px;
+        }
+        .arcade-header .count {
+            display: inline-block;
+            background: #1a1a30;
+            padding: 4px 16px;
+            border-radius: 20px;
+            border: 1px solid #3a3a6a;
+            color: #88bbff;
+            font-size: 11px;
+            letter-spacing: 2px;
+            margin-top: 8px;
+        }
+        .game-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 15px;
+        }
+        .game-card {
+            background: #1a1a30;
+            border-radius: 16px;
+            border: 2px solid #2a2a4a;
+            padding: 18px 12px;
+            text-align: center;
+            text-decoration: none;
+            color: #c8d0e6;
+            transition: all 0.15s ease;
+            box-shadow: 0 4px 0 #0a0a18;
+            transform: translateY(0);
+            display: block;
+        }
+        .game-card:hover {
+            border-color: #4a6aaa;
+            transform: translateY(-3px);
+            box-shadow: 0 6px 0 #0a0a18;
+            background: #222244;
+        }
+        .game-card:active {
+            transform: translateY(3px);
+            box-shadow: 0 2px 0 #0a0a18;
+        }
+        .game-icon {
+            font-size: 32px;
+            display: block;
+            margin-bottom: 6px;
+            line-height: 1.2;
+        }
+        .game-title {
+            font-size: 13px;
+            font-weight: bold;
+            color: #b0c8ff;
+            letter-spacing: 0.5px;
+        }
+        .game-year {
+            font-size: 10px;
+            color: #667799;
+            margin-top: 3px;
+        }
+        .footer {
+            text-align: center;
+            color: #334466;
+            font-size: 12px;
+            margin-top: 25px;
+            border-top: 1px solid #1a1a30;
+            padding-top: 15px;
+            letter-spacing: 1px;
+        }
+        .footer span {
+            color: #6688aa;
+        }
+        @media (max-width: 600px) {
+            .arcade {
+                padding: 20px;
+            }
+            .game-grid {
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+                gap: 10px;
+            }
+            .game-card {
+                padding: 12px 8px;
+            }
+            .game-icon {
+                font-size: 24px;
+            }
+            .game-title {
+                font-size: 11px;
+            }
+            .arcade-header h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="arcade">
+        <div class="arcade-header">
+            <h1>🕹️ RETRO ARCADE</h1>
+            <div class="subtitle">The games that defined a generation.</div>
+            <div class="count">🏛️ 32 CLASSIC GAMES</div>
+        </div>
+
+        <div class="game-grid">
+            <!-- 1950s -->
+            <a href="games/1952 OXO.html" class="game-card">
+                <span class="game-icon">⭕</span>
+                <div class="game-title">OXO</div>
+                <div class="game-year">1952</div>
+            </a>
+
+            <!-- 1960s -->
+            <a href="games/1958 Tennis for Two.html" class="game-card">
+                <span class="game-icon">🎾</span>
+                <div class="game-title">Tennis for Two</div>
+                <div class="game-year">1958</div>
+            </a>
+
+            <!-- 1970s -->
+            <a href="games/1972 Pong.html" class="game-card">
+                <span class="game-icon">🏓</span>
+                <div class="game-title">Pong</div>
+                <div class="game-year">1972</div>
+            </a>
+
+            <a href="games/1973 Space Race.html" class="game-card">
+                <span class="game-icon">🚀</span>
+                <div class="game-title">Space Race</div>
+                <div class="game-year">1973</div>
+            </a>
+
+            <a href="games/1976 Breakout.html" class="game-card">
+                <span class="game-icon">🧱</span>
+                <div class="game-title">Breakout</div>
+                <div class="game-year">1976</div>
+            </a>
+
+            <a href="games/1977 Clown.html" class="game-card">
+                <span class="game-icon">🤡</span>
+                <div class="game-title">Clown</div>
+                <div class="game-year">1977</div>
+            </a>
+
+            <a href="games/1978 Avelanche.html" class="game-card">
+                <span class="game-icon">⛰️</span>
+                <div class="game-title">Avelanche</div>
+                <div class="game-year">1978</div>
+            </a>
+
+            <a href="games/1978 Space Invaders.html" class="game-card">
+                <span class="game-icon">👾</span>
+                <div class="game-title">Space Invaders</div>
+                <div class="game-year">1978</div>
+            </a>
+
+            <a href="games/1978 Worm.html" class="game-card">
+                <span class="game-icon">🪱</span>
+                <div class="game-title">Worm</div>
+                <div class="game-year">1978</div>
+            </a>
+
+            <a href="games/1979 Asteroids.html" class="game-card">
+                <span class="game-icon">🌠</span>
+                <div class="game-title">Asteroids</div>
+                <div class="game-year">1979</div>
+            </a>
+
+            <a href="games/1979 Lunar Landing.html" class="game-card">
+                <span class="game-icon">🌙</span>
+                <div class="game-title">Lunar Landing</div>
+                <div class="game-year">1979</div>
+            </a>
+
+            <!-- 1980s -->
+            <a href="games/1980 Centipede.html" class="game-card">
+                <span class="game-icon">🐛</span>
+                <div class="game-title">Centipede</div>
+                <div class="game-year">1980</div>
+            </a>
+
+            <a href="games/1980 Missile Command.html" class="game-card">
+                <span class="game-icon">🚀</span>
+                <div class="game-title">Missile Command</div>
+                <div class="game-year">1980</div>
+            </a>
+
+            <a href="games/1981 Defender.html" class="game-card">
+                <span class="game-icon">🛡️</span>
+                <div class="game-title">Defender</div>
+                <div class="game-year">1981</div>
+            </a>
+
+            <a href="games/1981 Donkey Kong.html" class="game-card">
+                <span class="game-icon">🦍</span>
+                <div class="game-title">Donkey Kong</div>
+                <div class="game-year">1981</div>
+            </a>
+
+            <a href="games/1981 Galaga.html" class="game-card">
+                <span class="game-icon">🐞</span>
+                <div class="game-title">Galaga</div>
+                <div class="game-year">1981</div>
+            </a>
+
+            <a href="games/1981 Qix.html" class="game-card">
+                <span class="game-icon">⬛</span>
+                <div class="game-title">Qix</div>
+                <div class="game-year">1981</div>
+            </a>
+
+            <!-- 1982 -->
+            <a href="games/1982 Artillery Duel.html" class="game-card">
+                <span class="game-icon">🎯</span>
+                <div class="game-title">Artillery Duel</div>
+                <div class="game-year">1982</div>
+            </a>
+
+            <a href="games/1982 Pengo.html" class="game-card">
+                <span class="game-icon">🐧</span>
+                <div class="game-title">Pengo</div>
+                <div class="game-year">1982</div>
+            </a>
+
+            <a href="games/1982 Robotron 2084.html" class="game-card">
+                <span class="game-icon">🤖</span>
+                <div class="game-title">Robotron 2084</div>
+                <div class="game-year">1982</div>
+            </a>
+
+            <a href="games/1982 Tron.html" class="game-card">
+                <span class="game-icon">🔄</span>
+                <div class="game-title">Tron</div>
+                <div class="game-year">1982</div>
+            </a>
+
+            <a href="games/1983 Gyruss.html" class="game-card">
+                <span class="game-icon">🌀</span>
+                <div class="game-title">Gyruss</div>
+                <div class="game-year">1983</div>
+            </a>
+
+            <a href="games/1984 Fred.html" class="game-card">
+                <span class="game-icon">🪨</span>
+                <div class="game-title">Fred</div>
+                <div class="game-year">1984</div>
+            </a>
+
+            <a href="games/1984 Tetris.html" class="game-card">
+                <span class="game-icon">🧩</span>
+                <div class="game-title">Tetris</div>
+                <div class="game-year">1984</div>
+            </a>
+
+            <a href="games/1987 R-Type.html" class="game-card">
+                <span class="game-icon">🚀</span>
+                <div class="game-title">R-Type</div>
+                <div class="game-year">1987</div>
+            </a>
+
+            <!-- 2010s -->
+            <a href="games/2013 Flappy Bird.html" class="game-card">
+                <span class="game-icon">🐦</span>
+                <div class="game-title">Flappy Bird</div>
+                <div class="game-year">2013</div>
+            </a>
+        </div>
+
+        <div class="footer">
+            <span>🏛️</span> 32 Classic Games · Preserving the games that defined a generation.
+        </div>
+    </div>
+</body>
+</html>
