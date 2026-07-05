@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Bowling 1978</title>
+    <style>
+        body {
+            background-color: #111;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            user-select: none;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+            color: #ffcc00;
+            text-shadow: 2px 2px #c00;
+        }
+
+        .instructions {
+            font-size: 14px;
+            margin-bottom: 15px;
+            text-align: center;
+            color: #aaa;
+            max-width: 600px;
+            line-height: 1.4;
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+            background: #000;
+            padding: 10px;
+            border: 4px solid #333;
+        }
+
+        canvas {
+            display: block;
+            background: #000;
+        }
+
+        .controls-hint {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ATARI BOWLING '78</h1>
+    <div class="instructions">
+        <strong>[UP / DOWN ARROWS]</strong> Move Bowler / Steer Ball in flight<br>
+        <strong>[SPACEBAR]</strong> Release Ball &nbsp;|&nbsp; <strong>[R]</strong> Restart Game
+    </div>
+
+    <div id="game-container">
+        <canvas id="bowlingCanvas" width="800" height="400"></canvas>
+    </div>
+
+    <div class="controls-hint">
+        Tip: You can actively steer the ball up and down *after* throwing it to hit splits!
+    </div>
+
+    <script>
+        const canvas = document.getElementById('bowlingCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Game Constants
+        const LANE_Y_TOP = 80;
+        const LANE_Y_BOTTOM = 360;
+        const LANE_X_START = 120;
+        const LANE_X_END = 750;
+
+        // Key states
+        const keys = { ArrowUp: false, ArrowDown: false, Space: false };
+
+        // Game State Variables
+        let gameState = 'AIMING'; // AIMING, ROLLING, SCORING, GAME_OVER
+        let currentFrame = 1;
+        let currentRoll = 1;
+        
+        // Traditional Bowling Scoring Arrays
+        let frameScores = Array(10).fill().map(() => ({ roll1: null, roll2: null, roll3: null, total: null }));
+        let cumulativeScores = Array(10).fill(null);
+
+        // Entities
+        let bowler = { x: 70, y: 220, targetY: 220, speed: 4, height: 40 };
+        let ball = { x: 0, y: 0, vx: 0, vy: 0, radius: 8, baseSpeed: 7, steerSpeed: 2.5 };
+        let pins = [];
+
+        // Pin positions (Standard 10-pin triangle layout, rotated for side-view lane)
+        // Bowling lane runs Left to Right. Headpin is closest to the left of the triangle.
+        const pinSpacings = [
+            { row: 1, x: 650, ys: [220] },                      // Headpin (Pin 1)
+            { row: 2, x: 680, ys: [200, 240] },                 // Pins 2, 3
+            { row: 3, x: 710, ys: [180, 220, 260] },            // Pins 4, 5, 6
+            { row: 4, x: 740, ys: [160, 200, 240, 280] }         // Pins 7, 8, 9, 10
+        ];
+
+        function initPins() {
+            pins = [];
+            let id = 1;
+            pinSpacings.forEach(pRow => {
+                pRow.ys.forEach(yPos => {
+                    pins.push({
+                        id: id++,
+                        x: pRow.x,
+                        y: yPos,
+                        ox: pRow.x, // original x
+                        oy: yPos, // original y
+                        isDown: false,
+                        vx: 0,
+                        vy: 0,
+                        color: '#FFFFFF'
+                    });
+                });
+            });
+        }
+
+        function resetPositions() {
+            bowler.y = 220;
+            bowler.targetY = 220;
+            ball.x = bowler.x + 20;
+            ball.y = bowler.y;
+            ball.vx = 0;
+            ball.vy = 0;
+        }
+
+        function startNewGame() {
+            currentFrame = 1;
+            currentRoll = 1;
+            frameScores = Array(10).fill().map(() => ({ roll1: null, roll2: null, roll3: null, total: null }));
+            cumulativeScores = Array(10).fill(null);
+            initPins();
+            resetPositions();
+            gameState = 'AIMING';
+        }
+
+        // Input Listeners
+        window.addEventListener('keydown', (e) => {
+            if (['Space', 'ArrowUp', 'ArrowDown', ' '].includes(e.key) || e.keyCode === 32) {
+                e.preventDefault(); // Stop page scrolling
+            }
+            if (e.key === 'ArrowUp') keys.ArrowUp = true;
+            if (e.key === 'ArrowDown') keys.ArrowDown = true;
+            if (e.key === ' ' || e.code === 'Space') {
+                if (!keys.Space && gameState === 'AIMING') {
+                    throwBall();
+                }
+                keys.Space = true;
+            }
+            if (e.key === 'r' || e.key === 'R') {
+                startNewGame();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowUp') keys.ArrowUp = false;
+            if (e.key === 'ArrowDown') keys.ArrowDown = false;
+            if (e.key === ' ' || e.code === 'Space') keys.Space = false;
+        });
+
+        function throwBall() {
+            gameState = 'ROLLING';
+            ball.x = bowler.x + 15;
+            ball.y = bowler.y;
+            ball.vx = ball.baseSpeed;
+            ball.vy = 0;
+        }
+
+        // Logic Processing
+        function update() {
+            if (gameState === 'AIMING') {
+                // Bowler Movement
+                if (keys.ArrowUp && bowler.y > LANE_Y_TOP + bowler.height/2) {
+                    bowler.y -= bowler.speed;
+                }
+                if (keys.ArrowDown && bowler.y < LANE_Y_BOTTOM - bowler.height/2) {
+                    bowler.y += bowler.speed;
+                }
+                ball.y = bowler.y;
+                ball.x = bowler.x + 15;
+            } 
+            else if (gameState === 'ROLLING') {
+                // Steering Mechanics (Classic 1978 Feature)
+                if (keys.ArrowUp && ball.y > LANE_Y_TOP + ball.radius) {
+                    ball.vy = -ball.steerSpeed;
+                } else if (keys.ArrowDown && ball.y < LANE_Y_BOTTOM - ball.radius) {
+                    ball.vy = ball.steerSpeed;
+                } else {
+                    ball.vy = 0;
+                }
+
+                // Move Ball
+                ball.x += ball.vx;
+                ball.y += ball.vy;
+
+                // Handle Pin Physics & Collisions
+                pins.forEach(pin => {
+                    if (!pin.isDown) {
+                        // Check collision with ball
+                        let dx = ball.x - pin.x;
+                        let dy = ball.y - pin.y;
+                        let dist = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (dist < ball.radius + 6) { // 6 is pin radius approximation
+                            pin.isDown = true;
+                            // Send pin flying
+                            pin.vx = ball.vx * 0.6 + (Math.random() * 2);
+                            pin.vy = ball.vy * 0.5 + (Math.random() * 6 - 3);
+                        }
+                    } else {
+                        // Move flying down pins
+                        pin.x += pin.vx;
+                        pin.y += pin.vy;
+                        pin.vx *= 0.95;
+                        pin.vy *= 0.95;
+                    }
+                });
+
+                // Pin-to-Pin chain reactions
+                for (let i = 0; i < pins.length; i++) {
+                    if (pins[i].isDown && Math.abs(pins[i].vx) + Math.abs(pins[i].vy) > 0.5) {
+                        for (let j = 0; j < pins.length; j++) {
+                            if (!pins[j].isDown) {
+                                let dx = pins[i].x - pins[j].x;
+                                let dy = pins[i].y - pins[j].y;
+                                let dist = Math.sqrt(dx * dx + dy * dy);
+                                if (dist < 14) {
+                                    pins[j].isDown = true;
+                                    pins[j].vx = pins[i].vx * 0.8 + (Math.random() * 2);
+                                    pins[j].vy = pins[i].vy * 0.8 + (Math.random() * 4 - 2);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Out of Bounds check for the ball
+                if (ball.x > width + 50 || ball.y < LANE_Y_TOP || ball.y > LANE_Y_BOTTOM) {
+                    processRollEnd();
+                }
+            }
+        }
+
+        function processRollEnd() {
+            gameState = 'SCORING';
+            
+            // Count how many pins fell this specific roll
+            let downThisRoll = pins.filter(p => p.isDown).length;
+            
+            if (currentRoll === 1) {
+                let currentFell = downThisRoll;
+                frameScores[currentFrame - 1].roll1 = currentFell;
+
+                if (currentFell === 10 && currentFrame < 10) {
+                    // Strike! Skip roll 2 for frames 1-9
+                    calculateScores();
+                    setTimeout(() => {
+                        currentFrame++;
+                        initPins();
+                        resetPositions();
+                        gameState = 'AIMING';
+                    }, 1000);
+                } else {
+                    // Move to Roll 2
+                    setTimeout(() => {
+                        currentRoll = 2;
+                        // Clean up fallen pins visually, leave standing pins
+                        pins = pins.map(p => {
+                            if (p.isDown) {
+                                return { ...p, x: -999, y: -999, vx: 0, vy: 0 }; // Remove from board safely
+                            }
+                            return p;
+                        });
+                        resetPositions();
+                        gameState = 'AIMING';
+                    }, 1000);
+                }
+            } else if (currentRoll === 2) {
+                // In frame 10, roll 2 logic differs if roll 1 was a strike
+                let prevFell = frameScores[currentFrame - 1].roll1;
+                let currentFell = downThisRoll - (prevFell < 10 ? prevFell : 0);
+                frameScores[currentFrame - 1].roll2 = currentFell;
+
+                if (currentFrame === 10) {
+                    // Check if 10th frame earns a 3rd bonus roll
+                    if (prevFell === 10 || (prevFell + currentFell >= 10)) {
+                        setTimeout(() => {
+                            currentRoll = 3;
+                            initPins(); // reset pins for bonus roll
+                            resetPositions();
+                            gameState = 'AIMING';
+                        }, 1000);
+                    } else {
+                        endGame();
+                    }
+                } else {
+                    // Regular frame end
+                    calculateScores();
+                    setTimeout(() => {
+                        currentFrame++;
+                        currentRoll = 1;
+                        initPins();
+                        resetPositions();
+                        gameState = 'AIMING';
+                    }, 1000);
+                }
+            } else if (currentRoll === 3) {
+                // Final 10th frame bonus roll
+                frameScores[9].roll3 = downThisRoll;
+                endGame();
+            }
+        }
+
+        function endGame() {
+            calculateScores();
+            setTimeout(() => {
+                gameState = 'GAME_OVER';
+            }, 1000);
+        }
+
+        // Traditional Bowling Score Calculation Engine
+        function calculateScores() {
+            let runningSum = 0;
+            for (let i = 0; i < 10; i++) {
+                let f = frameScores[i];
+                if (f.roll1 === null) break;
+
+                if (i < 9) { // Frames 1 - 9
+                    if (f.roll1 === 10) { // Strike
+                        let nextF = frameScores[i + 1];
+                        if (nextF && nextF.roll1 !== null) {
+                            if (nextF.roll1 === 10 && i < 8) {
+                                // Double Strike down the line
+                                let nextNextF = frameScores[i + 2];
+                                if (nextNextF && nextNextF.roll1 !== null) {
+                                    f.total = 20 + nextNextF.roll1;
+                                } else { f.total = null; }
+                            } else {
+                                if (nextF.roll2 !== null) {
+                                    f.total = 10 + nextF.roll1 + nextF.roll2;
+                                } else if (i === 8 && nextF.roll2 !== null) { 
+                                    f.total = 10 + nextF.roll1 + nextF.roll2;
+                                } else { f.total = null; }
+                            }
+                        } else { f.total = null; }
+                    } else if (f.roll1 + f.roll2 === 10) { // Spare
+                        let nextF = frameScores[i + 1];
+                        if (nextF && nextF.roll1 !== null) {
+                            f.total = 10 + nextF.roll1;
+                        } else { f.total = null; }
+                    } else { // Open Frame
+                        f.total = f.roll1 + f.roll2;
+                    }
+                } else { // Frame 10 Mechanics
+                    if (f.roll2 !== null) {
+                        if (f.roll1 === 10 || f.roll1 + f.roll2 === 10) {
+                            if (f.roll3 !== null) {
+                                f.total = f.roll1 + f.roll2 + f.roll3;
+                            } else { f.total = null; }
+                        } else {
+                            f.total = f.roll1 + f.roll2;
+                        }
+                    }
+                }
+
+                if (f.total !== null) {
+                    runningSum += f.total;
+                    cumulativeScores[i] = runningSum;
+                } else {
+                    cumulativeScores[i] = null;
+                }
+            }
+        }
+
+        // Rendering functions
+        let width = canvas.width;
+        let height = canvas.height;
+
+        function draw() {
+            // Background
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw Bowling Score Sheet (Classic Retro Style Layout)
+            drawScoreboard();
+
+            // Draw Bowling Lane
+            ctx.fillStyle = '#002244'; // Classic Atari deep blue lane color
+            ctx.fillRect(LANE_X_START, LANE_Y_TOP, LANE_X_END - LANE_X_START, LANE_Y_BOTTOM - LANE_Y_TOP);
+            
+            // Lane boundaries
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(LANE_X_START, LANE_Y_TOP);
+            ctx.lineTo(LANE_X_END, LANE_Y_TOP);
+            ctx.moveTo(LANE_X_START, LANE_Y_BOTTOM);
+            ctx.lineTo(LANE_X_END, LANE_Y_BOTTOM);
+            ctx.stroke();
+
+            // Draw Bowler (1978 Retro Blocky Human sprite representation)
+            ctx.fillStyle = '#55FF55'; // Vibrant Retro green
+            ctx.fillRect(bowler.x, bowler.y - bowler.height/2, 14, bowler.height); // Torso/head block
+            ctx.fillStyle = '#FF5555';
+            ctx.fillRect(bowler.x - 4, bowler.y - 8, 4, 16); // Arm backup structure
+
+            // Draw Ball
+            if (gameState === 'AIMING' || gameState === 'ROLLING') {
+                ctx.fillStyle = '#FFaa00';
+                ctx.beginPath();
+                ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw Pins
+            pins.forEach(pin => {
+                if (pin.x > LANE_X_START && pin.x < width) {
+                    ctx.fillStyle = pin.isDown ? '#555555' : '#FFFFFF';
+                    ctx.beginPath();
+                    ctx.arc(pin.x, pin.y, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Pin head dot detail
+                    if (!pin.isDown) {
+                        ctx.fillStyle = '#FF0000';
+                        ctx.beginPath();
+                        ctx.arc(pin.x, pin.y, 1.5, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            });
+
+            // Handle Game Over Screen overlay
+            if (gameState === 'GAME_OVER') {
+                ctx.fillStyle = 'rgba(0,0,0,0.85)';
+                ctx.fillRect(0, 0, width, height);
+                ctx.fillStyle = '#FFCC00';
+                ctx.font = 'bold 32px "Courier New"';
+                ctx.textAlign = 'center';
+                ctx.fillText("GAME OVER", width/2, height/2 - 20);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = '20px "Courier New"';
+                let finalScore = cumulativeScores[9] || 0;
+                ctx.fillText(`FINAL SCORE: ${finalScore}`, width/2, height/2 + 20);
+                ctx.font = '14px "Courier New"';
+                ctx.fillStyle = '#888';
+                ctx.fillText("Press 'R' to play again", width/2, height/2 + 60);
+            }
+        }
+
+        function drawScoreboard() {
+            let boxWidth = 60;
+            let boxHeight = 45;
+            let startX = 20;
+            let startY = 15;
+
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 1;
+            ctx.textAlign = 'center';
+            ctx.font = '12px "Courier New"';
+
+            // Draw 10 frames boxes
+            for (let i = 0; i < 10; i++) {
+                let x = startX + (i * boxWidth);
+                if (i === 9) boxWidth = 85; // wider box for 3 possible rolls in 10th frame
+
+                // Outer boundary
+                ctx.fillStyle = (currentFrame === i + 1 && gameState !== 'GAME_OVER') ? '#222' : '#000';
+                ctx.fillRect(x, startY, boxWidth, boxHeight);
+                ctx.strokeRect(x, startY, boxWidth, boxHeight);
+
+                // Frame title number
+                ctx.fillStyle = '#888';
+                ctx.fillText(i + 1, x + boxWidth/2, startY + 12);
+
+                // Score markers inside boxes
+                let f = frameScores[i];
+                ctx.fillStyle = '#FFF';
+                ctx.font = 'bold 14px "Courier New"';
+
+                if (i < 9) {
+                    // Left and right small internal roll indicators
+                    ctx.strokeRect(x + boxWidth - 20, startY, 20, 20);
+                    
+                    if (f.roll1 !== null) {
+                        if (f.roll1 === 10) {
+                            ctx.fillText('X', x + boxWidth - 10, startY + 14); // Strike
+                        } else {
+                            ctx.fillText(f.roll1, x + boxWidth - 30, startY + 24);
+                        }
+                    }
+                    if (f.roll2 !== null) {
+                        if (f.roll1 + f.roll2 === 10) {
+                            ctx.fillText('/', x + boxWidth - 10, startY + 14); // Spare
+                        } else {
+                            ctx.fillText(f.roll2, x + boxWidth - 10, startY + 14);
+                        }
+                    }
+                } else {
+                    // Frame 10 box partitioning rules
+                    ctx.strokeRect(x + boxWidth - 60, startY, 20, 20);
+                    ctx.strokeRect(x + boxWidth - 40, startY, 20, 20);
+                    ctx.strokeRect(x + boxWidth - 20, startY, 20, 20);
+
+                    if (f.roll1 !== null) {
+                        ctx.fillText(f.roll1 === 10 ? 'X' : f.roll1, x + boxWidth - 50, startY + 14);
+                    }
+                    if (f.roll2 !== null) {
+                        if (f.roll1 !== 10 && f.roll1 + f.roll2 === 10) {
+                            ctx.fillText('/', x + boxWidth - 30, startY + 14);
+                        } else {
+                            ctx.fillText(f.roll2 === 10 ? 'X' : f.roll2, x + boxWidth - 30, startY + 14);
+                        }
+                    }
+                    if (f.roll3 !== null) {
+                        ctx.fillText(f.roll3 === 10 ? 'X' : f.roll3, x + boxWidth - 10, startY + 14);
+                    }
+                }
+
+                // Cumulative totals rendering below frame box internal rows
+                if (cumulativeScores[i] !== null) {
+                    ctx.fillStyle = '#FFCC00';
+                    ctx.font = '14px "Courier New"';
+                    ctx.fillText(cumulativeScores[i], x + boxWidth/2, startY + 38);
+                }
+            }
+
+            // Total Continuous Score indicator to side
+            ctx.fillStyle = '#FFCC00';
+            ctx.font = 'bold 20px "Courier New"';
+            ctx.textAlign = 'left';
+            let currentTotal = 0;
+            // Lookup highest valid entry
+            for(let c=9; c>=0; c--) {
+                if(cumulativeScores[c] !== null) {
+                    currentTotal = cumulativeScores[c];
+                    break;
+                }
+            }
+            ctx.fillText(`SCORE: ${currentTotal}`, 695, 43);
+        }
+
+        // Standard Game loop architecture
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        // Run game initiation
+        startNewGame();
+        loop();
+    </script>
+</body>
+</html>
