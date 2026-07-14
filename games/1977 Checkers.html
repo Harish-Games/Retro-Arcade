@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Checkers (1970s Style)</title>
+    <title>Checkers – Expert AI + Move History</title>
     <style>
         * {
             margin: 0;
@@ -18,42 +18,86 @@
             align-items: center;
             min-height: 100vh;
             font-family: 'Courier New', monospace;
+            padding: 20px;
         }
-        .game-wrapper {
+
+        /* ============================================================
+               FIX: stable grid layout – board & side panel never shift
+               ============================================================ */
+        .game-container {
+            display: grid;
+            grid-template-columns: 1fr 260px;
+            gap: 25px;
+            justify-content: center;
+            align-items: start;
+            max-width: 1100px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .board-wrapper {
             background: #12101f;
-            padding: 25px 30px 30px;
+            padding: 20px 25px 25px;
             border-radius: 16px;
             border: 2px solid #2a2a5a;
             box-shadow: 0 0 60px rgba(100, 50, 200, 0.05);
-            max-width: 650px;
+            min-width: 0;
+            /* prevent overflow */
             width: 100%;
         }
+
         canvas {
             display: block;
             margin: 0 auto;
             border: 3px solid #2a2a5a;
             border-radius: 8px;
             background: #1a1a2a;
-            width: 500px;
-            height: 500px;
+            width: 100%;
+            max-width: 500px;
+            height: auto;
+            aspect-ratio: 1/1;
             image-rendering: pixelated;
+            cursor: pointer;
         }
+
+        /* ============================================================
+               FIX: info bar – fixed widths prevent reflow
+               ============================================================ */
         .info {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             color: #aac0ff;
-            font-size: 16px;
+            font-size: 14px;
             font-weight: bold;
-            margin-top: 12px;
-            padding: 0 10px;
-            flex-wrap: wrap;
-            gap: 6px;
+            margin-top: 10px;
+            padding: 0 5px;
+            flex-wrap: nowrap;
+            gap: 4px;
+            white-space: nowrap;
+            min-height: 28px;
+        }
+        .info .turn-info {
+            min-width: 110px;
+            flex-shrink: 0;
+            text-align: left;
+        }
+        .info .stat-item {
+            min-width: 45px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        .info .stat-item.score-item {
+            min-width: 55px;
         }
         .info span {
             color: #ffcc77;
         }
         .info .score-val {
             color: #88ddff;
+            display: inline-block;
+            min-width: 45px;
+            text-align: center;
         }
         .info .score-val.positive {
             color: #66ff88;
@@ -61,6 +105,7 @@
         .info .score-val.negative {
             color: #ff6688;
         }
+
         .controls {
             color: #6688aa;
             font-size: 13px;
@@ -68,6 +113,12 @@
             text-align: center;
             border-top: 1px solid #1a1a3a;
             padding-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: center;
+            white-space: nowrap;
+            min-height: 34px;
         }
         .controls kbd {
             background: #1a1a3a;
@@ -75,8 +126,10 @@
             border-radius: 4px;
             border: 1px solid #3a3a6a;
             color: #cce;
+            font-size: 12px;
         }
-        .controls .diff-btn {
+        .controls .diff-btn,
+        .controls .side-btn {
             background: #1a1a3a;
             border: 1px solid #2a2a5a;
             color: #88aacc;
@@ -87,8 +140,10 @@
             font-size: 12px;
             transition: all 0.15s ease;
             margin: 0 2px;
+            white-space: nowrap;
         }
-        .controls .diff-btn:hover {
+        .controls .diff-btn:hover,
+        .controls .side-btn:hover {
             background: #2a2a5a;
             border-color: #4a6aaa;
             color: #cce;
@@ -99,59 +154,316 @@
             color: #ffffff;
             box-shadow: 0 0 15px rgba(74, 106, 170, 0.3);
         }
+        .controls .side-btn.active {
+            background: #4a2a4a;
+            border-color: #8a4a6a;
+            color: #ffccdd;
+            box-shadow: 0 0 15px rgba(170, 74, 106, 0.3);
+        }
+        .controls .separator {
+            color: #445566;
+            flex-shrink: 0;
+        }
+
+        /* FIX: status bar – fixed height & overflow hidden */
         .status-bar {
             text-align: center;
             color: #8899bb;
             font-size: 14px;
-            margin-top: 6px;
-            min-height: 1.5rem;
+            margin-top: 4px;
+            min-height: 1.8rem;
+            height: 1.8rem;
+            line-height: 1.8rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
         }
-        @media (max-width: 550px) {
-            .game-wrapper {
-                padding: 12px;
+
+        /* ============================================================
+               Side Panel – fixed width, no reflow
+               ============================================================ */
+        .side-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-width: 0;
+            width: 100%;
+            max-width: 260px;
+        }
+
+        .score-box {
+            background: #12101f;
+            border: 2px solid #2a2a5a;
+            border-radius: 14px;
+            padding: 16px 20px;
+            color: #aac0ff;
+        }
+        .score-box h3 {
+            font-size: 17px;
+            text-align: center;
+            margin-bottom: 10px;
+            color: #ffcc77;
+            border-bottom: 1px solid #2a2a5a;
+            padding-bottom: 6px;
+        }
+        .score-box .record {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 15px;
+        }
+        .score-box .record .label {
+            color: #8899bb;
+        }
+        .score-box .record .value.red {
+            color: #ff6644;
+            font-weight: bold;
+            min-width: 30px;
+            text-align: right;
+        }
+        .score-box .record .value.black {
+            color: #88aacc;
+            font-weight: bold;
+            min-width: 30px;
+            text-align: right;
+        }
+        .score-box .record .value.draw {
+            color: #aacc88;
+            font-weight: bold;
+            min-width: 30px;
+            text-align: right;
+        }
+        .score-box .reset-btn {
+            background: #1a1a3a;
+            border: 1px solid #3a3a6a;
+            color: #88aacc;
+            padding: 4px 12px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            margin-top: 8px;
+            width: 100%;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .score-box .reset-btn:hover {
+            background: #2a2a5a;
+            border-color: #4a6aaa;
+            color: #cce;
+        }
+
+        .history-box {
+            background: #12101f;
+            border: 2px solid #2a2a5a;
+            border-radius: 14px;
+            padding: 14px 16px;
+            color: #aac0ff;
+            max-height: 320px;
+            display: flex;
+            flex-direction: column;
+        }
+        .history-box h3 {
+            font-size: 16px;
+            text-align: center;
+            margin-bottom: 8px;
+            color: #ffcc77;
+            border-bottom: 1px solid #2a2a5a;
+            padding-bottom: 4px;
+            flex-shrink: 0;
+        }
+        .history-list {
+            overflow-y: auto;
+            flex: 1;
+            font-size: 13px;
+            line-height: 1.6;
+            padding-right: 4px;
+            max-height: 240px;
+        }
+        .history-list::-webkit-scrollbar {
+            width: 4px;
+        }
+        .history-list::-webkit-scrollbar-track {
+            background: #1a1a2a;
+            border-radius: 4px;
+        }
+        .history-list::-webkit-scrollbar-thumb {
+            background: #3a3a6a;
+            border-radius: 4px;
+        }
+        .history-list .move-row {
+            display: flex;
+            gap: 8px;
+            padding: 1px 4px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s;
+            white-space: nowrap;
+        }
+        .history-list .move-row:hover {
+            background: #1a1a3a;
+        }
+        .history-list .move-row .num {
+            color: #556688;
+            min-width: 28px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        .history-list .move-row .red-move {
+            color: #ff8866;
+            min-width: 60px;
+            flex-shrink: 0;
+        }
+        .history-list .move-row .black-move {
+            color: #88bbdd;
+            min-width: 60px;
+            flex-shrink: 0;
+        }
+        .history-list .move-row.active-move {
+            background: #2a2a5a;
+            border-left: 2px solid #ffcc77;
+        }
+        .history-empty {
+            color: #556688;
+            text-align: center;
+            padding: 20px 0;
+            font-style: italic;
+        }
+
+        /* ============================================================
+               Responsive – switch to column on smaller screens
+               ============================================================ */
+        @media (max-width: 820px) {
+            .game-container {
+                grid-template-columns: 1fr;
+                justify-items: center;
+                gap: 20px;
             }
-            canvas {
-                width: 90vw;
-                height: 90vw;
+            .board-wrapper {
+                max-width: 560px;
+                width: 100%;
+            }
+            .side-panel {
+                flex-direction: row;
+                flex-wrap: wrap;
+                max-width: 100%;
+                width: 100%;
+                justify-content: center;
+            }
+            .score-box,
+            .history-box {
+                flex: 1;
+                min-width: 160px;
+                max-width: 300px;
+            }
+            .history-box {
+                max-height: 200px;
+            }
+            .history-list {
+                max-height: 130px;
+            }
+        }
+
+        @media (max-width: 500px) {
+            .board-wrapper {
+                padding: 10px;
             }
             .info {
-                font-size: 13px;
-                flex-wrap: wrap;
-                gap: 4px;
-            }
-            .controls .diff-btn {
-                padding: 2px 8px;
                 font-size: 11px;
+                gap: 2px;
+                min-height: 24px;
+            }
+            .info .turn-info {
+                min-width: 85px;
+            }
+            .info .stat-item {
+                min-width: 30px;
+            }
+            .info .stat-item.score-item {
+                min-width: 40px;
+            }
+            .info .score-val {
+                min-width: 35px;
+            }
+            .controls {
+                font-size: 10px;
+                gap: 4px;
+                min-height: 28px;
+            }
+            .controls .diff-btn,
+            .controls .side-btn {
+                font-size: 9px;
+                padding: 1px 6px;
+            }
+            .side-panel {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .score-box,
+            .history-box {
+                max-width: 100%;
+            }
+            .status-bar {
+                font-size: 12px;
+                min-height: 1.6rem;
+                height: 1.6rem;
+                line-height: 1.6rem;
             }
         }
     </style>
 </head>
 <body>
-    <div class="game-wrapper">
-        <canvas id="gameCanvas" width="500" height="500"></canvas>
-        <div class="info">
-            <div>🎯 TURN <span id="turnDisplay">Red</span></div>
-            <div>🔴 RED <span id="redCount">12</span></div>
-            <div>⚫ BLACK <span id="blackCount">12</span></div>
-            <div>⚖️ SCORE <span id="scoreDisplay" class="score-val">0.0</span></div>
-            <div>📜 <span id="moveCount">0</span></div>
+    <div class="game-container">
+        <!-- Board -->
+        <div class="board-wrapper">
+            <canvas id="gameCanvas" width="500" height="500"></canvas>
+            <div class="info">
+                <div class="turn-info">🎯 TURN <span id="turnDisplay">Red</span></div>
+                <div class="stat-item">🔴 <span id="redCount">12</span></div>
+                <div class="stat-item">⚫ <span id="blackCount">12</span></div>
+                <div class="stat-item score-item">⚖️ <span id="scoreDisplay" class="score-val">0.0</span></div>
+                <div class="stat-item">📜 <span id="moveCount">0</span></div>
+            </div>
+            <div class="status-bar" id="statusMessage">Red's turn – click a piece to select</div>
+            <div class="controls">
+                <kbd>R</kbd> restart
+                <kbd>U</kbd> undo
+                <span class="separator">|</span>
+                <button class="side-btn active" id="sideRed">Play Red</button>
+                <button class="side-btn" id="sideBlack">Play Black</button>
+                <span class="separator">|</span>
+                <button class="diff-btn" id="diffEasy">Easy</button>
+                <button class="diff-btn active" id="diffMedium">Medium</button>
+                <button class="diff-btn" id="diffHard">Hard</button>
+            </div>
         </div>
-        <div class="status-bar" id="statusMessage">Red's turn – click a piece to select</div>
-        <div class="controls">
-            <kbd>R</kbd> restart &nbsp;|&nbsp; <kbd>U</kbd> undo &nbsp;|&nbsp;
-            Difficulty:
-            <button class="diff-btn" id="diffEasy">Easy</button>
-            <button class="diff-btn active" id="diffMedium">Medium</button>
-            <button class="diff-btn" id="diffHard">Hard</button>
+
+        <!-- Side Panel -->
+        <div class="side-panel">
+            <div class="score-box">
+                <h3>🏆 Record</h3>
+                <div class="record"><span class="label">🔴 Red</span><span class="value red" id="redWins">0</span></div>
+                <div class="record"><span class="label">⚫ Black</span><span class="value black" id="blackWins">0</span></div>
+                <div class="record"><span class="label">⚪ Draws</span><span class="value draw" id="draws">0</span></div>
+                <button class="reset-btn" id="resetScores">↺ Reset Scores</button>
+            </div>
+
+            <div class="history-box">
+                <h3>📖 Move History</h3>
+                <div class="history-list" id="historyList">
+                    <div class="history-empty">No moves yet</div>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
         // ============================================================
-        // CHECKERS (1970s Style) – Enhanced AI & Scoring
+        // CHECKERS – EXPERT AI with Play as Black, Move Highlights, History
         // ============================================================
 
-        // ----- SETUP -----
+        // ----- DOM refs -----
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const turnDisplay = document.getElementById('turnDisplay');
@@ -160,18 +472,71 @@
         const scoreDisplay = document.getElementById('scoreDisplay');
         const moveCountDisplay = document.getElementById('moveCount');
         const statusDiv = document.getElementById('statusMessage');
+        const redWinsSpan = document.getElementById('redWins');
+        const blackWinsSpan = document.getElementById('blackWins');
+        const drawsSpan = document.getElementById('draws');
+        const historyList = document.getElementById('historyList');
+        const sideRedBtn = document.getElementById('sideRed');
+        const sideBlackBtn = document.getElementById('sideBlack');
 
         const SIZE = 500;
         const CELL = SIZE / 8;
         const RADIUS = CELL * 0.4;
 
-        // ----- AUDIO -----
+        // ----- State -----
+        let playAsBlack = false; // true = user plays Black, AI plays Red
+        let board = [];
+        let currentPlayer = 'red';
+        let selected = null;
+        let validMoves = [];
+        let moveHistory = []; // { player, from, to, notation, boardState }
+        let boardHistory = [];
+        let gameOver = false;
+        let winner = null;
+        let mustJump = false;
+        let aiThinking = false;
+        let moveCount = 0;
+        let aiDepth = 3;
+        let gameResultRecorded = false;
+
+        // Last move highlight
+        let lastMove = null; // { fromRow, fromCol, toRow, toCol }
+
+        // ----- Score Tally -----
+        function loadScores() {
+            try { return JSON.parse(localStorage.getItem('checkersScores')) || { red: 0, black: 0, draw: 0 }; } catch (
+            e) { return { red: 0, black: 0, draw: 0 }; }
+        }
+
+        function saveScores(s) { localStorage.setItem('checkersScores', JSON.stringify(s)); }
+
+        function updateScoreUI() {
+            const s = loadScores();
+            redWinsSpan.textContent = s.red;
+            blackWinsSpan.textContent = s.black;
+            drawsSpan.textContent = s.draw;
+        }
+
+        function addWin(color) {
+            const s = loadScores();
+            if (color === 'red') s.red++;
+            else if (color === 'black') s.black++;
+            else s.draw++;
+            saveScores(s);
+            updateScoreUI();
+        }
+
+        document.getElementById('resetScores').addEventListener('click', () => {
+            saveScores({ red: 0, black: 0, draw: 0 });
+            updateScoreUI();
+        });
+        updateScoreUI();
+
+        // ----- Audio -----
         let audioCtx = null;
 
         function initAudio() {
-            if (!audioCtx) {
-                audioCtx = new(window.AudioContext || window.webkitAudioContext)();
-            }
+            if (!audioCtx) audioCtx = new(window.AudioContext || window.webkitAudioContext)();
             if (audioCtx.state === 'suspended') audioCtx.resume();
             return audioCtx;
         }
@@ -228,48 +593,427 @@
                             o2.stop(now + i * 0.08 + 0.08);
                         });
                         break;
-                    default:
-                        break;
                 }
             } catch (e) { /* ignore */ }
         }
 
-        // ----- GAME STATE -----
-        let board = [];
-        let currentPlayer = 'red';
-        let selected = null;
-        let validMoves = [];
-        let moveHistory = [];
-        let boardHistory = [];
-        let gameOver = false;
-        let winner = null;
-        let mustJump = false;
-        let jumpChain = null;
-        let aiThinking = false;
-        let moveCount = 0;
-        let aiDepth = 3;
+        // ----- Board helpers -----
+        function cloneBoard(b) { return b.map(row => row.map(cell => cell ? { ...cell } : null)); }
 
-        // ----- DIFFICULTY SETTINGS -----
-        document.getElementById('diffEasy').addEventListener('click', () => {
-            aiDepth = 1;
-            document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById('diffEasy').classList.add('active');
-            statusDiv.textContent = 'Difficulty: Easy (1-ply)';
-        });
-        document.getElementById('diffMedium').addEventListener('click', () => {
-            aiDepth = 3;
-            document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById('diffMedium').classList.add('active');
-            statusDiv.textContent = 'Difficulty: Medium (3-ply)';
-        });
-        document.getElementById('diffHard').addEventListener('click', () => {
-            aiDepth = 5;
-            document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById('diffHard').classList.add('active');
-            statusDiv.textContent = 'Difficulty: Hard (5-ply)';
-        });
+        function saveBoardState() { boardHistory.push(cloneBoard(board)); }
 
-        // ----- INIT BOARD -----
+        function countPieces(color) {
+            let n = 0;
+            for (let r = 0; r < 8; r++)
+                for (let c = 0; c < 8; c++)
+                    if (board[r][c] && board[r][c].color === color) n++;
+            return n;
+        }
+
+        // ----- Square number (1-32) for notation -----
+        function getSquareNum(row, col) {
+            if ((row + col) % 2 === 0) return null;
+            let num = 0;
+            for (let r = 0; r < row; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if ((r + c) % 2 === 1) num++;
+                }
+            }
+            for (let c = 0; c < col; c++) {
+                if ((row + c) % 2 === 1) num++;
+            }
+            return num + 1;
+        }
+
+        function formatNotation(fromRow, fromCol, toRow, toCol, isJump, promoted) {
+            const from = getSquareNum(fromRow, fromCol);
+            const to = getSquareNum(toRow, toCol);
+            if (from === null || to === null) return '?';
+            const sep = isJump ? 'x' : '-';
+            let notation = `${from}${sep}${to}`;
+            if (promoted) notation += '+';
+            return notation;
+        }
+
+        // ----- Move generation (with multi-jump) -----
+
+        function findJumpsWithSource(row, col, boardState) {
+            const piece = boardState[row][col];
+            if (!piece) return [];
+            const jumps = [];
+            const dirs = piece.color === 'red' ? [-1] : [1];
+            const allDirs = [-1, 1];
+            const rowDirs = piece.king ? allDirs : dirs;
+
+            for (const dr of rowDirs) {
+                for (const dc of [-1, 1]) {
+                    const midR = row + dr,
+                        midC = col + dc;
+                    const landR = row + dr * 2,
+                        landC = col + dc * 2;
+                    if (landR < 0 || landR >= 8 || landC < 0 || landC >= 8) continue;
+                    const mid = boardState[midR]?.[midC];
+                    const land = boardState[landR]?.[landC];
+                    if (mid && mid.color !== piece.color && land === null) {
+                        jumps.push({ fromRow: row, fromCol: col, toRow: landR, toCol: landC, jumpRow: midR, jumpCol: midC });
+                    }
+                }
+            }
+            return jumps;
+        }
+
+        function findMoves(row, col, boardState) {
+            const piece = boardState[row][col];
+            if (!piece) return [];
+            const moves = [];
+            const dirs = piece.color === 'red' ? [-1] : [1];
+            const allDirs = [-1, 1];
+            const rowDirs = piece.king ? allDirs : dirs;
+            for (const dr of rowDirs) {
+                for (const dc of [-1, 1]) {
+                    const nr = row + dr,
+                        nc = col + dc;
+                    if (nr < 0 || nr >= 8 || nc < 0 || nc >= 8) continue;
+                    if (boardState[nr][nc] === null) moves.push({ toRow: nr, toCol: nc });
+                }
+            }
+            return moves;
+        }
+
+        function applyJumpSequence(boardState, jumpSequence) {
+            let b = cloneBoard(boardState);
+            for (const j of jumpSequence) {
+                const piece = b[j.fromRow][j.fromCol];
+                if (!piece) break;
+                b[j.jumpRow][j.jumpCol] = null;
+                b[j.fromRow][j.fromCol] = null;
+                b[j.toRow][j.toCol] = piece;
+            }
+            const last = jumpSequence[jumpSequence.length - 1];
+            if (last) {
+                const piece = b[last.toRow][last.toCol];
+                if (piece) {
+                    if (piece.color === 'red' && last.toRow === 0) piece.king = true;
+                    else if (piece.color === 'black' && last.toRow === 7) piece.king = true;
+                }
+            }
+            return b;
+        }
+
+        function generateJumpSequencesFrom(row, col, boardState) {
+            const results = [];
+
+            function recurse(currentRow, currentCol, currentBoard, jumpsSoFar) {
+                const jumps = findJumpsWithSource(currentRow, currentCol, currentBoard);
+                if (jumps.length === 0) {
+                    if (jumpsSoFar.length > 0) results.push(jumpsSoFar.slice());
+                    return;
+                }
+                for (const j of jumps) {
+                    const newBoard = applyJumpSequence(currentBoard, [j]);
+                    const newJumps = jumpsSoFar.concat([j]);
+                    recurse(j.toRow, j.toCol, newBoard, newJumps);
+                }
+            }
+            recurse(row, col, boardState, []);
+            return results;
+        }
+
+        function applySingleMove(boardState, fromRow, fromCol, move) {
+            const b = cloneBoard(boardState);
+            const piece = b[fromRow][fromCol];
+            b[fromRow][fromCol] = null;
+            b[move.toRow][move.toCol] = piece;
+            if (piece.color === 'red' && move.toRow === 0) b[move.toRow][move.toCol].king = true;
+            else if (piece.color === 'black' && move.toRow === 7) b[move.toRow][move.toCol].king = true;
+            return b;
+        }
+
+        function getAllMoves(color, boardState) {
+            const moves = [];
+            let hasJumps = false;
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const piece = boardState[r][c];
+                    if (piece && piece.color === color) {
+                        const jumps = findJumpsWithSource(r, c, boardState);
+                        if (jumps.length > 0) {
+                            hasJumps = true;
+                            const sequences = generateJumpSequencesFrom(r, c, boardState);
+                            for (const seq of sequences) {
+                                moves.push({
+                                    type: 'jump',
+                                    sequence: seq,
+                                    fromRow: r,
+                                    fromCol: c,
+                                    finalBoard: applyJumpSequence(boardState, seq)
+                                });
+                            }
+                        } else {
+                            const simpleMoves = findMoves(r, c, boardState);
+                            for (const sm of simpleMoves) {
+                                const moveObj = { toRow: sm.toRow, toCol: sm.toCol };
+                                moves.push({
+                                    type: 'move',
+                                    fromRow: r,
+                                    fromCol: c,
+                                    toRow: sm.toRow,
+                                    toCol: sm.toCol,
+                                    finalBoard: applySingleMove(boardState, r, c, moveObj)
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            if (hasJumps) return moves.filter(m => m.type === 'jump');
+            return moves;
+        }
+
+        function getValidMovesForPiece(row, col, boardState) {
+            const piece = boardState[row][col];
+            if (!piece) return [];
+            const jumps = findJumpsWithSource(row, col, boardState);
+            if (jumps.length > 0) {
+                return jumps.map(j => ({ row: j.toRow, col: j.toCol, jumpRow: j.jumpRow, jumpCol: j.jumpCol,
+                    isJump: true }));
+            }
+            const moves = findMoves(row, col, boardState);
+            return moves.map(m => ({ row: m.toRow, col: m.toCol, isJump: false }));
+        }
+
+        function applyMove(row, col, move, boardState) {
+            const b = cloneBoard(boardState);
+            const piece = b[row][col];
+            b[row][col] = null;
+            if (move.isJump) b[move.jumpRow][move.jumpCol] = null;
+            b[move.row][move.col] = piece;
+            if (piece.color === 'red' && move.row === 0) b[move.row][move.col].king = true;
+            else if (piece.color === 'black' && move.row === 7) b[move.row][move.col].king = true;
+            return b;
+        }
+
+        // ----- Evaluation -----
+        const MAN_VALUE = 100,
+            KING_VALUE = 180;
+
+        function evaluateBoard(boardState) {
+            let score = 0;
+            let redMen = 0,
+                redKings = 0,
+                blackMen = 0,
+                blackKings = 0;
+            let redDefended = 0,
+                blackDefended = 0;
+            let redIsolated = 0,
+                blackIsolated = 0;
+            let redCenter = 0,
+                blackCenter = 0;
+            let redPromotion = 0,
+                blackPromotion = 0;
+            let redOpponentThreat = 0,
+                blackOpponentThreat = 0;
+            let redBackRow = 0,
+                blackBackRow = 0;
+
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = boardState[r][c];
+                    if (!p) continue;
+                    const isRed = p.color === 'red';
+                    if (isRed) { if (p.king) redKings++;
+                        else redMen++; } else { if (p.king) blackKings++;
+                        else blackMen++; }
+
+                    if (r >= 3 && r <= 4 && c >= 3 && c <= 4) { if (isRed) redCenter++;
+                        else blackCenter++; }
+
+                    if (!p.king) {
+                        if (isRed && r === 1) redPromotion += 2;
+                        else if (isRed && r === 0) redPromotion += 5;
+                        else if (!isRed && r === 6) blackPromotion += 2;
+                        else if (!isRed && r === 7) blackPromotion += 5;
+                    }
+
+                    if (moveCount < 15) { if (isRed && r === 7) redBackRow++;
+                        else if (!isRed && r === 0) blackBackRow++; }
+
+                    const friendlyColor = isRed ? 'red' : 'black';
+                    let defended = false;
+                    for (const dr of [-1, 1]) {
+                        for (const dc of [-1, 1]) {
+                            const ar = r + dr,
+                                ac = c + dc;
+                            if (ar < 0 || ar >= 8 || ac < 0 || ac >= 8) continue;
+                            const neighbor = boardState[ar]?.[ac];
+                            if (neighbor && neighbor.color === friendlyColor) { defended = true; break; }
+                        }
+                        if (defended) break;
+                    }
+                    if (defended) { if (isRed) redDefended++;
+                        else blackDefended++; }
+
+                    let hasFriendlyNeighbor = false;
+                    for (const dr of [-1, 1]) {
+                        for (const dc of [-1, 1]) {
+                            const ar = r + dr,
+                                ac = c + dc;
+                            if (ar < 0 || ar >= 8 || ac < 0 || ac >= 8) continue;
+                            const neighbor = boardState[ar]?.[ac];
+                            if (neighbor && neighbor.color === friendlyColor) { hasFriendlyNeighbor = true; break; }
+                        }
+                        if (hasFriendlyNeighbor) break;
+                    }
+                    if (!hasFriendlyNeighbor) { if (isRed) redIsolated++;
+                        else blackIsolated++; }
+                }
+            }
+
+            const redMoves = getAllMoves('red', boardState);
+            const blackMoves = getAllMoves('black', boardState);
+            let redMobility = redMoves.length;
+            let blackMobility = blackMoves.length;
+
+            for (let c = 0; c < 8; c++) {
+                if (boardState[6] && boardState[6][c] && boardState[6][c].color === 'black' && !boardState[6][c].king) {
+                    for (const dc of [-1, 1]) {
+                        const nc = c + dc;
+                        if (nc >= 0 && nc < 8 && boardState[7][nc] === null) blackOpponentThreat += 10;
+                    }
+                }
+                if (boardState[1] && boardState[1][c] && boardState[1][c].color === 'red' && !boardState[1][c].king) {
+                    for (const dc of [-1, 1]) {
+                        const nc = c + dc;
+                        if (nc >= 0 && nc < 8 && boardState[0][nc] === null) redOpponentThreat += 10;
+                    }
+                }
+            }
+
+            score += (redMen - blackMen) * MAN_VALUE;
+            score += (redKings - blackKings) * KING_VALUE;
+            score += (redDefended - blackDefended) * 8;
+            score += (redCenter - blackCenter) * 6;
+            score += (redMobility - blackMobility) * 3;
+            score += (redPromotion - blackPromotion) * 12;
+            score -= (redIsolated - blackIsolated) * 10;
+            if (moveCount < 15) score += (redBackRow - blackBackRow) * 5;
+            score -= redOpponentThreat;
+            score += blackOpponentThreat;
+
+            const totalPieces = redMen + redKings + blackMen + blackKings;
+            if (totalPieces < 10) {
+                score += (redKings - blackKings) * 20;
+                score += (redPromotion - blackPromotion) * 15;
+            }
+            return score;
+        }
+
+        // ----- Search -----
+        function orderMoves(moves) {
+            moves.sort((a, b) => {
+                const aJumps = a.type === 'jump' ? a.sequence.length : 0;
+                const bJumps = b.type === 'jump' ? b.sequence.length : 0;
+                return bJumps - aJumps;
+            });
+            return moves;
+        }
+
+        function quiescenceSearch(boardState, alpha, beta, isMaximizing, depth) {
+            const standPat = evaluateBoard(boardState);
+            if (depth >= 6) return { score: standPat };
+
+            if (isMaximizing) {
+                if (standPat >= beta) return { score: standPat };
+                if (alpha < standPat) alpha = standPat;
+            } else {
+                if (standPat <= alpha) return { score: standPat };
+                if (beta > standPat) beta = standPat;
+            }
+
+            const color = isMaximizing ? 'red' : 'black';
+            const moves = getAllMoves(color, boardState);
+            const jumpMoves = moves.filter(m => m.type === 'jump');
+            if (jumpMoves.length === 0) return { score: standPat };
+
+            jumpMoves.sort((a, b) => b.sequence.length - a.sequence.length);
+
+            if (isMaximizing) {
+                let maxEval = standPat;
+                for (const move of jumpMoves) {
+                    const result = quiescenceSearch(move.finalBoard, alpha, beta, false, depth + 1);
+                    maxEval = Math.max(maxEval, result.score);
+                    alpha = Math.max(alpha, maxEval);
+                    if (beta <= alpha) break;
+                }
+                return { score: maxEval };
+            } else {
+                let minEval = standPat;
+                for (const move of jumpMoves) {
+                    const result = quiescenceSearch(move.finalBoard, alpha, beta, true, depth + 1);
+                    minEval = Math.min(minEval, result.score);
+                    beta = Math.min(beta, minEval);
+                    if (beta <= alpha) break;
+                }
+                return { score: minEval };
+            }
+        }
+
+        function miniMax(boardState, depth, isMaximizing, alpha, beta) {
+            const color = isMaximizing ? 'red' : 'black';
+            const moves = getAllMoves(color, boardState);
+
+            if (depth === 0 || moves.length === 0) {
+                return quiescenceSearch(boardState, alpha, beta, isMaximizing, 0);
+            }
+
+            const ordered = orderMoves(moves);
+
+            if (isMaximizing) {
+                let maxEval = -Infinity,
+                    bestMove = null;
+                for (const move of ordered) {
+                    const result = miniMax(move.finalBoard, depth - 1, false, alpha, beta);
+                    if (result.score > maxEval) { maxEval = result.score;
+                        bestMove = move; }
+                    alpha = Math.max(alpha, maxEval);
+                    if (beta <= alpha) break;
+                }
+                return { score: maxEval, move: bestMove };
+            } else {
+                let minEval = Infinity,
+                    bestMove = null;
+                for (const move of ordered) {
+                    const result = miniMax(move.finalBoard, depth - 1, true, alpha, beta);
+                    if (result.score < minEval) { minEval = result.score;
+                        bestMove = move; }
+                    beta = Math.min(beta, minEval);
+                    if (beta <= alpha) break;
+                }
+                return { score: minEval, move: bestMove };
+            }
+        }
+
+        function getAIMove() {
+            const color = currentPlayer;
+            const moves = getAllMoves(color, board);
+            if (moves.length === 0) return null;
+            const isMaximizing = (color === 'red');
+            const depth = aiDepth >= 8 ? 8 : aiDepth;
+            const result = miniMax(board, depth, isMaximizing, -Infinity, Infinity);
+            return result.move;
+        }
+
+        function checkGameOver(boardState, color) {
+            const moves = getAllMoves(color, boardState);
+            if (moves.length === 0) return true;
+            for (let r = 0; r < 8; r++)
+                for (let c = 0; c < 8; c++)
+                    if (boardState[r][c] && boardState[r][c].color === color) return false;
+            return true;
+        }
+
+        // ----- Game flow -----
+
         function initBoard() {
             board = [];
             for (let r = 0; r < 8; r++) {
@@ -279,299 +1023,40 @@
                         if (r < 3) board[r][c] = { color: 'black', king: false };
                         else if (r > 4) board[r][c] = { color: 'red', king: false };
                         else board[r][c] = null;
-                    } else {
-                        board[r][c] = null;
-                    }
+                    } else board[r][c] = null;
                 }
             }
-            currentPlayer = 'red';
+            currentPlayer = playAsBlack ? 'red' : 'red';
             selected = null;
             validMoves = [];
             moveHistory = [];
             boardHistory = [];
-            jumpChain = null;
             mustJump = false;
             gameOver = false;
             winner = null;
             aiThinking = false;
             moveCount = 0;
+            gameResultRecorded = false;
+            lastMove = null;
             updateUI();
-            statusDiv.textContent = "Red's turn – click a piece to select";
-        }
+            renderHistory();
 
-        // ----- SAVE BOARD STATE (for undo) -----
-        function saveBoardState() {
-            boardHistory.push(cloneBoard(board));
-        }
-
-        // ----- CLONE BOARD -----
-        function cloneBoard(b) {
-            return b.map(row => row.map(cell => cell ? { ...cell } : null));
-        }
-
-        // ----- COUNT PIECES -----
-        function countPieces(color) {
-            let count = 0;
-            for (let r = 0; r < 8; r++) {
-                for (let c = 0; c < 8; c++) {
-                    if (board[r][c] && board[r][c].color === color) count++;
-                }
-            }
-            return count;
-        }
-
-        // ----- FIND JUMPS (for a given piece) -----
-        function findJumps(row, col, boardState) {
-            const piece = boardState[row][col];
-            if (!piece) return [];
-            const jumps = [];
-            // FORWARD DIRECTION ONLY for non-kings
-            const dirs = piece.color === 'red' ? [-1] : [1];
-            const allDirs = [-1, 1];
-            const rowDirs = piece.king ? allDirs : dirs;
-
-            for (const dr of rowDirs) {
-                for (const dc of [-1, 1]) {
-                    const midR = row + dr;
-                    const midC = col + dc;
-                    const landR = row + dr * 2;
-                    const landC = col + dc * 2;
-
-                    if (landR < 0 || landR >= 8 || landC < 0 || landC >= 8) continue;
-                    const mid = boardState[midR]?.[midC];
-                    const land = boardState[landR]?.[landC];
-
-                    if (mid && mid.color !== piece.color && land === null) {
-                        jumps.push({ row: landR, col: landC, jumpRow: midR, jumpCol: midC });
-                    }
-                }
-            }
-            return jumps;
-        }
-
-        // ----- FIND MOVES (for a given piece) -----
-        function findMoves(row, col, boardState) {
-            const piece = boardState[row][col];
-            if (!piece) return [];
-            const moves = [];
-            // FORWARD DIRECTION ONLY for non-kings
-            const dirs = piece.color === 'red' ? [-1] : [1];
-            const allDirs = [-1, 1];
-            const rowDirs = piece.king ? allDirs : dirs;
-
-            for (const dr of rowDirs) {
-                for (const dc of [-1, 1]) {
-                    const nr = row + dr;
-                    const nc = col + dc;
-                    if (nr < 0 || nr >= 8 || nc < 0 || nc >= 8) continue;
-                    if (boardState[nr][nc] === null) {
-                        moves.push({ row: nr, col: nc });
-                    }
-                }
-            }
-            return moves;
-        }
-
-        // ----- GET ALL VALID MOVES FOR A COLOR (with jumps prioritized) -----
-        function getAllMoves(color, boardState) {
-            const allMoves = [];
-            let hasJumps = false;
-
-            for (let r = 0; r < 8; r++) {
-                for (let c = 0; c < 8; c++) {
-                    const piece = boardState[r][c];
-                    if (piece && piece.color === color) {
-                        const jumps = findJumps(r, c, boardState);
-                        if (jumps.length > 0) {
-                            hasJumps = true;
-                            allMoves.push({ row: r, col: c, jumps: jumps, moves: [] });
-                        } else {
-                            const moves = findMoves(r, c, boardState);
-                            if (moves.length > 0) {
-                                allMoves.push({ row: r, col: c, jumps: [], moves: moves });
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (hasJumps) {
-                return allMoves.filter(m => m.jumps.length > 0);
-            }
-            return allMoves;
-        }
-
-        // ----- GET VALID MOVES FOR SELECTED PIECE -----
-        function getValidMovesForPiece(row, col, boardState) {
-            const piece = boardState[row][col];
-            if (!piece) return [];
-            const jumps = findJumps(row, col, boardState);
-            if (jumps.length > 0) return jumps.map(j => ({ row: j.row, col: j.col, jumpRow: j.jumpRow, jumpCol: j
-                    .jumpCol, isJump: true }));
-            const moves = findMoves(row, col, boardState);
-            return moves.map(m => ({ row: m.row, col: m.col, isJump: false }));
-        }
-
-        // ----- APPLY MOVE -----
-        function applyMove(row, col, move, boardState) {
-            const newBoard = cloneBoard(boardState);
-            const piece = newBoard[row][col];
-            newBoard[row][col] = null;
-
-            if (move.isJump) {
-                newBoard[move.jumpRow][move.jumpCol] = null;
-            }
-
-            newBoard[move.row][move.col] = piece;
-
-            // King promotion
-            let promoted = false;
-            if (piece.color === 'red' && move.row === 0) {
-                newBoard[move.row][move.col].king = true;
-                promoted = true;
-            }
-            if (piece.color === 'black' && move.row === 7) {
-                newBoard[move.row][move.col].king = true;
-                promoted = true;
-            }
-
-            return { board: newBoard, promoted };
-        }
-
-        // ----- CHECK GAME OVER -----
-        function checkGameOver(boardState, color) {
-            const moves = getAllMoves(color, boardState);
-            if (moves.length === 0) return true;
-            // Also check if player has any pieces left
-            let hasPieces = false;
-            for (let r = 0; r < 8; r++) {
-                for (let c = 0; c < 8; c++) {
-                    if (boardState[r][c] && boardState[r][c].color === color) hasPieces = true;
-                }
-            }
-            return !hasPieces;
-        }
-
-        // ----- ENHANCED EVALUATION (for AI and Score) -----
-        function evaluateBoard(boardState) {
-            let score = 0;
-            for (let r = 0; r < 8; r++) {
-                for (let c = 0; c < 8; c++) {
-                    const p = boardState[r][c];
-                    if (!p) continue;
-
-                    let val = p.king ? 3.5 : 1.0;
-
-                    // Positional bonus: center control (cols 2-5)
-                    if (c >= 2 && c <= 5) val += 0.1;
-                    if (r >= 2 && r <= 5) val += 0.05;
-
-                    // Bonus for advancing towards enemy territory
-                    if (p.color === 'red') val += (7 - r) * 0.05;
-                    else val += r * 0.05;
-
-                    if (p.color === 'red') score += val;
-                    else score -= val;
-                }
-            }
-            return score;
-        }
-
-        // ----- MINIMAX WITH ALPHA-BETA -----
-        function miniMax(boardState, depth, isMaximizing, alpha, beta) {
-            const color = isMaximizing ? 'red' : 'black';
-            const moves = getAllMoves(color, boardState);
-
-            if (depth === 0 || moves.length === 0) {
-                return { score: evaluateBoard(boardState) };
-            }
-
-            let bestMove = null;
-
-            if (isMaximizing) {
-                let maxEval = -Infinity;
-                for (const m of moves) {
-                    let expandedMoves = [];
-                    if (m.jumps.length > 0) {
-                        for (const j of m.jumps) {
-                            expandedMoves.push({ fromRow: m.row, fromCol: m.col, toRow: j.row, toCol: j.col,
-                                jumpRow: j.jumpRow, jumpCol: j.jumpCol, isJump: true });
-                        }
-                    } else {
-                        for (const mv of m.moves) {
-                            expandedMoves.push({ fromRow: m.row, fromCol: m.col, toRow: mv.row, toCol: mv.col,
-                                isJump: false });
-                        }
-                    }
-
-                    for (const move of expandedMoves) {
-                        const moveObj = { row: move.toRow, col: move.toCol, isJump: move.isJump, jumpRow: move
-                                .jumpRow, jumpCol: move.jumpCol };
-                        const result = applyMove(move.fromRow, move.fromCol, moveObj, boardState);
-                        const evalResult = miniMax(result.board, depth - 1, false, alpha, beta);
-                        const evalScore = evalResult.score;
-
-                        if (evalScore > maxEval) {
-                            maxEval = evalScore;
-                            bestMove = move;
-                        }
-                        alpha = Math.max(alpha, evalScore);
-                        if (beta <= alpha) break;
-                    }
-                }
-                return { score: maxEval, move: bestMove };
+            // If playing as Black, AI (Red) moves first
+            if (playAsBlack) {
+                statusDiv.textContent = "🤖 AI (Red) thinking...";
+                setTimeout(() => doAIMove(), 400);
             } else {
-                let minEval = Infinity;
-                for (const m of moves) {
-                    let expandedMoves = [];
-                    if (m.jumps.length > 0) {
-                        for (const j of m.jumps) {
-                            expandedMoves.push({ fromRow: m.row, fromCol: m.col, toRow: j.row, toCol: j.col,
-                                jumpRow: j.jumpRow, jumpCol: j.jumpCol, isJump: true });
-                        }
-                    } else {
-                        for (const mv of m.moves) {
-                            expandedMoves.push({ fromRow: m.row, fromCol: m.col, toRow: mv.row, toCol: mv.col,
-                                isJump: false });
-                        }
-                    }
-
-                    for (const move of expandedMoves) {
-                        const moveObj = { row: move.toRow, col: move.toCol, isJump: move.isJump, jumpRow: move
-                                .jumpRow, jumpCol: move.jumpCol };
-                        const result = applyMove(move.fromRow, move.fromCol, moveObj, boardState);
-                        const evalResult = miniMax(result.board, depth - 1, true, alpha, beta);
-                        const evalScore = evalResult.score;
-
-                        if (evalScore < minEval) {
-                            minEval = evalScore;
-                            bestMove = move;
-                        }
-                        beta = Math.min(beta, evalScore);
-                        if (beta <= alpha) break;
-                    }
-                }
-                return { score: minEval, move: bestMove };
+                statusDiv.textContent = "Red's turn – click a piece to select";
             }
         }
 
-        // ----- GET AI MOVE (USES MINIMAX) -----
-        function getAIMove() {
-            const color = currentPlayer;
-            const moves = getAllMoves(color, board);
-            if (moves.length === 0) return null;
-
-            const isMaximizing = (color === 'red');
-            const result = miniMax(board, aiDepth, isMaximizing, -Infinity, Infinity);
-            return result.move;
-        }
-
-        // ----- AI TURN -----
+        // ----- AI Turn -----
         function doAIMove() {
-            if (aiThinking || gameOver || currentPlayer !== 'black') return;
+            if (aiThinking || gameOver) return;
+            if ((playAsBlack && currentPlayer !== 'red') || (!playAsBlack && currentPlayer !== 'black')) return;
 
             aiThinking = true;
-            statusDiv.textContent = 'AI thinking...';
+            statusDiv.textContent = '🤖 AI thinking...';
 
             setTimeout(() => {
                 const move = getAIMove();
@@ -579,89 +1064,123 @@
                     aiThinking = false;
                     if (checkGameOver(board, currentPlayer)) {
                         gameOver = true;
-                        winner = 'red';
-                        statusDiv.textContent = '🏆 Red wins! (AI has no moves)';
+                        winner = currentPlayer === 'red' ? 'black' : 'red';
+                        statusDiv.textContent = `🏆 ${winner.toUpperCase()} wins! (AI has no moves)`;
                         playSound('win');
+                        if (!gameResultRecorded) { addWin(winner);
+                            gameResultRecorded = true; }
                         updateUI();
+                        renderHistory();
                     }
                     return;
                 }
 
-                const moveObj = {
-                    row: move.toRow,
-                    col: move.toCol,
-                    isJump: move.isJump || false,
-                    jumpRow: move.jumpRow,
-                    jumpCol: move.jumpCol,
-                };
-
                 saveBoardState();
-                const result = applyMove(move.fromRow, move.fromCol, moveObj, board);
-                board = result.board;
-                moveCount++;
+                let newBoard, promoted = false;
+                let notation = '';
 
-                if (result.promoted) {
-                    playSound('king');
-                    statusDiv.textContent = 'AI promoted to King!';
-                } else if (move.isJump) {
-                    playSound('jump');
+                if (move.type === 'jump') {
+                    newBoard = applyJumpSequence(board, move.sequence);
+                    const last = move.sequence[move.sequence.length - 1];
+                    const p = newBoard[last.toRow][last.toCol];
+                    if (p && p.king) promoted = true;
+                    // Build notation for multi-jump
+                    const nums = move.sequence.map(j => getSquareNum(j.fromRow, j.fromCol));
+                    const lastNum = getSquareNum(last.toRow, last.toCol);
+                    nums.push(lastNum);
+                    notation = nums.join('x') + (promoted ? '+' : '');
                 } else {
-                    playSound('move');
+                    newBoard = applySingleMove(board, move.fromRow, move.fromCol, { toRow: move.toRow, toCol: move
+                            .toCol });
+                    const p = newBoard[move.toRow][move.toCol];
+                    if (p && p.king) promoted = true;
+                    const from = getSquareNum(move.fromRow, move.fromCol);
+                    const to = getSquareNum(move.toRow, move.toCol);
+                    notation = `${from}-${to}` + (promoted ? '+' : '');
                 }
 
-                moveHistory.push({
+                board = newBoard;
+                moveCount++;
+
+                if (promoted) { playSound('king');
+                    statusDiv.textContent = '👑 AI promoted to King!'; } else if (move.type === 'jump') { playSound(
+                        'jump'); } else { playSound('move'); }
+
+                // Store move in history
+                const playerName = currentPlayer;
+                const histEntry = {
+                    player: playerName,
+                    notation: notation,
                     fromRow: move.fromRow,
                     fromCol: move.fromCol,
-                    toRow: move.toRow,
-                    toCol: move.toCol,
-                    isJump: move.isJump,
-                    jumpRow: move.jumpRow,
-                    jumpCol: move.jumpCol,
-                    player: 'black',
-                    promoted: result.promoted,
-                });
+                    toRow: move.type === 'jump' ? move.sequence[move.sequence.length - 1].toRow : move.toRow,
+                    toCol: move.type === 'jump' ? move.sequence[move.sequence.length - 1].toCol : move.toCol,
+                    isJump: move.type === 'jump',
+                    promoted: promoted,
+                    boardState: cloneBoard(board)
+                };
+                moveHistory.push(histEntry);
 
-                currentPlayer = 'red';
+                lastMove = { fromRow: move.fromRow, fromCol: move.fromCol, toRow: histEntry.toRow, toCol: histEntry
+                        .toCol };
+
+                currentPlayer = (currentPlayer === 'red') ? 'black' : 'red';
                 selected = null;
                 validMoves = [];
 
-                if (checkGameOver(board, 'red')) {
+                if (checkGameOver(board, currentPlayer)) {
                     gameOver = true;
-                    winner = 'black';
-                    statusDiv.textContent = '🏆 Black wins! (Red has no moves)';
+                    winner = currentPlayer === 'red' ? 'black' : 'red';
+                    statusDiv.textContent = `🏆 ${winner.toUpperCase()} wins!`;
                     playSound('win');
+                    if (!gameResultRecorded) { addWin(winner);
+                        gameResultRecorded = true; }
                     updateUI();
+                    renderHistory();
                     aiThinking = false;
                     return;
                 }
 
-                const redMoves = getAllMoves('red', board);
-                const redHasJumps = redMoves.some(m => m.jumps.length > 0);
-
-                if (redHasJumps) {
-                    mustJump = true;
-                    statusDiv.textContent = "Red's turn – you must jump!";
+                const humanColor = playAsBlack ? 'black' : 'red';
+                if (currentPlayer === humanColor) {
+                    const moves = getAllMoves(currentPlayer, board);
+                    const hasJumps = moves.some(m => m.type === 'jump');
+                    if (hasJumps) { mustJump = true;
+                        statusDiv.textContent = `🔴 Your turn – you must jump!`; } else { mustJump = false;
+                        statusDiv.textContent = `Your turn – click a piece to select`; }
                 } else {
                     mustJump = false;
-                    statusDiv.textContent = "Red's turn – click a piece to select";
+                    statusDiv.textContent = '🤖 AI thinking...';
                 }
 
                 updateUI();
+                renderHistory();
                 aiThinking = false;
-            }, 400);
+
+                // If it's AI's turn again (playing as Red), trigger AI
+                if (!gameOver && currentPlayer === (playAsBlack ? 'red' : 'black')) {
+                    setTimeout(() => doAIMove(), 300);
+                }
+            }, 300);
         }
 
-        // ----- SELECT PIECE -----
+        // ----- Human Player -----
         function selectPiece(row, col) {
-            if (gameOver || aiThinking || currentPlayer !== 'red') return;
+            if (gameOver || aiThinking) return;
+
+            const humanColor = playAsBlack ? 'black' : 'red';
+            if (currentPlayer !== humanColor) {
+                statusDiv.textContent = "Wait for AI to finish";
+                return;
+            }
 
             const piece = board[row][col];
-            if (!piece || piece.color !== 'red') {
+            if (!piece || piece.color !== humanColor) {
                 if (selected && validMoves.some(m => m.row === row && m.col === col)) {
                     makeMove(row, col);
                     return;
                 }
-                statusDiv.textContent = "Not a red piece!";
+                statusDiv.textContent = "Not your piece!";
                 return;
             }
 
@@ -690,167 +1209,236 @@
             updateUI();
         }
 
-        // ----- MAKE MOVE -----
         function makeMove(row, col) {
             if (!selected) return;
-
             const move = validMoves.find(m => m.row === row && m.col === col);
             if (!move) return;
 
-            const fromRow = selected.row;
-            const fromCol = selected.col;
-
+            const fromRow = selected.row,
+                fromCol = selected.col;
             saveBoardState();
-            const result = applyMove(fromRow, fromCol, move, board);
-            board = result.board;
+
+            const resultBoard = applyMove(fromRow, fromCol, move, board);
+            board = resultBoard;
             moveCount++;
 
-            if (result.promoted) {
-                playSound('king');
-                statusDiv.textContent = '🎉 King!';
-            } else if (move.isJump) {
-                playSound('jump');
-            } else {
-                playSound('move');
-            }
+            if (move.isJump) playSound('jump');
+            else playSound('move');
 
-            moveHistory.push({
+            const piece = board[row][col];
+            let promoted = false;
+            if (piece && piece.king) { promoted = true;
+                playSound('king'); }
+
+            const notation = formatNotation(fromRow, fromCol, row, col, move.isJump || false, promoted);
+            const histEntry = {
+                player: 'human',
+                notation: notation,
                 fromRow: fromRow,
                 fromCol: fromCol,
                 toRow: row,
                 toCol: col,
                 isJump: move.isJump || false,
-                jumpRow: move.jumpRow,
-                jumpCol: move.jumpCol,
-                player: 'red',
-                promoted: result.promoted,
-            });
+                promoted: promoted,
+                boardState: cloneBoard(board)
+            };
+            moveHistory.push(histEntry);
+
+            lastMove = { fromRow, fromCol, toRow: row, toCol: col };
 
             selected = null;
             validMoves = [];
 
-            // Check for multi-jump
+            // Multi-jump for human
             if (move.isJump) {
-                const piece = board[row][col];
-                if (piece && piece.color === 'red') {
-                    const newJumps = findJumps(row, col, board);
+                const p = board[row][col];
+                if (p && p.color === (playAsBlack ? 'black' : 'red')) {
+                    const newJumps = findJumpsWithSource(row, col, board);
                     if (newJumps.length > 0) {
                         selected = { row, col };
-                        validMoves = newJumps.map(j => ({ row: j.row, col: j.col, jumpRow: j.jumpRow, jumpCol: j
+                        validMoves = newJumps.map(j => ({ row: j.toRow, col: j.toCol, jumpRow: j.jumpRow, jumpCol: j
                                 .jumpCol, isJump: true }));
                         statusDiv.textContent = "Continue jumping!";
                         updateUI();
+                        renderHistory();
                         return;
                     }
                 }
             }
 
-            currentPlayer = 'black';
+            currentPlayer = (currentPlayer === 'red') ? 'black' : 'red';
             mustJump = false;
 
-            if (checkGameOver(board, 'red')) {
+            if (checkGameOver(board, currentPlayer)) {
                 gameOver = true;
-                winner = 'black';
-                statusDiv.textContent = '🏆 Black wins! (Red has no moves)';
+                winner = currentPlayer === 'red' ? 'black' : 'red';
+                statusDiv.textContent = `🏆 ${winner.toUpperCase()} wins!`;
                 playSound('win');
+                if (!gameResultRecorded) { addWin(winner);
+                    gameResultRecorded = true; }
                 updateUI();
+                renderHistory();
                 return;
             }
 
             updateUI();
+            renderHistory();
 
-            setTimeout(() => {
-                if (!gameOver && currentPlayer === 'black') {
-                    doAIMove();
-                }
-            }, 300);
+            // AI's turn
+            if (!gameOver && currentPlayer === (playAsBlack ? 'red' : 'black')) {
+                setTimeout(() => doAIMove(), 300);
+            }
         }
 
-        // ----- UNDO -----
+        // ----- Undo -----
         function undoMove() {
-            if (gameOver) {
-                // If game over, restart?
-                return;
-            }
-            if (moveHistory.length === 0) {
-                statusDiv.textContent = "No moves to undo";
-                return;
-            }
+            if (gameOver) return;
+            if (moveHistory.length === 0) { statusDiv.textContent = "No moves to undo"; return; }
             if (aiThinking) return;
-            if (currentPlayer !== 'red') {
+            if (currentPlayer !== (playAsBlack ? 'black' : 'red')) {
                 statusDiv.textContent = "Wait for AI to finish";
                 return;
             }
 
-            // Undo red's last move
-            const lastMove = moveHistory.pop();
-            if (lastMove && lastMove.player === 'red') {
-                // Also remove the AI's move before it if it exists
-                const aiMove = moveHistory.pop();
-                if (aiMove && aiMove.player === 'black') {
-                    // Both undone – restore board from history
-                    if (boardHistory.length > 0) {
-                        board = cloneBoard(boardHistory.pop());
-                        // Also pop another board state for the AI move
-                        if (boardHistory.length > 0) {
-                            board = cloneBoard(boardHistory.pop());
-                        }
-                        moveCount = moveHistory.length;
-                        currentPlayer = 'red';
-                        selected = null;
-                        validMoves = [];
-                        mustJump = false;
-                        gameOver = false;
-                        winner = null;
-                        updateUI();
-                        statusDiv.textContent = "Undo successful";
-                        return;
-                    }
-                }
+            const humanColor = playAsBlack ? 'black' : 'red';
+            // Undo human's last move, and AI's move before it if present
+            let undone = 0;
+            while (moveHistory.length > 0 && moveHistory[moveHistory.length - 1].player === 'human') {
+                moveHistory.pop();
+                undone++;
+                if (boardHistory.length > 0) board = cloneBoard(boardHistory.pop());
+            }
+            // Also undo AI's move if it exists
+            if (moveHistory.length > 0 && moveHistory[moveHistory.length - 1].player !== 'human') {
+                moveHistory.pop();
+                undone++;
+                if (boardHistory.length > 0) board = cloneBoard(boardHistory.pop());
             }
 
-            statusDiv.textContent = "Could not undo";
+            if (undone === 0) { statusDiv.textContent = "Could not undo"; return; }
+
+            moveCount = moveHistory.length;
+            currentPlayer = humanColor;
+            selected = null;
+            validMoves = [];
+            mustJump = false;
+            gameOver = false;
+            winner = null;
+            gameResultRecorded = false;
+            if (moveHistory.length > 0) {
+                const last = moveHistory[moveHistory.length - 1];
+                lastMove = { fromRow: last.fromRow, fromCol: last.fromCol, toRow: last.toRow, toCol: last.toCol };
+            } else lastMove = null;
+
+            updateUI();
+            renderHistory();
+            statusDiv.textContent = "↩️ Undo successful";
         }
 
-        // ----- UPDATE UI -----
+        // ----- Render History -----
+        function renderHistory() {
+            historyList.innerHTML = '';
+            if (moveHistory.length === 0) {
+                historyList.innerHTML = '<div class="history-empty">No moves yet</div>';
+                return;
+            }
+
+            let html = '';
+            let moveNum = 1;
+            for (let i = 0; i < moveHistory.length; i += 2) {
+                const redMove = moveHistory[i];
+                const blackMove = (i + 1 < moveHistory.length) ? moveHistory[i + 1] : null;
+                const isActive = (i === moveHistory.length - 1 || i + 1 === moveHistory.length - 1);
+
+                let redNotation = redMove ? redMove.notation : '...';
+                let blackNotation = blackMove ? blackMove.notation : '...';
+
+                html += `<div class="move-row ${isActive ? 'active-move' : ''}" data-index="${i}">
+                            <span class="num">${moveNum}.</span>
+                            <span class="red-move">${redNotation}</span>
+                            ${blackMove ? `<span class="black-move">${blackNotation}</span>` : ''}
+                        </div>`;
+                moveNum++;
+            }
+            historyList.innerHTML = html;
+
+            // Click to restore position
+            historyList.querySelectorAll('.move-row').forEach(row => {
+                row.addEventListener('click', () => {
+                    const idx = parseInt(row.dataset.index);
+                    if (isNaN(idx)) return;
+                    if (aiThinking) return;
+                    if (currentPlayer !== (playAsBlack ? 'black' : 'red')) {
+                        statusDiv.textContent = "Wait for AI to finish";
+                        return;
+                    }
+                    // Restore board to state after this move
+                    const target = moveHistory[idx];
+                    if (!target || !target.boardState) return;
+                    // Remove moves after this one
+                    while (moveHistory.length > idx + 1) {
+                        moveHistory.pop();
+                        if (boardHistory.length > 0) boardHistory.pop();
+                    }
+                    board = cloneBoard(target.boardState);
+                    moveCount = moveHistory.length;
+                    currentPlayer = (target.player === 'human') ? (playAsBlack ? 'black' : 'red') : (playAsBlack ?
+                        'red' : 'black');
+                    selected = null;
+                    validMoves = [];
+                    mustJump = false;
+                    gameOver = false;
+                    winner = null;
+                    gameResultRecorded = false;
+                    lastMove = { fromRow: target.fromRow, fromCol: target.fromCol, toRow: target.toRow, toCol: target
+                            .toCol };
+                    updateUI();
+                    renderHistory();
+                    statusDiv.textContent = `↩️ Restored to move ${Math.floor(idx/2)+1}`;
+                    // If it's AI's turn, trigger it
+                    if (!gameOver && currentPlayer === (playAsBlack ? 'red' : 'black')) {
+                        setTimeout(() => doAIMove(), 300);
+                    }
+                });
+            });
+
+            // Auto-scroll to bottom
+            historyList.scrollTop = historyList.scrollHeight;
+        }
+
+        // ----- UI Update -----
         function updateUI() {
-            // Turn
-            turnDisplay.textContent = currentPlayer === 'red' ? 'Red' : 'Black';
+            const humanColor = playAsBlack ? 'black' : 'red';
+            const displayColor = currentPlayer === 'red' ? 'Red' : 'Black';
+            turnDisplay.textContent = (currentPlayer === humanColor) ? 'You' : displayColor;
             turnDisplay.style.color = currentPlayer === 'red' ? '#ff6644' : '#88aacc';
 
-            // Piece counts
-            const red = countPieces('red');
-            const black = countPieces('black');
-            redCount.textContent = red;
-            blackCount.textContent = black;
-
-            // Move count
+            redCount.textContent = countPieces('red');
+            blackCount.textContent = countPieces('black');
             moveCountDisplay.textContent = moveCount;
 
-            // Score (advantage)
             const score = evaluateBoard(board);
             scoreDisplay.textContent = score.toFixed(1);
             scoreDisplay.className = 'score-val';
-            if (score > 0.5) {
-                scoreDisplay.classList.add('positive');
-                scoreDisplay.textContent = '+' + score.toFixed(1);
-            } else if (score < -0.5) {
-                scoreDisplay.classList.add('negative');
-                scoreDisplay.textContent = score.toFixed(1);
-            } else {
-                scoreDisplay.textContent = '0.0';
-            }
+            if (score > 0.5) { scoreDisplay.classList.add('positive');
+                scoreDisplay.textContent = '+' + score.toFixed(1); } else if (score < -0.5) { scoreDisplay.classList.add(
+                    'negative');
+                scoreDisplay.textContent = score.toFixed(1); } else scoreDisplay.textContent = '0.0';
         }
 
-        // ----- DRAW -----
+        // ----- Draw -----
         function draw() {
             ctx.clearRect(0, 0, SIZE, SIZE);
 
-            // Board
+            // Determine if board is flipped
+            const flipped = playAsBlack;
+
             for (let r = 0; r < 8; r++) {
                 for (let c = 0; c < 8; c++) {
-                    const x = c * CELL;
-                    const y = r * CELL;
+                    const displayR = flipped ? 7 - r : r;
+                    const displayC = c;
+                    const x = displayC * CELL,
+                        y = displayR * CELL;
                     const isDark = (r + c) % 2 === 1;
                     ctx.fillStyle = isDark ? '#2a2a4a' : '#1a1a2a';
                     ctx.fillRect(x, y, CELL, CELL);
@@ -860,10 +1448,11 @@
                 }
             }
 
-            // Valid moves highlight
+            // Valid moves
             for (const m of validMoves) {
-                const x = m.col * CELL + CELL / 2;
-                const y = m.row * CELL + CELL / 2;
+                const displayR = flipped ? 7 - m.row : m.row;
+                const x = m.col * CELL + CELL / 2,
+                    y = displayR * CELL + CELL / 2;
                 ctx.fillStyle = 'rgba(100, 255, 100, 0.3)';
                 ctx.shadowColor = 'rgba(100, 255, 100, 0.1)';
                 ctx.shadowBlur = 15;
@@ -880,10 +1469,11 @@
                 }
             }
 
-            // Selected piece glow
+            // Selected piece
             if (selected) {
-                const x = selected.col * CELL + CELL / 2;
-                const y = selected.row * CELL + CELL / 2;
+                const displayR = flipped ? 7 - selected.row : selected.row;
+                const x = selected.col * CELL + CELL / 2,
+                    y = displayR * CELL + CELL / 2;
                 ctx.shadowColor = 'rgba(255, 255, 100, 0.3)';
                 ctx.shadowBlur = 30;
                 ctx.strokeStyle = 'rgba(255, 255, 100, 0.6)';
@@ -899,8 +1489,9 @@
                 for (let c = 0; c < 8; c++) {
                     const piece = board[r][c];
                     if (!piece) continue;
-                    const x = c * CELL + CELL / 2;
-                    const y = r * CELL + CELL / 2;
+                    const displayR = flipped ? 7 - r : r;
+                    const x = c * CELL + CELL / 2,
+                        y = displayR * CELL + CELL / 2;
                     const radius = RADIUS;
 
                     ctx.shadowColor = 'rgba(0,0,0,0.4)';
@@ -920,23 +1511,19 @@
                     ctx.beginPath();
                     ctx.arc(x, y, radius, 0, Math.PI * 2);
                     ctx.fill();
-
                     ctx.shadowBlur = 0;
 
-                    // Outline
                     ctx.strokeStyle = piece.color === 'red' ? 'rgba(255,200,100,0.2)' : 'rgba(200,200,255,0.2)';
                     ctx.lineWidth = 1;
                     ctx.beginPath();
                     ctx.arc(x, y, radius - 1, 0, Math.PI * 2);
                     ctx.stroke();
 
-                    // Highlight
                     ctx.fillStyle = 'rgba(255,255,255,0.08)';
                     ctx.beginPath();
                     ctx.arc(x - 2, y - 2, radius * 0.3, 0, Math.PI * 2);
                     ctx.fill();
 
-                    // King crown
                     if (piece.king) {
                         ctx.fillStyle = '#ffdd44';
                         ctx.shadowColor = '#ffdd44';
@@ -950,7 +1537,55 @@
                 }
             }
 
-            // Game Over
+            // Last move highlight
+            if (lastMove) {
+                const fromR = flipped ? 7 - lastMove.fromRow : lastMove.fromRow;
+                const fromC = lastMove.fromCol;
+                const toR = flipped ? 7 - lastMove.toRow : lastMove.toRow;
+                const toC = lastMove.toCol;
+
+                const x1 = fromC * CELL + CELL / 2,
+                    y1 = fromR * CELL + CELL / 2;
+                const x2 = toC * CELL + CELL / 2,
+                    y2 = toR * CELL + CELL / 2;
+
+                ctx.save();
+                ctx.globalAlpha = 0.5;
+                ctx.strokeStyle = '#ffdd44';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([6, 6]);
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.globalAlpha = 0.8;
+
+                const angle = Math.atan2(y2 - y1, x2 - x1);
+                const headLen = 12;
+                const headAngle = 0.5;
+                ctx.fillStyle = '#ffdd44';
+                ctx.beginPath();
+                ctx.moveTo(x2, y2);
+                ctx.lineTo(x2 - headLen * Math.cos(angle - headAngle), y2 - headLen * Math.sin(angle - headAngle));
+                ctx.lineTo(x2 - headLen * Math.cos(angle + headAngle), y2 - headLen * Math.sin(angle + headAngle));
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.shadowColor = 'rgba(255, 220, 68, 0.25)';
+                ctx.shadowBlur = 25;
+                ctx.fillStyle = 'rgba(255, 220, 68, 0.12)';
+                ctx.beginPath();
+                ctx.arc(x1, y1, RADIUS + 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x2, y2, RADIUS + 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.restore();
+            }
+
+            // Game Over overlay
             if (gameOver) {
                 ctx.fillStyle = 'rgba(0,0,0,0.65)';
                 ctx.fillRect(0, 0, SIZE, SIZE);
@@ -971,35 +1606,26 @@
             }
         }
 
-        // ----- MOUSE -----
-        function handleClick(e) {
-            if (gameOver) return;
-            if (aiThinking) return;
+        // ----- Event Handlers -----
 
+        canvas.addEventListener('click', (e) => {
+            if (gameOver || aiThinking) return;
             const rect = canvas.getBoundingClientRect();
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
             const x = (e.clientX - rect.left) * scaleX;
             const y = (e.clientY - rect.top) * scaleY;
-
-            const col = Math.floor(x / CELL);
-            const row = Math.floor(y / CELL);
+            let col = Math.floor(x / CELL);
+            let row = Math.floor(y / CELL);
             if (col < 0 || col >= 8 || row < 0 || row >= 8) return;
 
+            if (playAsBlack) row = 7 - row;
             selectPiece(row, col);
-        }
+        });
 
-        canvas.addEventListener('click', handleClick);
-
-        // ----- KEYBOARD -----
         document.addEventListener('keydown', (e) => {
             if (e.key === 'r' || e.key === 'R') {
                 initBoard();
-                updateUI();
-                statusDiv.textContent = "Game restarted – Red's turn";
-                if (currentPlayer === 'black') {
-                    doAIMove();
-                }
                 return;
             }
             if (e.key === 'u' || e.key === 'U') {
@@ -1008,7 +1634,44 @@
             }
         });
 
-        // ----- START -----
+        sideRedBtn.addEventListener('click', () => {
+            if (playAsBlack) {
+                playAsBlack = false;
+                sideRedBtn.classList.add('active');
+                sideBlackBtn.classList.remove('active');
+                initBoard();
+                statusDiv.textContent = "Switched to Play Red – game restarted";
+            }
+        });
+        sideBlackBtn.addEventListener('click', () => {
+            if (!playAsBlack) {
+                playAsBlack = true;
+                sideBlackBtn.classList.add('active');
+                sideRedBtn.classList.remove('active');
+                initBoard();
+                statusDiv.textContent = "Switched to Play Black – game restarted";
+            }
+        });
+
+        document.getElementById('diffEasy').addEventListener('click', () => {
+            aiDepth = 1;
+            document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('diffEasy').classList.add('active');
+            statusDiv.textContent = 'Difficulty: Easy (1‑ply)';
+        });
+        document.getElementById('diffMedium').addEventListener('click', () => {
+            aiDepth = 4;
+            document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('diffMedium').classList.add('active');
+            statusDiv.textContent = 'Difficulty: Medium (4‑ply + quiescence)';
+        });
+        document.getElementById('diffHard').addEventListener('click', () => {
+            aiDepth = 8;
+            document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('diffHard').classList.add('active');
+            statusDiv.textContent = '⭐ EXPERT: 8‑ply + quiescence + multi‑jump';
+        });
+
         initBoard();
 
         function gameLoop() {
@@ -1017,9 +1680,8 @@
         }
         gameLoop();
 
-        console.log('♟️ Checkers loaded! Red moves first.');
+        console.log('♟️ Checkers with fixed layout, Play as Black, Move History & Highlights loaded!');
         console.log('R = restart, U = undo');
-        console.log('Difficulty: Medium (3-ply) - click Easy/Hard to change');
     </script>
 </body>
 </html>

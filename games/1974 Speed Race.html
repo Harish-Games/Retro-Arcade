@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SPEED RACE '74</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            background: #0a0a0a;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Courier New', Courier, monospace;
+            user-select: none;
+            padding: 16px;
+        }
+
+        .cabinet {
+            background: #1a1410;
+            padding: 20px 24px 24px 24px;
+            border-radius: 14px 14px 10px 10px;
+            box-shadow: 0 10px 0 #0d0a07, 0 20px 40px rgba(0, 0, 0, 0.9);
+            border-bottom: 4px solid #1f150f;
+            position: relative;
+        }
+        .cabinet::before,
+        .cabinet::after {
+            content: '';
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: radial-gradient(circle at 35% 35%, #5a4a3a, #1f150f);
+            border-radius: 50%;
+            box-shadow: inset 0 -2px 3px #0a0705;
+        }
+        .cabinet::before {
+            top: 8px;
+            left: 10px;
+        }
+        .cabinet::after {
+            top: 8px;
+            right: 10px;
+        }
+
+        .screen {
+            position: relative;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 3px solid #222;
+            background: #000;
+        }
+
+        canvas {
+            display: block;
+            width: 400px;
+            height: 500px;
+            background: #000;
+            image-rendering: pixelated;
+        }
+
+        .controls-hint {
+            margin-top: 12px;
+            font-size: 11px;
+            color: #6a5a4a;
+            text-align: center;
+            letter-spacing: 0.5px;
+            background: #16100c;
+            padding: 6px 16px;
+            border-radius: 16px;
+            border-bottom: 2px solid #0d0a07;
+        }
+        .controls-hint span {
+            color: #aa8844;
+        }
+
+        @media (max-width: 440px) {
+            canvas {
+                width: 100%;
+                height: auto;
+                aspect-ratio: 400 / 500;
+            }
+            .cabinet {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="cabinet">
+        <div class="screen">
+            <canvas id="gameCanvas" width="400" height="500"></canvas>
+        </div>
+    </div>
+
+    <div class="controls-hint">
+        <span>← / →</span> Steer &nbsp;·&nbsp; <span>↑</span> Gas &nbsp;·&nbsp; <span>SPACE</span> Shift &nbsp;·&nbsp; <span>R</span> Restart
+    </div>
+
+    <script>
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  SPEED RACE '74 — Fixed Overtaking Direction
+        //  Faster AI cars move UP on screen (overtake from behind)
+        //  Slower AI cars move DOWN on screen (being overtaken)
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = 400,
+            H = 500;
+
+        // ─── Road Constants ───
+        const ROAD_LEFT = 80;
+        const ROAD_RIGHT = 320;
+        const ROAD_WIDTH = ROAD_RIGHT - ROAD_LEFT;
+
+        // ─── Car Sizes ───
+        const CAR_WIDTH = 24;
+        const CAR_HEIGHT = 44;
+
+        // ─── AI Speed Constants ───
+        const AI_MIN_SPEED = 3.5;  // ~120 km/h
+        const AI_MAX_SPEED = 8.0;  // ~280 km/h
+        const PLAYER_Y = 420;
+
+        // ─── Player ───
+        const player = {
+            x: 200,
+            y: PLAYER_Y,
+            w: CAR_WIDTH,
+            h: CAR_HEIGHT,
+            speed: 0,
+            maxSpeedLow: 6.0,
+            maxSpeedHigh: 10.0,
+            accelLow: 0.08,
+            accelHigh: 0.04,
+            friction: 0.005,
+            gear: 0,
+            invincible: 0,
+            crashed: false
+        };
+
+        // ─── Game State ───
+        let gameState = 'RACING';
+        let score = 0;
+        let bestScore = parseInt(localStorage.getItem('speedRaceBest')) || 0;
+        let timeLeft = 90;
+        let totalTimePlayed = 0;
+        let frameCount = 0;
+        let roadOffset = 0;
+        let nextBonusScore = 500;
+        let spawnTimer = 0;
+
+        // ─── Opponents ───
+        let opponents = [];
+
+        // ─── Speed Lines ───
+        let speedLines = [];
+
+        // ─── Visual Effects ───
+        let flashTimer = 0;
+        let whooshTimer = 0;
+        let bonusMessage = '';
+        let bonusTimer = 0;
+        let penaltyMessage = '';
+        let penaltyTimer = 0;
+
+        // ─── Input ───
+        const keys = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, Space: false };
+
+        window.addEventListener('keydown', (e) => {
+            if (['ArrowUp', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key) || e.key === ' ') {
+                e.preventDefault();
+            }
+            if (e.key === 'ArrowLeft') keys.ArrowLeft = true;
+            if (e.key === 'ArrowRight') keys.ArrowRight = true;
+            if (e.key === 'ArrowUp') keys.ArrowUp = true;
+            if (e.key === ' ' || e.code === 'Space') {
+                if (!keys.Space) toggleGear();
+                keys.Space = true;
+            }
+            if (e.key === 'r' || e.key === 'R') restartGame();
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft') keys.ArrowLeft = false;
+            if (e.key === 'ArrowRight') keys.ArrowRight = false;
+            if (e.key === 'ArrowUp') keys.ArrowUp = false;
+            if (e.key === ' ' || e.code === 'Space') keys.Space = false;
+        });
+
+        // ─── Restart ───
+        function restartGame() {
+            player.x = 200;
+            player.y = PLAYER_Y;
+            player.speed = 0;
+            player.gear = 0;
+            player.invincible = 0;
+            player.crashed = false;
+            gameState = 'RACING';
+            score = 0;
+            timeLeft = 90;
+            totalTimePlayed = 0;
+            frameCount = 0;
+            opponents = [];
+            speedLines = [];
+            spawnTimer = 0.5;
+            roadOffset = 0;
+            nextBonusScore = 500;
+            flashTimer = 0;
+            whooshTimer = 0;
+            bonusMessage = '';
+            bonusTimer = 0;
+            penaltyMessage = '';
+            penaltyTimer = 0;
+
+            // Initial traffic: 3-4 cars at various speeds
+            const initialCars = 3 + Math.floor(Math.random() * 2);
+            for (let i = 0; i < initialCars; i++) {
+                const x = 90 + Math.random() * 230;
+                const speed = AI_MIN_SPEED + Math.random() * (AI_MAX_SPEED - AI_MIN_SPEED);
+                // Faster cars start below (overtake from behind)
+                // Slower cars start above (get overtaken)
+                const startY = speed > player.speed ?
+                    PLAYER_Y + 40 + Math.random() * 100 :  // Below player → move UP
+                    -40 - i * 60 - Math.random() * 30;     // Above player → move DOWN
+
+                opponents.push({
+                    x: x,
+                    y: startY,
+                    w: CAR_WIDTH,
+                    h: CAR_HEIGHT,
+                    speed: speed,
+                    startX: x,
+                    driftOffset: (Math.random() - 0.5) * 30,
+                    driftTimer: Math.random() * 100,
+                    direction: speed > player.speed ? -1 : 1, // -1 = UP, 1 = DOWN
+                    passedPlayer: false,
+                    hasBeenScored: false
+                });
+            }
+        }
+
+        // ─── Gear Toggle ───
+        function toggleGear() {
+            if (gameState === 'GAME_OVER') return;
+            player.gear = player.gear === 0 ? 1 : 0;
+            player.speed *= 0.85;
+        }
+
+        // ─── Spawn Functions ───
+        function getSpawnInterval() {
+            let base = 1.2;
+            if (totalTimePlayed > 90) base = 0.4;
+            else if (totalTimePlayed > 60) base = 0.55;
+            else if (totalTimePlayed > 30) base = 0.75;
+            else if (totalTimePlayed > 15) base = 0.95;
+            return base * (0.8 + Math.random() * 0.4);
+        }
+
+        function spawnCar() {
+            const x = 90 + Math.random() * 230;
+            const speed = AI_MIN_SPEED + Math.random() * (AI_MAX_SPEED - AI_MIN_SPEED);
+
+            // Decide spawn position based on speed relative to player
+            const isFaster = speed > player.speed;
+            const y = isFaster ?
+                PLAYER_Y + 30 + Math.random() * 120 :  // Below player → will move UP
+                -30 - Math.random() * 40;              // Above player → will move DOWN
+
+            opponents.push({
+                x: x,
+                y: y,
+                w: CAR_WIDTH,
+                h: CAR_HEIGHT,
+                speed: speed,
+                startX: x,
+                driftOffset: (Math.random() - 0.5) * 30,
+                driftTimer: Math.random() * 100,
+                direction: isFaster ? -1 : 1,
+                passedPlayer: false,
+                hasBeenScored: false
+            });
+        }
+
+        // ─── Update ──────────────────────────────────────────────────────
+
+        function update() {
+            if (gameState === 'GAME_OVER') return;
+
+            frameCount++;
+            totalTimePlayed = frameCount / 60;
+
+            // ── Timer ──
+            if (frameCount % 60 === 0 && timeLeft > 0) {
+                timeLeft--;
+            }
+            if (timeLeft <= 0) {
+                gameState = 'GAME_OVER';
+                if (score > bestScore) {
+                    bestScore = score;
+                    localStorage.setItem('speedRaceBest', String(bestScore));
+                }
+                return;
+            }
+
+            // ── Speed / Gas ──
+            const maxSpeed = player.gear === 0 ? player.maxSpeedLow : player.maxSpeedHigh;
+            const accel = player.gear === 0 ? player.accelLow : player.accelHigh;
+
+            if (keys.ArrowUp) {
+                player.speed = Math.min(player.speed + accel, maxSpeed);
+            } else {
+                player.speed = Math.max(player.speed - player.friction, 0.3);
+            }
+
+            // ── Free Movement Steering ──
+            const steerAmount = 3.5 + player.speed * 0.08;
+            if (keys.ArrowLeft) {
+                player.x -= steerAmount;
+            }
+            if (keys.ArrowRight) {
+                player.x += steerAmount;
+            }
+
+            // ── Road Boundaries ──
+            player.x = Math.max(ROAD_LEFT + 6, Math.min(ROAD_RIGHT - player.w - 6, player.x));
+
+            // ── Road scroll ──
+            roadOffset = (roadOffset + player.speed * 1.2) % 24;
+
+            // ── Speed Lines ──
+            if (player.speed > 2) {
+                const count = Math.floor(player.speed / 1.5);
+                for (let i = 0; i < count; i++) {
+                    if (Math.random() < 0.3) {
+                        speedLines.push({
+                            x: Math.random() < 0.5 ? 20 + Math.random() * 40 : 340 + Math.random() * 40,
+                            y: Math.random() * H,
+                            speed: 2 + player.speed * 1.5,
+                            length: 10 + Math.random() * 30
+                        });
+                    }
+                }
+            }
+            speedLines = speedLines.filter(line => {
+                line.y += line.speed;
+                return line.y < H + 20;
+            });
+            if (speedLines.length > 100) speedLines.splice(0, speedLines.length - 100);
+
+            // ── Spawn opponents ──
+            spawnTimer -= 1 / 60;
+            if (spawnTimer <= 0 && opponents.length < 8) {
+                spawnCar();
+                spawnTimer = getSpawnInterval();
+            }
+
+            // ── Update AI cars ──
+            for (let i = opponents.length - 1; i >= 0; i--) {
+                const opp = opponents[i];
+
+                // ── AI Drift ──
+                opp.driftTimer += 0.015 + opp.speed * 0.008;
+                const driftAmount = Math.sin(opp.driftTimer) * 15;
+                opp.x = opp.startX + driftAmount;
+                opp.x = Math.max(ROAD_LEFT + 6, Math.min(ROAD_RIGHT - opp.w - 6, opp.x));
+
+                // ── MOVEMENT: Direction depends on speed relative to player ──
+                // If AI is FASTER than player → move UP (-)
+                // If AI is SLOWER than player → move DOWN (+)
+                const speedDiff = opp.speed - player.speed;
+                const moveAmount = Math.abs(speedDiff) * 0.8 + 0.5;
+
+                if (speedDiff > 0) {
+                    // AI is faster → moves UP (overtaking from behind)
+                    opp.y -= moveAmount;
+                } else {
+                    // AI is slower → moves DOWN (being overtaken)
+                    opp.y += moveAmount;
+                }
+
+                // ── OVERTAKING LOGIC ───────────────────────────────────
+                // AI passes player (AI goes from behind to ahead)
+                if (!opp.passedPlayer && opp.y < player.y - 10) {
+                    opp.passedPlayer = true;
+                    if (opp.speed > player.speed) {
+                        // AI was faster → AI overtook player → LOSE POINTS
+                        score -= 10;
+                        penaltyMessage = 'OVERTAKEN -10';
+                        penaltyTimer = 30;
+                        flashTimer = 8;
+                    }
+                }
+
+                // Player passes AI (AI goes from ahead to behind)
+                if (!opp.hasBeenScored && opp.y > player.y + player.h + 10) {
+                    opp.hasBeenScored = true;
+                    if (player.speed > opp.speed) {
+                        // Player was faster → Player overtook AI → GAIN POINTS
+                        const speedBonus = Math.floor(player.speed * 0.8);
+                        score += 15 + speedBonus;
+                        whooshTimer = 8;
+                    }
+                }
+
+                // ── Remove off screen ──
+                if (opp.y > H + 100 || opp.y < -100) {
+                    opponents.splice(i, 1);
+                    continue;
+                }
+
+                // ── Collision ──
+                if (player.invincible === 0 &&
+                    opp.y + opp.h > player.y - 3 &&
+                    opp.y < player.y + player.h + 3 &&
+                    opp.x + opp.w > player.x - 3 &&
+                    opp.x < player.x + player.w + 3) {
+                    crash();
+                    opponents.splice(i, 1);
+                    break;
+                }
+            }
+
+            // ── Timer Bonus ──
+            if (score >= nextBonusScore) {
+                timeLeft = Math.min(timeLeft + 5, 99);
+                nextBonusScore += 500;
+                bonusMessage = 'BONUS +5s';
+                bonusTimer = 60;
+                flashTimer = 12;
+            }
+
+            // ── Update timers ──
+            if (player.invincible > 0) player.invincible--;
+            if (flashTimer > 0) flashTimer--;
+            if (whooshTimer > 0) whooshTimer--;
+            if (bonusTimer > 0) bonusTimer--;
+            if (penaltyTimer > 0) penaltyTimer--;
+        }
+
+        // ─── Crash ──────────────────────────────────────────────────────
+
+        function crash() {
+            if (player.invincible > 0) return;
+            player.crashed = true;
+            player.speed = 0.5;
+            player.gear = 0;
+            player.x = 200;
+            player.y = PLAYER_Y;
+            player.invincible = 60;
+            flashTimer = 15;
+            penaltyMessage = 'CRASH!';
+            penaltyTimer = 30;
+        }
+
+        // ─── Draw ────────────────────────────────────────────────────────
+
+        function draw() {
+            // ── Background ──
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0, 0, W, H);
+
+            // ── Grass ──
+            ctx.fillStyle = '#1a3a1a';
+            ctx.fillRect(0, 0, ROAD_LEFT, H);
+            ctx.fillRect(ROAD_RIGHT, 0, W - ROAD_RIGHT, H);
+
+            // ── Road ──
+            ctx.fillStyle = '#2a3a4a';
+            ctx.fillRect(ROAD_LEFT, 0, ROAD_WIDTH, H);
+
+            // ── Road edge lines ──
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(ROAD_LEFT, 0, 3, H);
+            ctx.fillRect(ROAD_RIGHT - 3, 0, 3, H);
+
+            // ── Shoulder lines ──
+            ctx.fillStyle = '#88aacc';
+            ctx.fillRect(ROAD_LEFT + 6, 0, 2, H);
+            ctx.fillRect(ROAD_RIGHT - 8, 0, 2, H);
+
+            // ── Speed Lines ──
+            speedLines.forEach(line => {
+                ctx.fillStyle = `rgba(200, 220, 255, ${0.3 + Math.random() * 0.2})`;
+                ctx.fillRect(line.x, line.y, 2, line.length);
+            });
+
+            // ── Draw opponents ──
+            opponents.forEach(opp => {
+                drawF1Car(opp.x, opp.y, opp.w, opp.h, false);
+            });
+
+            // ── Draw player ──
+            const px = player.x;
+            const py = player.y;
+
+            if (player.invincible > 0 && Math.floor(player.invincible / 4) % 2 === 0) {
+                ctx.globalAlpha = 0.4;
+            }
+
+            drawF1Car(px, py, player.w, player.h, true);
+
+            ctx.globalAlpha = 1;
+
+            // ── Effects ──
+            if (flashTimer > 0) {
+                ctx.fillStyle = `rgba(255,255,255,${flashTimer / 15 * 0.3})`;
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            if (whooshTimer > 0) {
+                ctx.fillStyle = `rgba(200, 220, 255, ${whooshTimer / 15})`;
+                ctx.fillRect(0, 0, W, 2);
+                ctx.fillRect(0, H - 2, W, 2);
+            }
+
+            // ── HUD ──
+            ctx.textAlign = 'left';
+            ctx.font = 'bold 11px "Courier New"';
+
+            ctx.fillStyle = '#88aacc';
+            ctx.fillText('SCORE', 8, 18);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 14px "Courier New"';
+            ctx.fillText(String(score).padStart(6, '0'), 8, 36);
+
+            ctx.font = 'bold 11px "Courier New"';
+            ctx.fillStyle = '#88aacc';
+            ctx.fillText('TIME', 8, 58);
+            ctx.fillStyle = timeLeft < 10 ? '#ff4444' : '#ffffff';
+            ctx.font = 'bold 14px "Courier New"';
+            ctx.fillText(String(timeLeft).padStart(2, '0') + 's', 8, 76);
+
+            ctx.font = 'bold 11px "Courier New"';
+            ctx.fillStyle = '#88aacc';
+            ctx.fillText('SPEED', 8, 100);
+            const speedKmh = Math.floor(player.speed / 10 * 320);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 14px "Courier New"';
+            ctx.fillText(String(speedKmh).padStart(3, '0') + 'km/h', 8, 118);
+
+            ctx.font = 'bold 11px "Courier New"';
+            ctx.fillStyle = '#88aacc';
+            ctx.fillText('GEAR', 8, 142);
+            ctx.fillStyle = player.gear === 0 ? '#44ddff' : '#ffcc44';
+            ctx.font = 'bold 14px "Courier New"';
+            ctx.fillText(player.gear === 0 ? 'LOW' : 'HI', 8, 160);
+
+            ctx.font = 'bold 10px "Courier New"';
+            ctx.fillStyle = '#445566';
+            ctx.fillText('BEST', 8, H - 10);
+            ctx.fillStyle = '#6688aa';
+            ctx.fillText(String(bestScore).padStart(6, '0'), 44, H - 10);
+
+            // ── Bonus message ──
+            if (bonusTimer > 0) {
+                ctx.textAlign = 'center';
+                ctx.fillStyle = `rgba(255, 215, 0, ${bonusTimer / 60})`;
+                ctx.font = 'bold 22px "Courier New"';
+                ctx.fillText(bonusMessage, W / 2, 100);
+            }
+
+            // ── Penalty message ──
+            if (penaltyTimer > 0) {
+                ctx.textAlign = 'center';
+                ctx.fillStyle = `rgba(255, 50, 50, ${penaltyTimer / 30})`;
+                ctx.font = 'bold 18px "Courier New"';
+                ctx.fillText(penaltyMessage, W / 2, 140);
+            }
+
+            // ── Game Over ──
+            if (gameState === 'GAME_OVER') {
+                ctx.fillStyle = 'rgba(0,0,0,0.85)';
+                ctx.fillRect(0, 0, W, H);
+
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#ff4444';
+                ctx.font = 'bold 32px "Courier New"';
+                ctx.fillText('GAME OVER', W / 2, H / 2 - 40);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '20px "Courier New"';
+                ctx.fillText('SCORE: ' + score, W / 2, H / 2 + 20);
+
+                if (score > 0 && score >= bestScore) {
+                    ctx.fillStyle = '#ffcc44';
+                    ctx.font = '16px "Courier New"';
+                    ctx.fillText('★ NEW BEST! ★', W / 2, H / 2 + 60);
+                }
+
+                ctx.fillStyle = '#6688aa';
+                ctx.font = '14px "Courier New"';
+                ctx.fillText('Press R to restart', W / 2, H / 2 + 110);
+            }
+        }
+
+        // ─── Formula 1 Car Drawing ──────────────────────────────────────
+
+        function drawF1Car(x, y, w, h, isPlayer) {
+            const colors = isPlayer ? {
+                body: '#FF1E1E',
+                wing: '#CC0000',
+                accent: '#FFCC00',
+                cockpit: '#88CCFF',
+                wheel: '#222222'
+            } : {
+                body: '#1E44FF',
+                wing: '#1122AA',
+                accent: '#FFCC00',
+                cockpit: '#88CCFF',
+                wheel: '#222222'
+            };
+
+            const cx = x + w / 2;
+            const cy = y + h / 2;
+
+            // ── Shadow ──
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.fillRect(x + 2, y + 3, w, h);
+
+            // ── Wheels ──
+            const wheelW = 5;
+            const wheelH = 12;
+
+            ctx.fillStyle = colors.wheel;
+            ctx.fillRect(x - 3, y + 4, wheelW, wheelH);
+            ctx.fillRect(x + w - 2, y + 4, wheelW, wheelH);
+            ctx.fillRect(x - 3, y + h - 16, wheelW, wheelH);
+            ctx.fillRect(x + w - 2, y + h - 16, wheelW, wheelH);
+
+            ctx.fillStyle = '#888888';
+            ctx.fillRect(x - 2, y + 6, 3, 8);
+            ctx.fillRect(x + w - 1, y + 6, 3, 8);
+            ctx.fillRect(x - 2, y + h - 14, 3, 8);
+            ctx.fillRect(x + w - 1, y + h - 14, 3, 8);
+
+            // ── Main body ──
+            ctx.fillStyle = colors.body;
+            ctx.fillRect(x + 3, y + 4, w - 6, h - 8);
+
+            // ── Pointed nose ──
+            ctx.beginPath();
+            ctx.moveTo(cx, y + h);
+            ctx.lineTo(x + 4, y + h - 8);
+            ctx.lineTo(x + w - 4, y + h - 8);
+            ctx.closePath();
+            ctx.fillStyle = colors.body;
+            ctx.fill();
+
+            // ── Front wing ──
+            ctx.fillStyle = colors.wing;
+            ctx.fillRect(cx - 14, y + h - 4, 28, 3);
+            ctx.fillRect(x - 2, y + h - 6, 3, 6);
+            ctx.fillRect(x + w - 1, y + h - 6, 3, 6);
+
+            // ── Rear wing ──
+            ctx.fillStyle = colors.wing;
+            ctx.fillRect(cx - 16, y - 2, 32, 4);
+            ctx.fillRect(x - 4, y - 2, 4, 6);
+            ctx.fillRect(x + w, y - 2, 4, 6);
+
+            ctx.fillRect(cx - 6, y + 2, 2, 6);
+            ctx.fillRect(cx + 4, y + 2, 2, 6);
+
+            // ── Side pods ──
+            ctx.fillStyle = isPlayer ? '#CC1111' : '#1133CC';
+            ctx.fillRect(x + 2, y + 12, 3, 12);
+            ctx.fillRect(x + w - 5, y + 12, 3, 12);
+
+            // ── Cockpit ──
+            ctx.fillStyle = colors.cockpit;
+            ctx.fillRect(cx - 6, y + 4, 12, 10);
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.fillRect(cx - 4, y + 5, 8, 8);
+
+            // ── Driver helmet ──
+            ctx.fillStyle = isPlayer ? '#FFCC44' : '#44CCFF';
+            ctx.beginPath();
+            ctx.arc(cx, y + 8, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#222222';
+            ctx.fillRect(cx - 3, y + 7, 6, 2);
+
+            // ── Halo ──
+            ctx.strokeStyle = '#666666';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(cx, y + 7, 7, 0.2, Math.PI - 0.2);
+            ctx.stroke();
+
+            // ── Exhaust ──
+            ctx.fillStyle = '#444444';
+            ctx.fillRect(cx - 3, y + 2, 2, 3);
+            ctx.fillRect(cx + 1, y + 2, 2, 3);
+
+            // ── Front wing endplates ──
+            ctx.fillStyle = colors.accent;
+            ctx.fillRect(x - 2, y + h - 3, 2, 2);
+            ctx.fillRect(x + w, y + h - 3, 2, 2);
+
+            // ── Rear light ──
+            ctx.fillStyle = '#FF0000';
+            ctx.fillRect(cx - 2, y + 1, 4, 2);
+
+            // ── Number ──
+            if (isPlayer) {
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = 'bold 8px "Courier New"';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('1', cx, y + 22);
+                ctx.textBaseline = 'alphabetic';
+            }
+        }
+
+        // ─── Loop ──────────────────────────────────────────────────────
+
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        // ─── Boot ──────────────────────────────────────────────────────
+
+        restartGame();
+        loop();
+    </script>
+</body>
+</html>

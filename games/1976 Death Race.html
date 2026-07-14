@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Death Race · 1976</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: #0a0c0e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        .game-wrapper {
+            background: #14181c;
+            padding: 20px 20px 25px;
+            border-radius: 24px;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.8), inset 0 0 0 1px #3d4a52;
+            display: inline-block;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            width: 800px;
+            height: 600px;
+            border-radius: 16px;
+            background: #1a1f23;
+            box-shadow: inset 0 0 30px #0b0e10, 0 0 0 2px #2e3b42;
+            cursor: none;
+            image-rendering: crisp-edges;
+        }
+        .hud {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 16px 8px 4px 8px;
+            color: #b7d0d9;
+            text-shadow: 0 0 6px #3c6a7a;
+            font-weight: bold;
+            font-size: 1.5rem;
+            letter-spacing: 1px;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .hud-item {
+            background: #0f1519;
+            padding: 4px 16px;
+            border-radius: 40px;
+            border: 1px solid #3d555e;
+            box-shadow: inset 0 0 8px #1d2a30;
+            color: #d4edf7;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .hud-item .label { font-size: 0.8rem; color: #7a9aa8; }
+        .hud-item .value { font-weight: bold; font-size: 1.3rem; min-width: 2.5rem; }
+        .controls-hint {
+            color: #6a868f;
+            font-size: 0.9rem;
+            letter-spacing: 0.5px;
+            background: #121a1e;
+            padding: 8px 18px;
+            border-radius: 30px;
+            border: 1px solid #2d4149;
+            margin-top: 10px;
+            text-align: center;
+        }
+        .controls-hint i { font-style: normal; display: inline-block; margin: 0 6px; }
+        .btn-restart {
+            background: #1d2e35;
+            border: none;
+            color: #cce3eb;
+            font-family: inherit;
+            font-size: 1.3rem;
+            font-weight: bold;
+            padding: 6px 22px;
+            border-radius: 40px;
+            border: 1px solid #4b6a76;
+            box-shadow: 0 0 12px #1f3f4a;
+            cursor: pointer;
+            transition: 0.15s;
+            flex-shrink: 0;
+        }
+        .btn-restart:hover { background: #2b414b; border-color: #7ba3b3; color: #f0faff; box-shadow: 0 0 20px #2f6377; }
+        .btn-restart:active { transform: scale(0.94); }
+        @media (max-width: 850px) {
+            canvas { width: 100%; height: auto; aspect-ratio: 800/600; }
+            .game-wrapper { padding: 12px; width: 96%; }
+            .hud { font-size: 1.1rem; justify-content: center; }
+            .hud-item { padding: 2px 10px; }
+        }
+    </style>
+</head>
+<body>
+<div class="game-wrapper">
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div class="hud">
+        <div class="hud-item"><span class="label">💀</span><span class="value" id="killDisplay">0</span></div>
+        <div class="hud-item"><span class="label">⏳</span><span class="value" id="timerDisplay">1:30</span></div>
+        <div class="hud-item"><span class="label">🏆</span><span class="value" id="highDisplay">0</span></div>
+        <button class="btn-restart" id="restartBtn">↺ RACE</button>
+    </div>
+    <div class="controls-hint">
+        <i>↑</i> <i>↓</i> gas / brake &nbsp;·&nbsp; <i>←</i> <i>→</i> steer &nbsp;·&nbsp; <i>P</i> pause
+    </div>
+</div>
+<script>
+    (function() {
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const killDisplay = document.getElementById('killDisplay');
+        const timerDisplay = document.getElementById('timerDisplay');
+        const highDisplay = document.getElementById('highDisplay');
+
+        // ----- SIMPLIFIED AUDIO -----
+        let audioCtx = null;
+        let engineOsc = null;
+        let engineGain = null;
+        let audioInitialized = false;
+
+        function initAudio() {
+            if (audioCtx) return;
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                engineOsc = audioCtx.createOscillator();
+                engineOsc.type = 'sawtooth';
+                engineOsc.frequency.value = 50;
+                engineGain = audioCtx.createGain();
+                engineGain.gain.value = 0;
+                engineOsc.connect(engineGain);
+                engineGain.connect(audioCtx.destination);
+                engineOsc.start();
+                audioInitialized = true;
+            } catch(e) {}
+        }
+
+        function ensureAudioReady() {
+            if (!audioInitialized) {
+                initAudio();
+                if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+                if (!gameActive && !paused) resetGame();
+            }
+        }
+
+        canvas.addEventListener('click', ensureAudioReady);
+        document.addEventListener('keydown', ensureAudioReady);
+
+        function updateEngineSound(speed) {
+            if (!audioCtx || !engineOsc || !audioInitialized) return;
+            try {
+                const absSpeed = Math.abs(speed);
+                engineOsc.frequency.value = 45 + absSpeed * 20;
+                engineGain.gain.value = Math.min(0.04, absSpeed * 0.015);
+            } catch(e) {}
+        }
+
+        function playScream() {
+            if (!audioCtx || !audioInitialized) return;
+            try {
+                const osc = audioCtx.createOscillator();
+                osc.type = 'sawtooth';
+                const gain = audioCtx.createGain();
+                gain.gain.value = 0;
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                const now = audioCtx.currentTime;
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.linearRampToValueAtTime(2800, now + 0.15);
+                osc.frequency.linearRampToValueAtTime(600, now + 0.35);
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.2, now + 0.02);
+                gain.gain.linearRampToValueAtTime(0, now + 0.4);
+                osc.start(now);
+                osc.stop(now + 0.4);
+            } catch(e) {}
+        }
+
+        function playThud() {
+            if (!audioCtx || !audioInitialized) return;
+            try {
+                const bufferSize = audioCtx.sampleRate * 0.08;
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+                }
+                const source = audioCtx.createBufferSource();
+                source.buffer = buffer;
+                const gain = audioCtx.createGain();
+                gain.gain.value = 0.25;
+                source.connect(gain);
+                gain.connect(audioCtx.destination);
+                source.start();
+            } catch(e) {}
+        }
+
+        // ----- CONSTANTS -----
+        const W=800, H=600;
+        const SAFE_LEFT=80, SAFE_RIGHT=720;
+        const ROAD_LEFT=30, ROAD_RIGHT=770, ROAD_TOP=20, ROAD_BOTTOM=580;
+        const MAX_SPEED = 2.5;
+        const TURN_SPEED = 0.05;
+        const FRICTION = 0.985;
+        const INITIAL_TIME = 90;
+        const MAX_GREMLINS = 3;
+        const PANIC_DIST = 80;
+        const CALM_DIST = 130;
+        const HEADSTONE_DELAY = 500;
+
+        // ----- 8 COMPASS DIRECTIONS -----
+        const DIRS = [
+            0,          // East (→)
+            Math.PI/4,  // Southeast (↘)
+            Math.PI/2,  // South (↓)
+            3*Math.PI/4,// Southwest (↙)
+            Math.PI,    // West (←)
+            -3*Math.PI/4,// Northwest (↖)
+            -Math.PI/2, // North (↑)
+            -Math.PI/4  // Northeast (↗)
+        ];
+
+        // Helper to pick a random direction from 8 compass points
+        function randomDir() {
+            return DIRS[Math.floor(random(0, 8))];
+        }
+
+        // Helper: pick 3 directions away from a wall
+        function getAwayFromWall(wall) {
+            switch(wall) {
+                case 'top':    return [6, 7, 0]; // N, NE, E
+                case 'bottom': return [2, 3, 4]; // S, SW, W
+                case 'left':   return [0, 7, 6]; // E, NE, N
+                case 'right':  return [4, 3, 2]; // W, SW, S
+                default:       return [0, 1, 2, 3, 4, 5, 6, 7];
+            }
+        }
+
+        function randomAwayDir(wall) {
+            const options = getAwayFromWall(wall);
+            return DIRS[options[Math.floor(random(0, options.length))]];
+        }
+
+        // Find closest 8-direction angle
+        function closestDir(angle) {
+            let closest = 0;
+            let closestDiff = Infinity;
+            for (let i = 0; i < 8; i++) {
+                let diff = angle - DIRS[i];
+                while (diff > Math.PI) diff -= 2 * Math.PI;
+                while (diff < -Math.PI) diff += 2 * Math.PI;
+                if (Math.abs(diff) < closestDiff) {
+                    closestDiff = Math.abs(diff);
+                    closest = i;
+                }
+            }
+            return DIRS[closest];
+        }
+
+        let car = { x:400, y:300, angle:0, speed:0 };
+        let gremlins = [];
+        let headstones = [];
+        let kills = 0;
+        let timeLeft = INITIAL_TIME;
+        let gameActive = true;
+        let paused = false;
+        let frameCount = 0;
+        let spawnTimer = 0;
+        let killCooldown = 0;
+        let highCount = parseInt(localStorage.getItem('deathRaceHighCount')) || 0;
+        let screenFlash = 0;
+
+        const keys = { up:false, down:false, left:false, right:false };
+
+        function random(min, max) { return Math.random() * (max - min) + min; }
+        function dist(x1,y1,x2,y2) { return Math.hypot(x2-x1, y2-y1); }
+        function clamp(v,min,max) { return Math.min(Math.max(v,min),max); }
+        function formatTime(sec) {
+            const m = Math.floor(sec/60);
+            const s = Math.floor(sec%60);
+            return m+':'+s.toString().padStart(2,'0');
+        }
+
+        function collidesWithHeadstone(x,y,rad) {
+            for (const h of headstones)
+                if (dist(x,y,h.x,h.y) < rad+14) return true;
+            return false;
+        }
+
+        function spawnGremlin() {
+            if (!gameActive || paused || gremlins.length >= MAX_GREMLINS) return;
+            for (let attempt = 0; attempt < 50; attempt++) {
+                const x = random(ROAD_LEFT+40, ROAD_RIGHT-40);
+                const y = random(ROAD_TOP+40, ROAD_BOTTOM-40);
+                if (dist(x,y,car.x,car.y) > 250 && !collidesWithHeadstone(x,y,12)) {
+                    const angle = randomDir();
+                    gremlins.push({
+                        x, y,
+                        vx: Math.cos(angle) * MAX_SPEED,
+                        vy: Math.sin(angle) * MAX_SPEED,
+                        radius: 11,
+                        state: 'calm',
+                        wanderAngle: angle,
+                        wanderTimer: Math.floor(random(20, 60)),
+                        fleeTimer: Math.floor(random(10, 40)), // YOUR SETTING
+                        targetAngle: angle
+                    });
+                    return;
+                }
+            }
+            // fallback
+            const x = random(ROAD_LEFT+50, ROAD_RIGHT-50);
+            const y = random(ROAD_TOP+50, ROAD_BOTTOM-50);
+            const angle = randomDir();
+            gremlins.push({
+                x, y,
+                vx: Math.cos(angle) * MAX_SPEED,
+                vy: Math.sin(angle) * MAX_SPEED,
+                radius: 11,
+                state: 'calm',
+                wanderAngle: angle,
+                wanderTimer: Math.floor(random(20, 60)),
+                fleeTimer: Math.floor(random(10, 40)), // YOUR SETTING
+                targetAngle: angle
+            });
+        }
+
+        function resetGame() {
+            if (engineGain) engineGain.gain.value = 0;
+            car = { x:400, y:300, angle:0, speed:0 };
+            gremlins = [];
+            headstones = [];
+            kills = 0;
+            timeLeft = INITIAL_TIME;
+            gameActive = true;
+            paused = false;
+            frameCount = 0;
+            spawnTimer = 0;
+            killCooldown = 0;
+            screenFlash = 0;
+            const cnt = Math.floor(random(2,4));
+            for (let i=0; i<cnt; i++) spawnGremlin();
+            updateUI();
+        }
+
+        function updateUI() {
+            killDisplay.textContent = kills;
+            timerDisplay.textContent = formatTime(timeLeft);
+            highDisplay.textContent = highCount;
+        }
+
+        function resolveHeadstoneCollisions() {
+            const carRad = 16;
+            for (const h of headstones) {
+                const dx = car.x - h.x;
+                const dy = car.y - h.y;
+                const d = Math.hypot(dx, dy);
+                const minDist = carRad + 14;
+                if (d < minDist && d > 0.001) {
+                    const overlap = minDist - d;
+                    const normX = dx / d;
+                    const normY = dy / d;
+                    car.x += normX * overlap * 1.1;
+                    car.y += normY * overlap * 1.1;
+                    const vx = Math.cos(car.angle) * car.speed;
+                    const vy = Math.sin(car.angle) * car.speed;
+                    const dot = vx * normX + vy * normY;
+                    if (dot < 0) {
+                        const newVx = vx - 2 * dot * normX;
+                        const newVy = vy - 2 * dot * normY;
+                        const newSpeed = Math.hypot(newVx, newVy) * 0.5;
+                        const newAngle = Math.atan2(newVy, newVx);
+                        car.speed = newSpeed;
+                        car.angle = newAngle;
+                    } else {
+                        car.speed *= 0.8;
+                    }
+                    car.x = clamp(car.x, SAFE_LEFT+carRad, SAFE_RIGHT-carRad);
+                    car.y = clamp(car.y, ROAD_TOP+carRad, ROAD_BOTTOM-carRad);
+                    playThud();
+                }
+            }
+        }
+
+        function update() {
+            if (!audioInitialized) {
+                if (engineGain) engineGain.gain.value = 0;
+                return;
+            }
+            if (!gameActive || paused) {
+                if (engineGain) engineGain.gain.value = 0;
+                return;
+            }
+
+            frameCount++;
+            if (frameCount % 60 === 0 && timeLeft > 0) {
+                timeLeft--;
+                updateUI();
+                if (timeLeft <= 0) {
+                    timeLeft = 0;
+                    gameActive = false;
+                    updateUI();
+                    if (engineGain) engineGain.gain.value = 0;
+                    if (kills > highCount) {
+                        highCount = kills;
+                        localStorage.setItem('deathRaceHighCount', highCount);
+                        highDisplay.textContent = highCount;
+                    }
+                    return;
+                }
+            }
+
+            if (killCooldown > 0) killCooldown--;
+
+            // ---- CAR PHYSICS ----
+            let accel = 0;
+            if (keys.up) accel = 0.14;
+            if (keys.down) accel = -0.09;
+            car.speed += accel;
+            if (car.speed > MAX_SPEED) car.speed = MAX_SPEED;
+            if (car.speed < -MAX_SPEED*0.5) car.speed = -MAX_SPEED*0.5;
+            if (Math.abs(car.speed) > 0.1) {
+                if (keys.left) car.angle -= TURN_SPEED;
+                if (keys.right) car.angle += TURN_SPEED;
+            }
+            if (!keys.up && !keys.down) {
+                car.speed *= FRICTION;
+                if (Math.abs(car.speed) < 0.02) car.speed = 0;
+            }
+            updateEngineSound(car.speed);
+
+            const newX = car.x + Math.cos(car.angle) * car.speed;
+            const newY = car.y + Math.sin(car.angle) * car.speed;
+            const carRad = 16;
+            if (newX - carRad < SAFE_LEFT) { car.x = SAFE_LEFT + carRad; car.speed *= -0.2; }
+            else if (newX + carRad > SAFE_RIGHT) { car.x = SAFE_RIGHT - carRad; car.speed *= -0.2; }
+            else car.x = newX;
+            if (newY - carRad < ROAD_TOP) { car.y = ROAD_TOP + carRad; car.speed *= -0.2; }
+            else if (newY + carRad > ROAD_BOTTOM) { car.y = ROAD_BOTTOM - carRad; car.speed *= -0.2; }
+            else car.y = newY;
+
+            resolveHeadstoneCollisions();
+
+            // ---- GREMLINS ----
+            for (let i = gremlins.length - 1; i >= 0; i--) {
+                const g = gremlins[i];
+                const d = dist(g.x, g.y, car.x, car.y);
+
+                // State transition
+                if (d < PANIC_DIST) {
+                    g.state = 'panic';
+                } else if (d > CALM_DIST) {
+                    g.state = 'calm';
+                }
+
+                // ---- CALM BEHAVIOUR ----
+                if (g.state === 'calm') {
+                    g.wanderTimer--;
+                    if (g.wanderTimer <= 0) {
+                        g.wanderAngle = randomDir();
+                        g.wanderTimer = Math.floor(random(20, 60));
+                    }
+                    g.vx = Math.cos(g.wanderAngle) * MAX_SPEED;
+                    g.vy = Math.sin(g.wanderAngle) * MAX_SPEED;
+                } 
+                // ---- PANIC BEHAVIOUR (fleeTimer: 10-40 frames) ----
+                else {
+                    g.fleeTimer--;
+                    if (g.fleeTimer <= 0) {
+                        // Direction away from car, snapped to 8 directions
+                        const away = Math.atan2(g.y - car.y, g.x - car.x);
+                        const closest = closestDir(away);
+                        // Add slight randomness: pick from 3 nearby directions
+                        const offset = Math.floor(random(-1, 2));
+                        const dirs = DIRS.slice();
+                        const idx = (dirs.indexOf(closest) + offset + 8) % 8;
+                        g.targetAngle = DIRS[idx];
+                        g.fleeTimer = Math.floor(random(10, 40)); // YOUR SETTING
+                    }
+                    g.vx = Math.cos(g.targetAngle) * MAX_SPEED;
+                    g.vy = Math.sin(g.targetAngle) * MAX_SPEED;
+                }
+
+                // Move
+                g.x += g.vx;
+                g.y += g.vy;
+
+                // ---- WALL BOUNCE (Option 1 + Option 4) ----
+                let wallHit = false;
+                let hitWall = '';
+
+                // Check each wall with a small buffer (1px) to prevent sticking
+                if (g.x - g.radius < ROAD_LEFT) {
+                    g.x = ROAD_LEFT + g.radius + 1; // +1px buffer
+                    g.vx = Math.abs(g.vx);
+                    wallHit = true;
+                    hitWall = 'left';
+                }
+                if (g.x + g.radius > ROAD_RIGHT) {
+                    g.x = ROAD_RIGHT - g.radius - 1; // -1px buffer
+                    g.vx = -Math.abs(g.vx);
+                    wallHit = true;
+                    hitWall = 'right';
+                }
+                if (g.y - g.radius < ROAD_TOP) {
+                    g.y = ROAD_TOP + g.radius + 1; // +1px buffer
+                    g.vy = Math.abs(g.vy);
+                    wallHit = true;
+                    hitWall = 'top';
+                }
+                if (g.y + g.radius > ROAD_BOTTOM) {
+                    g.y = ROAD_BOTTOM - g.radius - 1; // -1px buffer
+                    g.vy = -Math.abs(g.vy);
+                    wallHit = true;
+                    hitWall = 'bottom';
+                }
+
+                // ---- OPTION 4: Corner Trap Prevention ----
+                // If stuck in a corner, push diagonally out
+                const cornerBuffer = 3;
+                if (g.x - g.radius < ROAD_LEFT + cornerBuffer && g.y - g.radius < ROAD_TOP + cornerBuffer) {
+                    // Top-left corner
+                    g.x += 4;
+                    g.y += 4;
+                    g.vx = Math.abs(g.vx);
+                    g.vy = Math.abs(g.vy);
+                    wallHit = true;
+                    hitWall = 'corner';
+                }
+                if (g.x + g.radius > ROAD_RIGHT - cornerBuffer && g.y - g.radius < ROAD_TOP + cornerBuffer) {
+                    // Top-right corner
+                    g.x -= 4;
+                    g.y += 4;
+                    g.vx = -Math.abs(g.vx);
+                    g.vy = Math.abs(g.vy);
+                    wallHit = true;
+                    hitWall = 'corner';
+                }
+                if (g.x - g.radius < ROAD_LEFT + cornerBuffer && g.y + g.radius > ROAD_BOTTOM - cornerBuffer) {
+                    // Bottom-left corner
+                    g.x += 4;
+                    g.y -= 4;
+                    g.vx = Math.abs(g.vx);
+                    g.vy = -Math.abs(g.vy);
+                    wallHit = true;
+                    hitWall = 'corner';
+                }
+                if (g.x + g.radius > ROAD_RIGHT - cornerBuffer && g.y + g.radius > ROAD_BOTTOM - cornerBuffer) {
+                    // Bottom-right corner
+                    g.x -= 4;
+                    g.y -= 4;
+                    g.vx = -Math.abs(g.vx);
+                    g.vy = -Math.abs(g.vy);
+                    wallHit = true;
+                    hitWall = 'corner';
+                }
+
+                // If hit wall, push away and pick new direction
+                if (wallHit) {
+                    // ---- OPTION 1: Push away from wall ----
+                    switch(hitWall) {
+                        case 'left':   g.x += 3; break;
+                        case 'right':  g.x -= 3; break;
+                        case 'top':    g.y += 3; break;
+                        case 'bottom': g.y -= 3; break;
+                        case 'corner': break; // already pushed in corner check
+                    }
+
+                    // Re-normalize speed to full speed
+                    const spd = Math.hypot(g.vx, g.vy);
+                    if (spd > 0) {
+                        g.vx = (g.vx / spd) * MAX_SPEED;
+                        g.vy = (g.vy / spd) * MAX_SPEED;
+                    }
+
+                    // For calm state, pick new direction away from wall
+                    if (g.state === 'calm' && hitWall !== 'corner') {
+                        g.wanderAngle = randomAwayDir(hitWall);
+                        g.wanderTimer = Math.floor(random(5, 15));
+                    }
+                    // For calm state in corner, pick random direction
+                    if (g.state === 'calm' && hitWall === 'corner') {
+                        g.wanderAngle = randomDir();
+                        g.wanderTimer = Math.floor(random(5, 15));
+                    }
+                }
+
+                // ---- HEADSTONE PUSH ----
+                for (const h of headstones) {
+                    if (dist(g.x, g.y, h.x, h.y) < g.radius + 14) {
+                        const ang = Math.atan2(g.y - h.y, g.x - h.x);
+                        g.x += Math.cos(ang) * 2;
+                        g.y += Math.sin(ang) * 2;
+                        g.vx += Math.cos(ang) * 0.5;
+                        g.vy += Math.sin(ang) * 0.5;
+                    }
+                }
+
+                // ---- KILL CHECK ----
+                if (dist(g.x, g.y, car.x, car.y) < g.radius + carRad) {
+                    const deathX = g.x, deathY = g.y;
+                    const pushAngle = car.angle;
+                    car.x += Math.cos(pushAngle) * 14;
+                    car.y += Math.sin(pushAngle) * 14;
+                    car.x = clamp(car.x, SAFE_LEFT+carRad, SAFE_RIGHT-carRad);
+                    car.y = clamp(car.y, ROAD_TOP+carRad, ROAD_BOTTOM-carRad);
+
+                    gremlins.splice(i, 1);
+                    kills++;
+                    screenFlash = 10;
+                    playScream();
+                    updateUI();
+
+                    if (killCooldown === 0) {
+                        setTimeout(() => {
+                            let hx = deathX - Math.cos(pushAngle) * 30;
+                            let hy = deathY - Math.sin(pushAngle) * 30;
+                            hx = clamp(hx, ROAD_LEFT + 10, ROAD_RIGHT - 10);
+                            hy = clamp(hy, ROAD_TOP + 10, ROAD_BOTTOM - 10);
+                            headstones.push({ x: hx, y: hy });
+                            updateUI();
+                        }, HEADSTONE_DELAY);
+                        killCooldown = 15;
+                    }
+
+                    if (gremlins.length < MAX_GREMLINS) spawnGremlin();
+                    continue;
+                }
+
+                // ---- NORMALIZE SPEED ----
+                const spd = Math.hypot(g.vx, g.vy);
+                if (spd > 0) {
+                    g.vx = (g.vx / spd) * MAX_SPEED;
+                    g.vy = (g.vy / spd) * MAX_SPEED;
+                }
+            }
+
+            // ---- SPAWN ----
+            spawnTimer++;
+            if (gremlins.length < MAX_GREMLINS && spawnTimer > 50) {
+                spawnGremlin();
+                spawnTimer = 0;
+            }
+            if (gremlins.length === 0 && gameActive) {
+                for (let i=0; i<2; i++) spawnGremlin();
+            }
+
+            if (screenFlash > 0) screenFlash--;
+            if (timeLeft <= 0) {
+                gameActive = false;
+                if (engineGain) engineGain.gain.value = 0;
+                if (kills > highCount) {
+                    highCount = kills;
+                    localStorage.setItem('deathRaceHighCount', highCount);
+                    highDisplay.textContent = highCount;
+                }
+                updateUI();
+            }
+        }
+
+        // ----- DRAW -----
+        function draw() {
+            ctx.clearRect(0,0,W,H);
+
+            if (!audioInitialized) {
+                ctx.fillStyle = '#0a0c0e';
+                ctx.fillRect(0,0,W,H);
+                ctx.font = 'bold 40px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#88ccdd';
+                ctx.shadowColor = '#88ccdd';
+                ctx.shadowBlur = 20;
+                ctx.fillText('🕹️  DEATH RACE', W/2, H/2 - 40);
+                ctx.font = '20px monospace';
+                ctx.fillStyle = '#668899';
+                ctx.shadowBlur = 0;
+                ctx.fillText('Click or press any key to start', W/2, H/2 + 30);
+                return;
+            }
+
+            if (screenFlash > 0) {
+                ctx.fillStyle = `rgba(255,255,255,${screenFlash/15})`;
+                ctx.fillRect(0,0,W,H);
+            }
+
+            // Road
+            ctx.fillStyle = '#1e2a30';
+            ctx.fillRect(ROAD_LEFT, ROAD_TOP, ROAD_RIGHT-ROAD_LEFT, ROAD_BOTTOM-ROAD_TOP);
+            ctx.strokeStyle = '#3c5a66';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(ROAD_LEFT, ROAD_TOP, ROAD_RIGHT-ROAD_LEFT, ROAD_BOTTOM-ROAD_TOP);
+
+            // Safe zone lines
+            ctx.strokeStyle = 'rgba(200,60,60,0.2)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([6,8]);
+            ctx.beginPath();
+            ctx.moveTo(SAFE_LEFT, ROAD_TOP);
+            ctx.lineTo(SAFE_LEFT, ROAD_BOTTOM);
+            ctx.moveTo(SAFE_RIGHT, ROAD_TOP);
+            ctx.lineTo(SAFE_RIGHT, ROAD_BOTTOM);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Headstones
+            for (const h of headstones) {
+                ctx.save();
+                ctx.translate(h.x, h.y);
+                ctx.strokeStyle = '#6a7a7a';
+                ctx.lineWidth = 1.8;
+                const w = 16, hh = 24;
+                const radius = 8;
+                const topY = -hh/2 + radius;
+                const bottomY = hh/2;
+                const leftX = -w/2;
+                const rightX = w/2;
+                ctx.beginPath();
+                ctx.arc(0, topY, radius, Math.PI, 0, false);
+                ctx.lineTo(rightX, bottomY);
+                ctx.lineTo(leftX, bottomY);
+                ctx.closePath();
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(-4, 2);
+                ctx.lineTo(4, 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // Gremlins
+            for (const g of gremlins) {
+                const isPanicked = g.state === 'panic';
+                ctx.save();
+                ctx.translate(g.x, g.y);
+                ctx.strokeStyle = isPanicked ? '#ffcc00' : '#ffffff';
+                ctx.lineWidth = isPanicked ? 2.5 : 1.8;
+                ctx.shadowColor = isPanicked ? '#ffcc00' : '#ffffff';
+                ctx.shadowBlur = isPanicked ? 25 : 10;
+
+                // Head with ears
+                const hs = 7;
+                ctx.beginPath();
+                ctx.arc(0, -hs, hs*0.8, 0, Math.PI*2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(-6, -hs-2);
+                ctx.lineTo(-9, -hs-8);
+                ctx.lineTo(-3, -hs-4);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(6, -hs-2);
+                ctx.lineTo(9, -hs-8);
+                ctx.lineTo(3, -hs-4);
+                ctx.stroke();
+
+                // Eyes
+                ctx.fillStyle = isPanicked ? '#ffcc00' : '#ffffff';
+                ctx.beginPath();
+                ctx.arc(-3, -hs-1, 1.2, 0, Math.PI*2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(3, -hs-1, 1.2, 0, Math.PI*2);
+                ctx.fill();
+
+                // Hunched body
+                ctx.beginPath();
+                ctx.moveTo(0, -hs+2);
+                ctx.quadraticCurveTo(-6, 2, -3, 10);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, -hs+2);
+                ctx.quadraticCurveTo(6, 2, 3, 10);
+                ctx.stroke();
+
+                // Arms
+                ctx.beginPath();
+                ctx.moveTo(-5, 2);
+                ctx.lineTo(-9, -2);
+                ctx.lineTo(-12, 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(5, 2);
+                ctx.lineTo(9, -2);
+                ctx.lineTo(12, 2);
+                ctx.stroke();
+
+                // Legs (running)
+                const phase = (frameCount * 0.16 + g.x) % 1.2;
+                const legOffset = Math.sin(phase) * 4;
+                ctx.beginPath();
+                ctx.moveTo(-3, 10);
+                ctx.lineTo(-5 + legOffset, 16);
+                ctx.lineTo(-2 + legOffset*0.7, 22);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(3, 10);
+                ctx.lineTo(5 - legOffset, 16);
+                ctx.lineTo(2 - legOffset*0.7, 22);
+                ctx.stroke();
+
+                ctx.shadowBlur = 0;
+                ctx.restore();
+            }
+
+            // Car
+            ctx.save();
+            ctx.translate(car.x, car.y);
+            ctx.rotate(car.angle);
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 2.5;
+            ctx.shadowColor = '#00ffff';
+            ctx.shadowBlur = 15;
+            const fw = 12, rw = 28, len = 32;
+            ctx.beginPath();
+            ctx.moveTo(len/2, -fw/2);
+            ctx.lineTo(len/2, fw/2);
+            ctx.lineTo(-len/2, rw/2);
+            ctx.lineTo(-len/2, -rw/2);
+            ctx.closePath();
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(-len/2, 0);
+            ctx.lineTo(len/2, 0);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+
+            // Overlays
+            if (paused) {
+                ctx.fillStyle = 'rgba(10,12,14,0.6)';
+                ctx.fillRect(0,0,W,H);
+                ctx.font = 'bold 46px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#e2f0f5';
+                ctx.fillText('⏸ PAUSED', W/2, H/2);
+            }
+            if (!gameActive && !paused) {
+                ctx.fillStyle = 'rgba(10,12,14,0.7)';
+                ctx.fillRect(0,0,W,H);
+                ctx.font = 'bold 46px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = '#aac5d0';
+                ctx.shadowBlur = 34;
+                ctx.fillStyle = '#e2f0f5';
+                ctx.fillText(timeLeft <= 0 ? '☠ GAME OVER' : 'PAUSED', W/2, H/2-18);
+                ctx.shadowBlur = 0;
+                ctx.font = '20px monospace';
+                ctx.fillStyle = '#b0c9d4';
+                ctx.fillText('press RACE to restart', W/2, H/2+52);
+            }
+            ctx.font = '13px monospace';
+            ctx.fillStyle = '#6b8f99';
+            ctx.textAlign = 'left';
+            const panicCount = gremlins.filter(g => g.state === 'panic').length;
+            ctx.fillText('gremlins: '+gremlins.length+'  panic: '+panicCount, 20, 26);
+        }
+
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        // ----- INPUT -----
+        function handleKeyDown(e) {
+            const key = e.key;
+            e.preventDefault();
+            ensureAudioReady();
+            if (key === 'ArrowUp') keys.up = true;
+            if (key === 'ArrowDown') keys.down = true;
+            if (key === 'ArrowLeft') keys.left = true;
+            if (key === 'ArrowRight') keys.right = true;
+            if (key === 'p' || key === 'P') {
+                if (gameActive) {
+                    paused = !paused;
+                    if (paused && engineGain) engineGain.gain.value = 0;
+                }
+            }
+            if (key === 'r' || key === 'R') resetGame();
+        }
+        function handleKeyUp(e) {
+            const key = e.key;
+            e.preventDefault();
+            if (key === 'ArrowUp') keys.up = false;
+            if (key === 'ArrowDown') keys.down = false;
+            if (key === 'ArrowLeft') keys.left = false;
+            if (key === 'ArrowRight') keys.right = false;
+        }
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+        document.getElementById('restartBtn').addEventListener('click', function() {
+            ensureAudioReady();
+            resetGame();
+        });
+        window.addEventListener('keydown', (e) => {
+            if (e.key.startsWith('Arrow') || e.key === 'p' || e.key === 'P') e.preventDefault();
+        }, {passive: false});
+
+        canvas.addEventListener('click', ensureAudioReady);
+
+        if (!CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function(x,y,w,h,r) {
+                if (r > w/2) r = w/2;
+                if (r > h/2) r = h/2;
+                this.moveTo(x+r, y);
+                this.lineTo(x+w-r, y);
+                this.quadraticCurveTo(x+w, y, x+w, y+r);
+                this.lineTo(x+w, y+h-r);
+                this.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+                this.lineTo(x+r, y+h);
+                this.quadraticCurveTo(x, y+h, x, y+h-r);
+                this.lineTo(x, y+r);
+                this.quadraticCurveTo(x, y, x+r, y);
+                return this;
+            };
+        }
+
+        resetGame();
+        loop();
+    })();
+</script>
+</body>
+</html>

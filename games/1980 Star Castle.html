@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Star Castle – 1980</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Star Castle – 12‑Segment Edition</title>
     <style>
         * {
             margin: 0;
@@ -95,14 +95,21 @@
         const levelSpan = document.getElementById('levelDisplay');
         const ringsSpan = document.getElementById('ringsDisplay');
 
-        const W = 600, H = 600;
-        const CX = W/2, CY = H/2;
+        const W = 600,
+            H = 600;
+        const CX = W / 2,
+            CY = H / 2;
+        const MARGIN = 20;
+        const SEGMENTS = 12;
+        const SEG_ANGLE = (2 * Math.PI) / SEGMENTS;
 
-        // ----- AUDIO (same as Asteroids) -----
+        // ----- AUDIO -----
         let audioCtx = null;
+
         function initAudio() {
-            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (!audioCtx) audioCtx = new(window.AudioContext || window.webkitAudioContext)();
         }
+
         function playSound(type) {
             try {
                 initAudio();
@@ -111,6 +118,7 @@
                 const gain = audioCtx.createGain();
                 osc.connect(gain);
                 gain.connect(audioCtx.destination);
+
                 switch (type) {
                     case 'shoot':
                         osc.type = 'square';
@@ -130,14 +138,14 @@
                         osc.start(now);
                         osc.stop(now + 0.3);
                         break;
-                    case 'thrust':
-                        osc.type = 'sawtooth';
-                        osc.frequency.setValueAtTime(90, now);
-                        osc.frequency.exponentialRampToValueAtTime(140, now + 0.05);
-                        gain.gain.setValueAtTime(0.05, now);
-                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+                    case 'cannonShoot':
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(1200, now);
+                        osc.frequency.exponentialRampToValueAtTime(400, now + 0.1);
+                        gain.gain.setValueAtTime(0.12, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
                         osc.start(now);
-                        osc.stop(now + 0.05);
+                        osc.stop(now + 0.1);
                         break;
                     case 'gameOver':
                         osc.type = 'sawtooth';
@@ -148,9 +156,10 @@
                         osc.start(now);
                         osc.stop(now + 0.6);
                         break;
-                    default: break;
+                    default:
+                        break;
                 }
-            } catch(e) {}
+            } catch (e) {}
         }
 
         // ----- GAME STATE -----
@@ -159,13 +168,17 @@
         let lives = 3;
         let level = 1;
         let paused = false;
+        let transitioning = false;
+        let transitionTimer = 0;
+        let showLevelTimer = 0;
+        let levelDisplayText = '';
 
-        // Ship (Asteroids-style movement)
+        // ----- SHIP -----
         const ship = {
             x: CX + 180,
             y: CY,
             radius: 12,
-            angle: -Math.PI/2,
+            angle: -Math.PI / 2,
             vx: 0,
             vy: 0,
             thrustPower: 0.12,
@@ -173,23 +186,87 @@
             maxSpeed: 5,
             turnSpeed: 0.05,
             invincible: 0,
+            shootCooldown: 0,
+            shootDelay: 10, // frames between shots
         };
 
-        // Bullets
-        let bullets = [];
+        // ----- BULLETS -----
+        let playerBullets = [];
+        let cannonBullets = [];
         const MAX_BULLETS = 5;
         const BULLET_SPEED = 7;
         const BULLET_LIFE = 60;
+        const CANNON_BULLET_SPEED = 5;
 
-        // Rings
+        // ----- RINGS (12-segment model) -----
         let rings = [];
-        const GAP_SIZE = 0.15; // angular width of gap when shot
 
-        // Particles
+        function createRing(radius, speed) {
+            return {
+                radius: radius,
+                segments: new Array(SEGMENTS).fill(2), // 2 = solid, 1 = damaged, 0 = gap
+                angle: 0,
+                speed: speed,
+                alive: true,
+            };
+        }
+
+        function createRings(level) {
+            const numRings = Math.min(3 + Math.floor(level / 2), 6);
+            const newRings = [];
+            const directions = [1, -1, 1];
+            for (let i = 0; i < numRings; i++) {
+                const radius = 60 + i * 28;
+                const baseSpeed = 0.008 + (level - 1) * 0.002;
+                const dir = directions[i % directions.length];
+                const ring = createRing(radius, dir * baseSpeed * (1 + i * 0.2));
+                ring.angle = i * 0.5;
+                newRings.push(ring);
+            }
+            return newRings;
+        }
+
+        // ----- HELPER: Map world angle to segment index -----
+        function getSegmentIndex(ring, worldAngle) {
+            let localAngle = ((worldAngle - ring.angle) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+            return Math.floor(localAngle / SEG_ANGLE) % SEGMENTS;
+        }
+
+        // ----- COLLISION & LINE OF SIGHT -----
+        function isPointInRing(ring, worldAngle) {
+            const idx = getSegmentIndex(ring, worldAngle);
+            return ring.segments[idx] > 0;
+        }
+
+        function lineOfSightClear(worldAngle) {
+            for (let ring of rings) {
+                if (!ring.alive) continue;
+                if (isPointInRing(ring, worldAngle)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function checkRingCollision(player) {
+            if (player.invincible > 0) return false;
+            const d = Math.hypot(player.x - CX, player.y - CY);
+            for (let ring of rings) {
+                if (!ring.alive) continue;
+                if (Math.abs(d - ring.radius) < player.radius + 3) {
+                    const angle = Math.atan2(player.y - CY, player.x - CX);
+                    if (isPointInRing(ring, angle)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        // ----- PARTICLES & STARS -----
         let particles = [];
-
-        // Stars (static)
         let stars = [];
+
         function initStars() {
             stars = [];
             for (let i = 0; i < 80; i++) {
@@ -203,147 +280,61 @@
         }
         initStars();
 
-        // Level transition
-        let transitioning = false;
-        let transitionTimer = 0;
-        let showLevelTimer = 0;
-        let levelDisplayText = '';
+        // ----- CANNON -----
+        const cannon = {
+            angle: 0,
+            cooldown: 0,
+            cooldownMax: 25,
+            speed: 0.03,
+        };
 
-        // Input
+        // ----- INPUT -----
         const keys = { left: false, right: false, up: false, space: false };
 
-        // Helper functions
-        function wrapEntity(entity) {
-            if (entity.x < -50) entity.x = W + 50;
-            else if (entity.x > W + 50) entity.x = -50;
-            if (entity.y < -50) entity.y = H + 50;
-            else if (entity.y > H + 50) entity.y = -50;
-        }
+        // ----- HELPERS -----
         function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
         function randomBetween(min, max) { return Math.random() * (max - min) + min; }
-        function angleDiff(a, b) { let d = b - a; while (d > Math.PI) d -= 2*Math.PI; while (d < -Math.PI) d += 2*Math.PI; return d; }
 
-        // ----- RING CREATION -----
-        function createRing(radius, segmentsCount = 36) {
-            // Start with one full segment (no gaps)
-            return {
-                radius: radius,
-                segments: [{ start: 0, end: 2 * Math.PI }],
-                segmentsCount: segmentsCount,
-                alive: true,
-                angle: 0, // rotation offset
-                rotSpeed: (Math.random() - 0.5) * 0.01,
-            };
-        }
+        function angleDiff(a, b) { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; }
 
-        function createRings(level) {
-            const numRings = Math.min(3 + Math.floor(level / 2), 6);
-            const ringsArr = [];
-            for (let i = 0; i < numRings; i++) {
-                const radius = 60 + i * 30;
-                const ring = createRing(radius, 36 + i * 4);
-                ring.angle = i * 0.5;
-                ring.rotSpeed = (0.005 + i * 0.002) * (Math.random() > 0.5 ? 1 : -1);
-                ringsArr.push(ring);
+        // ----- BOUNCE SHIP OFF EDGES -----
+        function bounceShip() {
+            if (ship.x - ship.radius < MARGIN) {
+                ship.x = MARGIN + ship.radius;
+                ship.vx = -ship.vx * 0.8;
+            } else if (ship.x + ship.radius > W - MARGIN) {
+                ship.x = W - MARGIN - ship.radius;
+                ship.vx = -ship.vx * 0.8;
             }
-            return ringsArr;
-        }
-
-        // ----- RING MODIFICATION (shoot a hole) -----
-        function shootRing(ring, angle) {
-            // Normalize angle
-            let a = ((angle % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
-            // Find which segment contains this angle
-            const segs = ring.segments;
-            for (let i = 0; i < segs.length; i++) {
-                const s = segs[i];
-                // Check if angle is within segment (consider wrap-around)
-                let start = s.start, end = s.end;
-                // If segment wraps around 0
-                if (start > end) {
-                    if (a >= start || a <= end) {
-                        // It's in this segment
-                        // Split into two segments: [start, a-gap] and [a+gap, end] (with wrap)
-                        const gap = GAP_SIZE;
-                        // Remove old segment
-                        segs.splice(i, 1);
-                        // Add new segments if they have positive length
-                        const newSeg1 = { start: start, end: a - gap };
-                        const newSeg2 = { start: a + gap, end: end };
-                        // Normalize ends
-                        if (newSeg1.end < 0) newSeg1.end += 2*Math.PI;
-                        if (newSeg2.start > 2*Math.PI) newSeg2.start -= 2*Math.PI;
-                        // Only add if length > 0.02 rad
-                        const len1 = (newSeg1.end - newSeg1.start + 2*Math.PI) % (2*Math.PI);
-                        const len2 = (newSeg2.end - newSeg2.start + 2*Math.PI) % (2*Math.PI);
-                        if (len1 > 0.02) segs.push(newSeg1);
-                        if (len2 > 0.02) segs.push(newSeg2);
-                        // If segment was wrapping, we might have created two segments that need merging
-                        // But this simple approach works for most cases.
-                        // Clean up very small segments
-                        for (let j = segs.length-1; j >= 0; j--) {
-                            const len = (segs[j].end - segs[j].start + 2*Math.PI) % (2*Math.PI);
-                            if (len < 0.02) segs.splice(j, 1);
-                        }
-                        // If no segments left, ring is dead
-                        if (segs.length === 0) ring.alive = false;
-                        return;
-                    }
-                } else {
-                    // Normal segment
-                    if (a >= start && a <= end) {
-                        const gap = GAP_SIZE;
-                        segs.splice(i, 1);
-                        const newSeg1 = { start: start, end: a - gap };
-                        const newSeg2 = { start: a + gap, end: end };
-                        if (newSeg1.end - newSeg1.start > 0.02) segs.push(newSeg1);
-                        if (newSeg2.end - newSeg2.start > 0.02) segs.push(newSeg2);
-                        if (segs.length === 0) ring.alive = false;
-                        return;
-                    }
-                }
+            if (ship.y - ship.radius < MARGIN) {
+                ship.y = MARGIN + ship.radius;
+                ship.vy = -ship.vy * 0.8;
+            } else if (ship.y + ship.radius > H - MARGIN) {
+                ship.y = H - MARGIN - ship.radius;
+                ship.vy = -ship.vy * 0.8;
             }
         }
 
-        // ----- COLLISION DETECTION (player vs rings) -----
-        function checkRingCollision(player) {
-            if (player.invincible > 0) return false;
-            for (let ring of rings) {
-                if (!ring.alive) continue;
-                const distToCenter = dist(player, {x: CX, y: CY});
-                if (Math.abs(distToCenter - ring.radius) < player.radius + 2) {
-                    // Check angle
-                    const angle = Math.atan2(player.y - CY, player.x - CX);
-                    // Check if angle is within any segment
-                    let inSegment = false;
-                    for (let seg of ring.segments) {
-                        let start = seg.start, end = seg.end;
-                        // Handle wrap
-                        if (start > end) {
-                            if (angle >= start || angle <= end) { inSegment = true; break; }
-                        } else {
-                            if (angle >= start && angle <= end) { inSegment = true; break; }
-                        }
-                    }
-                    if (inSegment) {
-                        // Hit a wall
-                        return true;
-                    }
-                }
-            }
-            return false;
+        function bulletOutOfBounds(b) {
+            return b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20;
         }
 
-        // ----- LEVEL RESET -----
+        // ----- LEVEL MANAGEMENT -----
         function resetLevel() {
             ship.x = CX + 180;
             ship.y = CY;
             ship.vx = 0;
             ship.vy = 0;
             ship.invincible = 90;
-            bullets = [];
+            ship.shootCooldown = 0;
+            playerBullets = [];
+            cannonBullets = [];
             particles = [];
             rings = createRings(level);
+            cannon.cooldown = 0;
+            cannon.speed = 0.025 + (level - 1) * 0.005;
+            cannon.cooldownMax = Math.max(15, 30 - level * 2);
             showLevelTimer = 80;
             levelDisplayText = `LEVEL ${level}`;
             updateUI();
@@ -375,7 +366,9 @@
             ship.vx = 0;
             ship.vy = 0;
             ship.invincible = 120;
-            bullets = [];
+            ship.shootCooldown = 0;
+            playerBullets = [];
+            cannonBullets = [];
             particles = [];
         }
 
@@ -387,19 +380,39 @@
             ringsSpan.textContent = aliveRings;
         }
 
-        // ----- SHOOT -----
-        function shoot() {
-            if (bullets.length >= MAX_BULLETS) return;
+        // ----- SHOOTING -----
+        function playerShoot() {
+            if (playerBullets.length >= MAX_BULLETS) return;
+            if (ship.shootCooldown > 0) return;
             playSound('shoot');
-            bullets.push({
+            playerBullets.push({
                 x: ship.x + Math.cos(ship.angle) * (ship.radius + 4),
                 y: ship.y + Math.sin(ship.angle) * (ship.radius + 4),
                 vx: Math.cos(ship.angle) * BULLET_SPEED + ship.vx * 0.3,
                 vy: Math.sin(ship.angle) * BULLET_SPEED + ship.vy * 0.3,
                 life: BULLET_LIFE,
                 radius: 3,
-                isUfo: false, // not used here
+                active: true,
             });
+            ship.shootCooldown = 10; // frames between shots
+        }
+
+        function cannonFire() {
+            if (cannon.cooldown > 0) return;
+            const angleToShip = Math.atan2(ship.y - CY, ship.x - CX);
+            if (!lineOfSightClear(angleToShip)) return;
+            playSound('cannonShoot');
+            const speed = CANNON_BULLET_SPEED + level * 0.2;
+            cannonBullets.push({
+                x: CX + Math.cos(angleToShip) * 35,
+                y: CY + Math.sin(angleToShip) * 35,
+                vx: Math.cos(angleToShip) * speed,
+                vy: Math.sin(angleToShip) * speed,
+                life: 200,
+                radius: 4,
+                active: true,
+            });
+            cannon.cooldown = cannon.cooldownMax;
         }
 
         // ----- UPDATE -----
@@ -416,11 +429,11 @@
             }
             if (showLevelTimer > 0) showLevelTimer--;
 
-            // ---- Ship rotation ----
+            // Ship rotation
             if (keys.left) ship.angle -= ship.turnSpeed;
             if (keys.right) ship.angle += ship.turnSpeed;
 
-            // ---- Ship thrust ----
+            // Ship thrust
             if (keys.up) {
                 const thrustX = Math.cos(ship.angle) * ship.thrustPower;
                 const thrustY = Math.sin(ship.angle) * ship.thrustPower;
@@ -431,20 +444,19 @@
                     ship.vx = (ship.vx / spd) * ship.maxSpeed;
                     ship.vy = (ship.vy / spd) * ship.maxSpeed;
                 }
-                // thrust particles
-                for (let i=0; i<2; i++) {
+                for (let i = 0; i < 2; i++) {
                     const angleOffset = randomBetween(-0.3, 0.3);
                     const dir = ship.angle + Math.PI + angleOffset;
                     const speed = randomBetween(0.5, 1.5);
                     particles.push({
-                        x: ship.x - Math.cos(ship.angle)*(ship.radius+2) + Math.cos(dir)*6,
-                        y: ship.y - Math.sin(ship.angle)*(ship.radius+2) + Math.sin(dir)*6,
-                        vx: Math.cos(dir)*speed + ship.vx*0.1,
-                        vy: Math.sin(dir)*speed + ship.vy*0.1,
-                        life: 20 + Math.random()*20,
+                        x: ship.x - Math.cos(ship.angle) * (ship.radius + 2) + Math.cos(dir) * 6,
+                        y: ship.y - Math.sin(ship.angle) * (ship.radius + 2) + Math.sin(dir) * 6,
+                        vx: Math.cos(dir) * speed + ship.vx * 0.1,
+                        vy: Math.sin(dir) * speed + ship.vy * 0.1,
+                        life: 20 + Math.random() * 20,
                         maxLife: 40,
-                        radius: 2 + Math.random()*4,
-                        color: `hsl(${30+Math.random()*30}, 100%, ${50+Math.random()*30}%)`,
+                        radius: 2 + Math.random() * 4,
+                        color: `hsl(${30 + Math.random() * 30}, 100%, ${50 + Math.random() * 30}%)`,
                     });
                 }
             } else {
@@ -456,65 +468,73 @@
 
             ship.x += ship.vx;
             ship.y += ship.vy;
-            wrapEntity(ship);
+            bounceShip();
 
             if (ship.invincible > 0) ship.invincible--;
+            if (ship.shootCooldown > 0) ship.shootCooldown--;
 
-            // ---- Shooting ----
+            // Player shooting
             if (keys.space) {
-                if (!shoot.lastShot || performance.now() - shoot.lastShot > 150) {
-                    shoot();
-                    shoot.lastShot = performance.now();
-                }
+                playerShoot();
             }
 
-            // ---- Bullets ----
-            for (let i=bullets.length-1; i>=0; i--) {
-                const b = bullets[i];
+            // Cannon tracking
+            const targetAngle = Math.atan2(ship.y - CY, ship.x - CX);
+            let diff = angleDiff(cannon.angle, targetAngle);
+            const maxTurn = cannon.speed;
+            if (Math.abs(diff) > maxTurn) {
+                cannon.angle += Math.sign(diff) * maxTurn;
+            } else {
+                cannon.angle = targetAngle;
+            }
+            if (cannon.cooldown > 0) cannon.cooldown--;
+            cannonFire();
+
+            // ---- Player bullets vs rings ----
+            for (let i = playerBullets.length - 1; i >= 0; i--) {
+                const b = playerBullets[i];
+                if (!b || !b.active) {
+                    playerBullets.splice(i, 1);
+                    continue;
+                }
+
                 b.x += b.vx;
                 b.y += b.vy;
                 b.life--;
-                wrapEntity(b);
-                if (b.life <= 0) {
-                    bullets.splice(i, 1);
+
+                if (b.life <= 0 || bulletOutOfBounds(b)) {
+                    playerBullets.splice(i, 1);
                     continue;
                 }
+
                 let hit = false;
-                // Check collision with rings
+                const distToCenter = Math.hypot(b.x - CX, b.y - CY);
                 for (let ring of rings) {
                     if (!ring.alive) continue;
-                    const distToCenter = dist(b, {x: CX, y: CY});
-                    if (Math.abs(distToCenter - ring.radius) < b.radius + 2) {
-                        // Check angle
+                    if (Math.abs(distToCenter - ring.radius) < b.radius + 3) {
                         const angle = Math.atan2(b.y - CY, b.x - CX);
-                        // Check if angle in any segment
-                        let inSegment = false;
-                        for (let seg of ring.segments) {
-                            let start = seg.start, end = seg.end;
-                            if (start > end) {
-                                if (angle >= start || angle <= end) { inSegment = true; break; }
-                            } else {
-                                if (angle >= start && angle <= end) { inSegment = true; break; }
+                        const idx = getSegmentIndex(ring, angle);
+                        if (ring.segments[idx] > 0) {
+                            ring.segments[idx]--;
+                            if (ring.segments[idx] === 0) {
+                                if (ring.segments.every(s => s === 0)) {
+                                    ring.alive = false;
+                                }
                             }
-                        }
-                        if (inSegment) {
-                            // Hit the ring
                             hit = true;
-                            shootRing(ring, angle);
                             score += 5;
                             updateUI();
-                            // Particles
-                            for (let p=0; p<10; p++) {
-                                const a = randomBetween(0, 2*Math.PI);
-                                const s = randomBetween(1, 3);
+                            for (let p = 0; p < 12; p++) {
+                                const a = randomBetween(0, 2 * Math.PI);
+                                const s = randomBetween(1, 4);
                                 particles.push({
                                     x: b.x,
                                     y: b.y,
-                                    vx: Math.cos(a)*s,
-                                    vy: Math.sin(a)*s,
-                                    life: 15 + Math.random()*15,
+                                    vx: Math.cos(a) * s,
+                                    vy: Math.sin(a) * s,
+                                    life: 15 + Math.random() * 15,
                                     maxLife: 30,
-                                    radius: 2 + Math.random()*3,
+                                    radius: 2 + Math.random() * 3,
                                     color: '#ffcc44',
                                 });
                             }
@@ -524,21 +544,34 @@
                     }
                 }
                 if (hit) {
-                    bullets.splice(i, 1);
-                    continue;
+                    playerBullets.splice(i, 1);
                 }
-                // Check collision with ship? (only for enemy bullets, but we don't have enemy bullets here)
             }
 
-            // ---- Check if all rings destroyed ----
-            const aliveRings = rings.filter(r => r.alive).length;
-            if (aliveRings === 0 && !transitioning) {
-                // Level complete!
-                transitioning = true;
-                transitionTimer = 60;
-                score += 500;
-                playSound('explosion');
-                updateUI();
+            // ---- Cannon bullets vs player ----
+            for (let i = cannonBullets.length - 1; i >= 0; i--) {
+                const b = cannonBullets[i];
+                if (!b || !b.active) {
+                    cannonBullets.splice(i, 1);
+                    continue;
+                }
+
+                b.x += b.vx;
+                b.y += b.vy;
+                b.life--;
+
+                if (b.life <= 0 || bulletOutOfBounds(b)) {
+                    cannonBullets.splice(i, 1);
+                    continue;
+                }
+
+                if (ship.invincible === 0) {
+                    if (dist(b, ship) < b.radius + ship.radius) {
+                        cannonBullets.splice(i, 1);
+                        loseLife();
+                        if (gameOver) return;
+                    }
+                }
             }
 
             // ---- Ship vs rings ----
@@ -549,19 +582,47 @@
                 }
             }
 
-            // ---- Particles ----
-            for (let i=particles.length-1; i>=0; i--) {
+            // ---- Check if all rings destroyed ----
+            const aliveRings = rings.filter(r => r.alive).length;
+            if (aliveRings === 0 && !transitioning) {
+                transitioning = true;
+                transitionTimer = 60;
+                score += 500;
+                playSound('explosion');
+                updateUI();
+                for (let i = 0; i < 60; i++) {
+                    const a = randomBetween(0, 2 * Math.PI);
+                    const s = randomBetween(2, 6);
+                    particles.push({
+                        x: CX + randomBetween(-20, 20),
+                        y: CY + randomBetween(-20, 20),
+                        vx: Math.cos(a) * s,
+                        vy: Math.sin(a) * s,
+                        life: 30 + Math.random() * 30,
+                        maxLife: 60,
+                        radius: 3 + Math.random() * 4,
+                        color: `hsl(${40 + Math.random() * 20}, 100%, 60%)`,
+                    });
+                }
+            }
+
+            // ---- Rotate rings ----
+            for (let ring of rings) {
+                if (!ring.alive) continue;
+                ring.angle += ring.speed;
+            }
+
+            // ---- Update particles ----
+            for (let i = particles.length - 1; i >= 0; i--) {
                 const p = particles[i];
+                if (!p) {
+                    particles.splice(i, 1);
+                    continue;
+                }
                 p.x += p.vx;
                 p.y += p.vy;
                 p.life--;
                 if (p.life <= 0) particles.splice(i, 1);
-            }
-
-            // ---- Update ring rotation ----
-            for (let ring of rings) {
-                if (!ring.alive) continue;
-                ring.angle += ring.rotSpeed;
             }
 
             updateUI();
@@ -577,34 +638,41 @@
                 ctx.shadowBlur = 2;
                 ctx.shadowColor = '#ffffff';
                 ctx.beginPath();
-                ctx.arc(star.x, star.y, star.size, 0, 2*Math.PI);
+                ctx.arc(star.x, star.y, star.size, 0, 2 * Math.PI);
                 ctx.fill();
             }
             ctx.globalAlpha = 1;
             ctx.shadowBlur = 0;
 
-            // Draw rings
+            // Draw rings (12-segment)
             for (let ring of rings) {
                 if (!ring.alive) continue;
                 const radius = ring.radius;
-                ctx.strokeStyle = '#ffcc44';
-                ctx.lineWidth = 2.5;
-                ctx.shadowColor = '#ffcc44';
-                ctx.shadowBlur = 15;
-                // Draw each segment
-                for (let seg of ring.segments) {
-                    let start = seg.start + ring.angle;
-                    let end = seg.end + ring.angle;
-                    // Draw arc from start to end
+                for (let i = 0; i < SEGMENTS; i++) {
+                    const val = ring.segments[i];
+                    if (val === 0) continue;
+
+                    const startAngle = i * SEG_ANGLE + ring.angle;
+                    const endAngle = (i + 1) * SEG_ANGLE + ring.angle;
+
+                    if (val === 2) {
+                        ctx.strokeStyle = '#ffcc44';
+                        ctx.shadowColor = '#ffcc44';
+                        ctx.shadowBlur = 15;
+                    } else {
+                        ctx.strokeStyle = '#cc8833';
+                        ctx.shadowColor = '#cc8833';
+                        ctx.shadowBlur = 8;
+                    }
+                    ctx.lineWidth = 2.5;
                     ctx.beginPath();
-                    // For large arcs, we can approximate with small steps
-                    const steps = 20;
-                    const stepSize = (end - start) / steps;
-                    for (let i=0; i<=steps; i++) {
-                        const a = start + i * stepSize;
+                    const steps = 10;
+                    const stepSize = (endAngle - startAngle) / steps;
+                    for (let j = 0; j <= steps; j++) {
+                        const a = startAngle + j * stepSize;
                         const x = CX + Math.cos(a) * radius;
                         const y = CY + Math.sin(a) * radius;
-                        if (i===0) ctx.moveTo(x, y);
+                        if (j === 0) ctx.moveTo(x, y);
                         else ctx.lineTo(x, y);
                     }
                     ctx.stroke();
@@ -612,39 +680,49 @@
             }
             ctx.shadowBlur = 0;
 
-            // Cannon (center) – just a glowing core
+            // Cannon
             ctx.fillStyle = '#ff4444';
             ctx.shadowColor = '#ff4444';
             ctx.shadowBlur = 30;
             ctx.beginPath();
-            ctx.arc(CX, CY, 8, 0, 2*Math.PI);
+            ctx.arc(CX, CY, 8, 0, 2 * Math.PI);
             ctx.fill();
-            // Cannon arm (rotating)
-            const cannonAngle = performance.now() / 1000 * 0.8;
             ctx.shadowBlur = 20;
             ctx.strokeStyle = '#ff6644';
             ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.moveTo(CX, CY);
-            const tipX = CX + Math.cos(cannonAngle) * 35;
-            const tipY = CY + Math.sin(cannonAngle) * 35;
+            const tipX = CX + Math.cos(cannon.angle) * 35;
+            const tipY = CY + Math.sin(cannon.angle) * 35;
             ctx.lineTo(tipX, tipY);
             ctx.stroke();
             ctx.shadowBlur = 0;
 
-            // Draw bullets
-            for (let b of bullets) {
+            // Player bullets
+            for (let b of playerBullets) {
+                if (!b || !b.active) continue;
                 ctx.fillStyle = '#66ffcc';
                 ctx.shadowColor = '#66ffcc';
                 ctx.shadowBlur = 16;
                 ctx.beginPath();
-                ctx.arc(b.x, b.y, b.radius, 0, 2*Math.PI);
+                ctx.arc(b.x, b.y, b.radius, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+
+            // Cannon bullets
+            for (let b of cannonBullets) {
+                if (!b || !b.active) continue;
+                ctx.fillStyle = '#ff6666';
+                ctx.shadowColor = '#ff6666';
+                ctx.shadowBlur = 18;
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, b.radius, 0, 2 * Math.PI);
                 ctx.fill();
             }
             ctx.shadowBlur = 0;
 
             // Ship
-            if (ship.invincible === 0 || Math.floor(performance.now()/80)%2===0) {
+            if (ship.invincible === 0 || Math.floor(performance.now() / 80) % 2 === 0) {
                 ctx.save();
                 ctx.translate(ship.x, ship.y);
                 ctx.rotate(ship.angle);
@@ -654,9 +732,9 @@
                 ctx.lineWidth = 2.5;
                 ctx.beginPath();
                 ctx.moveTo(ship.radius, 0);
-                ctx.lineTo(-ship.radius*0.6, -ship.radius*0.6);
-                ctx.lineTo(-ship.radius*0.3, 0);
-                ctx.lineTo(-ship.radius*0.6, ship.radius*0.6);
+                ctx.lineTo(-ship.radius * 0.6, -ship.radius * 0.6);
+                ctx.lineTo(-ship.radius * 0.3, 0);
+                ctx.lineTo(-ship.radius * 0.6, ship.radius * 0.6);
                 ctx.closePath();
                 ctx.stroke();
                 ctx.restore();
@@ -664,12 +742,13 @@
 
             // Particles
             for (let p of particles) {
+                if (!p) continue;
                 ctx.globalAlpha = p.life / p.maxLife;
                 ctx.fillStyle = p.color || '#ffaa44';
                 ctx.shadowBlur = 10;
                 ctx.shadowColor = '#ff8822';
                 ctx.beginPath();
-                ctx.arc(p.x, p.y, p.radius * (p.life/p.maxLife), 0, 2*Math.PI);
+                ctx.arc(p.x, p.y, p.radius * (p.life / p.maxLife), 0, 2 * Math.PI);
                 ctx.fill();
             }
             ctx.globalAlpha = 1;
@@ -677,22 +756,22 @@
 
             // Level display
             if (showLevelTimer > 0) {
-                const progress = 1 - showLevelTimer/80;
+                const progress = 1 - showLevelTimer / 80;
                 const scale = 0.5 + progress * 1.5;
-                const alpha = Math.min(1, progress*2) * (1 - (1-progress)*0.5);
+                const alpha = Math.min(1, progress * 2) * (1 - (1 - progress) * 0.5);
                 ctx.save();
                 ctx.globalAlpha = alpha;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.font = `bold ${48*scale}px "Courier New", monospace`;
+                ctx.font = `bold ${48 * scale}px "Courier New", monospace`;
                 ctx.shadowColor = '#88ddff';
                 ctx.shadowBlur = 40;
                 ctx.fillStyle = '#88ddff';
-                ctx.fillText(levelDisplayText, W/2, H/2 - 20);
+                ctx.fillText(levelDisplayText, W / 2, H / 2 - 20);
                 ctx.shadowBlur = 0;
                 ctx.fillStyle = '#aaccff';
                 ctx.font = '18px "Courier New", monospace';
-                ctx.fillText('Destroy the rings!', W/2, H/2 + 50);
+                ctx.fillText('Destroy the rings!', W / 2, H / 2 + 50);
                 ctx.restore();
             }
 
@@ -706,7 +785,7 @@
                 ctx.shadowBlur = 40;
                 ctx.fillStyle = '#66ffaa';
                 ctx.font = 'bold 52px "Courier New", monospace';
-                ctx.fillText('LEVEL UP!', W/2, H/2);
+                ctx.fillText('LEVEL UP!', W / 2, H / 2);
                 ctx.shadowBlur = 0;
             }
 
@@ -720,7 +799,7 @@
                 ctx.shadowBlur = 30;
                 ctx.fillStyle = '#ffaa44';
                 ctx.font = 'bold 48px "Courier New", monospace';
-                ctx.fillText('⏸ PAUSED', W/2, H/2);
+                ctx.fillText('⏸ PAUSED', W / 2, H / 2);
                 ctx.shadowBlur = 0;
             }
 
@@ -734,14 +813,14 @@
                 ctx.shadowBlur = 30;
                 ctx.fillStyle = '#ff4477';
                 ctx.font = 'bold 56px "Courier New", monospace';
-                ctx.fillText('💀 GAME OVER', W/2, H/2 - 60);
+                ctx.fillText('💀 GAME OVER', W / 2, H / 2 - 60);
                 ctx.shadowBlur = 0;
                 ctx.fillStyle = '#ffcc77';
                 ctx.font = '24px "Courier New", monospace';
-                ctx.fillText(`Score: ${score}`, W/2, H/2 + 10);
+                ctx.fillText(`Score: ${score}`, W / 2, H / 2 + 10);
                 ctx.fillStyle = '#aaccff';
                 ctx.font = '20px "Courier New", monospace';
-                ctx.fillText('Press any key to restart', W/2, H/2 + 60);
+                ctx.fillText('Press any key to restart', W / 2, H / 2 + 60);
             }
         }
 
@@ -755,26 +834,37 @@
         // ----- EVENTS -----
         document.addEventListener('keydown', (e) => {
             const key = e.key;
-            if (key === 'ArrowLeft') { keys.left = true; e.preventDefault(); }
-            if (key === 'ArrowRight') { keys.right = true; e.preventDefault(); }
-            if (key === 'ArrowUp') { keys.up = true; e.preventDefault(); }
-            if (key === ' ') { keys.space = true; e.preventDefault(); }
-            if (key === 'p' || key === 'P') { paused = !paused; e.preventDefault(); }
+            if (key === 'ArrowLeft') { keys.left = true;
+                e.preventDefault(); }
+            if (key === 'ArrowRight') { keys.right = true;
+                e.preventDefault(); }
+            if (key === 'ArrowUp') { keys.up = true;
+                e.preventDefault(); }
+            if (key === ' ') { keys.space = true;
+                e.preventDefault(); }
+            if (key === 'p' || key === 'P') { paused = !paused;
+                e.preventDefault(); }
             if (gameOver && (key === ' ' || key === 'Enter' || key === 'r')) {
                 resetGame();
                 e.preventDefault();
             }
             initAudio();
         });
+
         document.addEventListener('keyup', (e) => {
             const key = e.key;
-            if (key === 'ArrowLeft') { keys.left = false; e.preventDefault(); }
-            if (key === 'ArrowRight') { keys.right = false; e.preventDefault(); }
-            if (key === 'ArrowUp') { keys.up = false; e.preventDefault(); }
-            if (key === ' ') { keys.space = false; e.preventDefault(); }
+            if (key === 'ArrowLeft') { keys.left = false;
+                e.preventDefault(); }
+            if (key === 'ArrowRight') { keys.right = false;
+                e.preventDefault(); }
+            if (key === 'ArrowUp') { keys.up = false;
+                e.preventDefault(); }
+            if (key === ' ') { keys.space = false;
+                e.preventDefault(); }
         });
+
         window.addEventListener('keydown', (e) => {
-            if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','p','P'].includes(e.key)) {
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'p', 'P'].includes(e.key)) {
                 e.preventDefault();
             }
         });

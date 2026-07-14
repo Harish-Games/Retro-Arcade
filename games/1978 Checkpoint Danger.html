@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkpoint: Danger! – Unified Grid</title>
+    <style>
+        :root {
+            --bg-color: #0c0f13;
+            --panel-bg: #161c24;
+            --text-color: #e2e8f0;
+            --accent-green: #39ff14;
+            --accent-red: #ff3333;
+            --accent-blue: #00d2ff;
+            --cell-border: rgba(74, 85, 104, 0.4);
+            --eliminated: #ffaa00;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            margin: 5px 0;
+            text-align: center;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--accent-green);
+            text-shadow: 0 0 10px rgba(57, 255, 20, 0.3);
+            font-size: 28px;
+        }
+        .subtitle {
+            font-size: 0.85rem;
+            color: #a0aec0;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 1400px;
+            width: 100%;
+            align-items: center;
+        }
+
+        @media (min-width: 1100px) {
+            .game-container {
+                flex-direction: row;
+                align-items: stretch;
+            }
+        }
+
+        .board-panel {
+            background-color: var(--panel-bg);
+            border: 2px solid #2d3748;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+            flex: 1 1 auto;
+            overflow-x: auto;
+        }
+
+        .panel-header {
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 1px dashed #2d3748;
+            color: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .status-badge {
+            font-size: 0.9rem;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 4px 12px;
+            border-radius: 12px;
+        }
+
+        .grid-wrapper {
+            position: relative;
+            background: #090d12;
+            border-radius: 4px;
+            overflow: auto;
+            border: 1px solid #2d3748;
+            padding: 0;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 110px repeat(9, minmax(42px, 60px));
+            grid-template-rows: 35px repeat(7, minmax(42px, 60px));
+            gap: 0;
+            border-top: 1px solid var(--cell-border);
+            border-left: 1px solid var(--cell-border);
+            width: max-content;
+            min-width: 100%;
+        }
+
+        .cell {
+            background-color: rgba(0, 0, 0, 0.15);
+            border-right: 1px solid var(--cell-border);
+            border-bottom: 1px solid var(--cell-border);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            font-size: 1.1rem;
+            cursor: default;
+            user-select: none;
+            transition: background 0.1s ease, box-shadow 0.15s ease;
+            box-sizing: border-box;
+            height: 100%;
+            width: 100%;
+            position: relative;
+        }
+
+        .grid-header {
+            background-color: rgba(12, 15, 19, 0.85);
+            cursor: default;
+            color: #a0aec0;
+            font-size: 0.85rem;
+            height: 35px;
+        }
+
+        .row-label {
+            justify-content: flex-start;
+            padding-left: 10px;
+            font-size: 0.75rem;
+            color: #a0aec0;
+            background-color: rgba(12, 15, 19, 0.85);
+            cursor: default;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .cell-playable {
+            cursor: pointer;
+        }
+        .cell-playable:hover {
+            background-color: rgba(57, 255, 20, 0.08);
+        }
+
+        /* --- SURROUND SYSTEMS --- */
+        .cell.player-agent-surround {
+            box-shadow: inset 0 0 0 3px var(--accent-blue);
+        }
+
+        /* --- AI MISS DOT (top-left) --- */
+        .cell.ai-miss::before {
+            content: '•';
+            position: absolute;
+            top: 2px;
+            left: 4px;
+            font-size: 16px;
+            color: #6688aa;
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        /* --- MANUAL X (top-right, green) --- */
+        .cell.manual-x::after {
+            content: '✘';
+            position: absolute;
+            top: -2px;
+            right: 2px;
+            font-size: 16px;
+            color: var(--accent-green);
+            font-weight: 700;
+            text-shadow: 0 0 8px rgba(57, 255, 20, 0.6);
+            pointer-events: none;
+            opacity: 0.9;
+        }
+
+        /* --- PLAYER HIT (green H) --- */
+        .cell.hit-player {
+            color: var(--accent-green);
+            text-shadow: 0 0 10px rgba(57, 255, 20, 0.6);
+        }
+        .cell.hit-player::before {
+            content: 'H';
+            font-size: 1.4rem;
+            font-weight: 900;
+        }
+
+        /* --- AI HIT (red H + red background) --- */
+        .cell.hit-ai {
+            background-color: rgba(255, 51, 51, 0.3);
+            color: var(--accent-red);
+            text-shadow: 0 0 12px rgba(255, 51, 51, 0.7);
+        }
+        .cell.hit-ai::before {
+            content: 'H';
+            font-size: 1.4rem;
+            font-weight: 900;
+        }
+
+        /* --- PLAYER PROBE (number) --- */
+        .cell.ping-value {
+            color: #7fffd4;
+            background-color: rgba(0, 255, 200, 0.08);
+            text-shadow: 0 0 6px rgba(0, 255, 200, 0.3);
+        }
+
+        /* --- AUTO ELIMINATED (white X, centre) --- */
+        .cell.eliminated {
+            color: #ffffff;
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+        .cell.eliminated::before {
+            content: 'X';
+            font-size: 1.2rem;
+            font-weight: 900;
+            opacity: 0.6;
+        }
+
+        /* --- CHECKPOINT CANDIDATE (gold pulse) --- */
+        .cell.checkpoint-candidate {
+            outline: 3px solid #f5c542;
+            outline-offset: -5px;
+            animation: pulse-gold 0.8s infinite alternate;
+        }
+        @keyframes pulse-gold {
+            0% { outline-color: #f5c542; }
+            100% { outline-color: #ff8c00; }
+        }
+
+        /* --- AI PROBE FLASH --- */
+        .cell.flash-ai {
+            animation: flash-glow 0.5s ease 2;
+        }
+        @keyframes flash-glow {
+            0%, 100% { box-shadow: 0 0 0 transparent; }
+            50% { box-shadow: 0 0 24px #fff8c0, inset 0 0 12px #fff8c0; }
+        }
+
+        .side-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 100%;
+            max-width: 400px;
+            flex: 0 0 auto;
+        }
+
+        .control-box {
+            background-color: var(--panel-bg);
+            border: 2px solid #2d3748;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .control-box h3 {
+            margin: 0 0 8px 0;
+            font-size: 1rem;
+            letter-spacing: 1px;
+        }
+
+        .log-box {
+            background-color: #06080a;
+            border: 1px solid #2d3748;
+            border-radius: 6px;
+            height: 280px;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 0.8rem;
+            line-height: 1.4;
+        }
+        .log-entry {
+            margin-bottom: 4px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+            padding-bottom: 3px;
+        }
+        .log-player { color: var(--accent-green); }
+        .log-ai { color: var(--accent-blue); }
+        .log-system { color: #e9d5ff; }
+        .log-danger { color: var(--accent-red); font-weight: bold; }
+
+        .btn {
+            background-color: #1a202c;
+            color: white;
+            border: 1px solid #4a5568;
+            padding: 12px 15px;
+            font-family: inherit;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: background 0.15s;
+        }
+        .btn:hover:not(:disabled) {
+            background-color: #2d3748;
+        }
+        .btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        .btn-primary {
+            background-color: #2b6cb0;
+            border-color: #4299e1;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background-color: #2c5282;
+        }
+        .btn-danger {
+            background-color: #9b2c2c;
+            border-color: #e53e3e;
+        }
+        .btn-danger:hover:not(:disabled) {
+            background-color: #742a2a;
+        }
+
+        .legend-box {
+            margin-top: 15px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            justify-content: center;
+            font-size: 0.7rem;
+            color: #a0aec0;
+            padding-top: 10px;
+            border-top: 1px dashed #2d3748;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .indicator {
+            width: 14px;
+            height: 14px;
+            border-radius: 2px;
+            box-sizing: border-box;
+        }
+
+        /* --- END GAME MODAL --- */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal-box {
+            background: var(--panel-bg);
+            border: 2px solid #4a5568;
+            border-radius: 12px;
+            padding: 32px 40px;
+            max-width: 480px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+        }
+        .modal-box h2 {
+            font-size: 2rem;
+            margin: 0 0 10px 0;
+            letter-spacing: 2px;
+        }
+        .modal-box .result-message {
+            font-size: 1.1rem;
+            margin: 10px 0 20px 0;
+            color: #a0aec0;
+            line-height: 1.5;
+        }
+        .modal-box .btn {
+            width: auto;
+            padding: 12px 32px;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 700px) {
+            .grid {
+                grid-template-columns: 70px repeat(9, minmax(30px, 42px));
+                grid-template-rows: 28px repeat(7, minmax(30px, 42px));
+            }
+            .row-label { font-size: 0.6rem; padding-left: 4px; }
+            .cell { font-size: 0.85rem; }
+            .panel-header { font-size: 0.9rem; }
+            .side-panel { max-width: 100%; }
+            .modal-box { padding: 24px 20px; }
+        }
+        @media (max-width: 500px) {
+            .grid {
+                grid-template-columns: 50px repeat(9, minmax(24px, 32px));
+                grid-template-rows: 22px repeat(7, minmax(24px, 32px));
+            }
+            .cell { font-size: 0.7rem; }
+            .status-badge { font-size: 0.65rem; padding: 2px 8px; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Checkpoint: Danger!</h1>
+    <div class="subtitle">Unified Operations Grid &bull; Real‑time Tracking Overlay</div>
+
+    <div class="game-container">
+        <div class="board-panel">
+            <div class="panel-header">
+                <span>GLOBAL THEATER INTEGRATED MATRIX</span>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <span id="ai-counter" class="status-badge" style="color:var(--accent-red);">Hostiles: 4</span>
+                    <span id="player-counter" class="status-badge" style="color:var(--accent-blue);">Our Agents: 0/4</span>
+                    <span id="turn-indicator" class="status-badge" style="color:var(--accent-green);">● SETUP</span>
+                </div>
+            </div>
+
+            <div class="grid-wrapper">
+                <div id="master-grid" class="grid"></div>
+            </div>
+
+            <div class="legend-box">
+                <div class="legend-item"><div class="indicator" style="box-shadow:inset 0 0 0 2px var(--accent-blue);"></div><span>Your Unit</span></div>
+                <div class="legend-item"><div class="indicator" style="color:#6688aa;font-size:16px;display:flex;align-items:center;">•</div><span>AI Miss</span></div>
+                <div class="legend-item"><div class="indicator" style="background:rgba(255,51,51,0.3);color:#ff3333;font-weight:900;display:flex;align-items:center;justify-content:center;">H</div><span>AI Hit</span></div>
+                <div class="legend-item"><div class="indicator" style="color:#39ff14;font-weight:900;display:flex;align-items:center;justify-content:center;">H</div><span>Your Hit</span></div>
+                <div class="legend-item"><div class="indicator" style="color:#ffffff;font-weight:900;display:flex;align-items:center;justify-content:center;">X</div><span>Auto Block</span></div>
+                <div class="legend-item"><div class="indicator" style="color:#39ff14;font-size:16px;display:flex;align-items:center;">✘</div><span>Manual Block</span></div>
+                <div class="legend-item"><div class="indicator" style="background:gold;border:1px solid #f5c542;"></div><span>Checkpoint!</span></div>
+            </div>
+        </div>
+
+        <div class="side-panel">
+            <div class="control-box">
+                <h3 id="game-phase-title">Tactical Deployment</h3>
+                <p id="phase-instruction" style="font-size:0.85rem;margin:10px 0;min-height:40px;color:#a0aec0;">
+                    Select 4 grid intersections to conceal your intelligence cells.
+                </p>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button id="start-btn" class="btn btn-primary" disabled>Commence</button>
+                    <button id="checkpoint-btn" class="btn btn-danger" disabled>⚡ Checkpoint!</button>
+                    <button id="reset-btn" class="btn">⟳ New</button>
+                </div>
+            </div>
+
+            <div class="control-box" style="flex-grow:1;display:flex;flex-direction:column;">
+                <h3>Mission Intelligence Feed</h3>
+                <div id="log" class="log-box"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- END GAME MODAL -->
+    <div id="endModal" class="modal-overlay">
+        <div class="modal-box">
+            <h2 id="modal-title">MISSION COMPLETE</h2>
+            <div class="result-message" id="modal-message">You eliminated all hostile agents.</div>
+            <button id="play-again-btn" class="btn btn-primary">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            const ROWS = ['Arctic', 'Bering', 'Canadian', 'Desert', 'Equator', 'Fiji', 'Glacier'];
+            const COLS = 9;
+            const NUM_AGENTS = 4;
+
+            // --- Game State ---
+            let state = {
+                phase: 'setup', // 'setup' | 'play' | 'ended'
+                turn: 'player', // 'player' | 'ai'
+                playerAgents: [], // ['r-c', ...]
+                aiAgents: [],
+                playerFound: 0,
+                aiFound: 0,
+                // playerMatrix values:
+                //   null              -> empty
+                //   'P_HIT'           -> player hit (green H)
+                //   'AI_HIT'          -> AI hit (red H + red bg)
+                //   'AI_MISS'         -> AI miss (dot top-left)
+                //   'MANUAL_X'        -> manual block (green ✘ top-right)
+                //   'AUTO_X'          -> auto block (white X centre)
+                //   number (0-4)      -> player probe count (centre)
+                playerMatrix: Array(7).fill(null).map(() => Array(9).fill(null)),
+                // For manual X: store previous value before placing MANUAL_X
+                prevMatrix: Array(7).fill(null).map(() => Array(9).fill(null)),
+                // AI's internal matrix
+                aiInternalMatrix: Array(7).fill(null).map(() => Array(9).fill(null)),
+                aiPossible: [],
+                checkpointMode: false,
+                winner: null,
+            };
+
+            // --- DOM refs ---
+            const gridEl = document.getElementById('master-grid');
+            const logEl = document.getElementById('log');
+            const startBtn = document.getElementById('start-btn');
+            const checkpointBtn = document.getElementById('checkpoint-btn');
+            const resetBtn = document.getElementById('reset-btn');
+            const playAgainBtn = document.getElementById('play-again-btn');
+            const aiCounter = document.getElementById('ai-counter');
+            const playerCounter = document.getElementById('player-counter');
+            const turnIndicator = document.getElementById('turn-indicator');
+            const phaseTitle = document.getElementById('game-phase-title');
+            const phaseInstruction = document.getElementById('phase-instruction');
+            const modalOverlay = document.getElementById('endModal');
+            const modalTitle = document.getElementById('modal-title');
+            const modalMessage = document.getElementById('modal-message');
+
+            // --- Helpers ---
+            function coordKey(r, c) { return r + '-' + c; }
+            function isOnBoard(r, c) { return r >= 0 && r < 7 && c >= 0 && c < COLS; }
+
+            function getCell(r, c) {
+                return gridEl.querySelector(`[data-row="${r}"][data-col="${c}"]`);
+            }
+
+            function clearCellClasses(cell) {
+                cell.classList.remove('player-agent-surround', 'hit-player', 'hit-ai', 'eliminated', 'ping-value',
+                    'checkpoint-candidate', 'manual-x', 'flash-ai', 'ai-miss');
+                cell.textContent = '';
+            }
+
+            // --- Core game logic ---
+            function scanRadar(startR, startC, agentArray) {
+                const dirs = [
+                    [-1, 0],
+                    [1, 0],
+                    [0, -1],
+                    [0, 1],
+                    [-1, -1],
+                    [-1, 1],
+                    [1, -1],
+                    [1, 1]
+                ];
+                let visibleCount = 0;
+                let clearPaths = [];
+
+                for (const [dr, dc] of dirs) {
+                    let r = startR + dr,
+                        c = startC + dc;
+                    let path = [];
+                    while (isOnBoard(r, c)) {
+                        const key = coordKey(r, c);
+                        if (agentArray.includes(key)) {
+                            visibleCount++;
+                            break;
+                        }
+                        path.push([r, c]);
+                        r += dr;
+                        c += dc;
+                    }
+                    if (!isOnBoard(r, c)) {
+                        clearPaths.push(...path);
+                    }
+                }
+                return { count: visibleCount, clearPaths };
+            }
+
+            // --- Render grid ---
+            function renderGrid() {
+                gridEl.innerHTML = '';
+                let corner = document.createElement('div');
+                corner.className = 'cell grid-header';
+                gridEl.appendChild(corner);
+                for (let c = 0; c < COLS; c++) {
+                    let head = document.createElement('div');
+                    head.className = 'cell grid-header';
+                    head.textContent = c + 1;
+                    gridEl.appendChild(head);
+                }
+
+                for (let r = 0; r < 7; r++) {
+                    let lbl = document.createElement('div');
+                    lbl.className = 'cell row-label';
+                    lbl.textContent = ROWS[r];
+                    gridEl.appendChild(lbl);
+
+                    for (let c = 0; c < COLS; c++) {
+                        let cell = document.createElement('div');
+                        cell.className = 'cell cell-playable';
+                        cell.dataset.row = r;
+                        cell.dataset.col = c;
+
+                        cell.addEventListener('click', () => handleClick(r, c));
+                        cell.addEventListener('contextmenu', (e) => {
+                            e.preventDefault();
+                            handleRightClick(r, c);
+                        });
+
+                        gridEl.appendChild(cell);
+                    }
+                }
+                syncAllCells();
+            }
+
+            function syncAllCells() {
+                for (let r = 0; r < 7; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        const cell = getCell(r, c);
+                        if (!cell) continue;
+                        clearCellClasses(cell);
+
+                        const pKey = coordKey(r, c);
+                        const isPlayerAgent = state.playerAgents.includes(pKey);
+                        if (isPlayerAgent) cell.classList.add('player-agent-surround');
+
+                        const val = state.playerMatrix[r][c];
+
+                        if (val === 'P_HIT') {
+                            cell.classList.add('hit-player');
+                        } else if (val === 'AI_HIT') {
+                            cell.classList.add('hit-ai');
+                        } else if (val === 'AI_MISS') {
+                            cell.classList.add('ai-miss');
+                        } else if (val === 'MANUAL_X') {
+                            cell.classList.add('manual-x');
+                        } else if (val === 'AUTO_X') {
+                            cell.classList.add('eliminated');
+                        } else if (typeof val === 'number') {
+                            cell.classList.add('ping-value');
+                            cell.textContent = val;
+                        } else if (val === null) {
+                            // empty
+                        }
+
+                        if (state.checkpointMode && isPlayerAgent &&
+                            (state.playerMatrix[r][c] === null || state.playerMatrix[r][c] === 'AUTO_X' || state
+                                .playerMatrix[r][c] === 'MANUAL_X' || state.playerMatrix[r][c] === 'AI_MISS')) {
+                            cell.classList.add('checkpoint-candidate');
+                        }
+                    }
+                }
+                updateCountersAndUI();
+            }
+
+            function updateCountersAndUI() {
+                const remaining = state.aiAgents.length - state.playerFound;
+                aiCounter.textContent = `Hostiles: ${remaining}`;
+                playerCounter.textContent = `Our Agents: ${state.playerAgents.length}/${NUM_AGENTS}`;
+
+                if (state.phase === 'setup') {
+                    turnIndicator.textContent = '● SETUP';
+                    turnIndicator.style.color = 'var(--accent-green)';
+                    phaseTitle.textContent = 'Tactical Deployment';
+                    phaseInstruction.textContent = 'Select 4 grid intersections to conceal your intelligence cells.';
+                    startBtn.disabled = state.playerAgents.length !== NUM_AGENTS;
+                    checkpointBtn.disabled = true;
+                } else if (state.phase === 'play') {
+                    if (state.turn === 'player') {
+                        turnIndicator.textContent = '🎯 YOUR TURN';
+                        turnIndicator.style.color = 'var(--accent-green)';
+                        phaseTitle.textContent = 'Live Theater Operations';
+                        phaseInstruction.textContent = 'Left‑click to probe · Right‑click to mark X · Use Checkpoint!';
+                        checkpointBtn.disabled = false;
+                    } else {
+                        turnIndicator.textContent = '🤖 AI THINKING...';
+                        turnIndicator.style.color = 'var(--accent-blue)';
+                        phaseTitle.textContent = 'Adversary Activity Detected';
+                        phaseInstruction.textContent = 'The AI is scanning your positions...';
+                        checkpointBtn.disabled = true;
+                    }
+                } else if (state.phase === 'ended') {
+                    turnIndicator.textContent = state.winner === 'player' ? '🏆 VICTORY' : '💀 DEFEAT';
+                    turnIndicator.style.color = state.winner === 'player' ? 'var(--accent-green)' : 'var(--accent-red)';
+                    phaseTitle.textContent = state.winner === 'player' ? 'Mission Accomplished' : 'Operation Failed';
+                    phaseInstruction.textContent = state.winner === 'player' ? 'All hostiles eliminated.' :
+                        'Your agents were overrun.';
+                    checkpointBtn.disabled = true;
+                    startBtn.disabled = true;
+                }
+            }
+
+            // --- Click handlers ---
+            function handleClick(r, c) {
+                if (state.phase === 'setup') {
+                    togglePlayerAgent(r, c);
+                    return;
+                }
+                if (state.phase !== 'play' || state.turn !== 'player') return;
+
+                const cell = getCell(r, c);
+                const pVal = state.playerMatrix[r][c];
+                // Allow probing if null or AI_MISS (you can probe where AI missed)
+                if (pVal !== null && pVal !== 'AI_MISS') {
+                    addLog('System', 'This square is already probed or blocked.', 'system');
+                    return;
+                }
+
+                if (state.checkpointMode) {
+                    const pKey = coordKey(r, c);
+                    if (!state.playerAgents.includes(pKey)) {
+                        addLog('System', 'Checkpoint! requires you to have an agent on that square.', 'system');
+                        return;
+                    }
+                    state.checkpointMode = false;
+                    executeCheckpoint(r, c);
+                    return;
+                }
+
+                const aiKey = coordKey(r, c);
+                const isHit = state.aiAgents.includes(aiKey);
+
+                if (isHit) {
+                    state.playerMatrix[r][c] = 'P_HIT';
+                    state.playerFound++;
+                    addLog('Player', `STRIKE at ${ROWS[r]} ${c+1}! Hostile eliminated. (${state.playerFound}/${NUM_AGENTS})`,
+                        'player');
+                    if (checkWinCondition()) return;
+                    state.turn = 'player';
+                    syncAllCells();
+                    return;
+                } else {
+                    const radar = scanRadar(r, c, state.aiAgents);
+                    state.playerMatrix[r][c] = radar.count;
+                    addLog('Player', `Probed ${ROWS[r]} ${c+1}. Radar return: ${radar.count}`, 'player');
+
+                    if (radar.count === 0) {
+                        for (const [cr, cc] of radar.clearPaths) {
+                            if (state.playerMatrix[cr][cc] === null) {
+                                state.playerMatrix[cr][cc] = 'AUTO_X';
+                            }
+                        }
+                        addLog('System', 'Zero trace – auto‑blocking all line‑of‑sight sectors.', 'system');
+                    }
+                    state.turn = 'ai';
+                    syncAllCells();
+                    setTimeout(() => { if (state.phase === 'play' && state.turn === 'ai') aiTurn(); }, 800);
+                }
+            }
+
+            function togglePlayerAgent(r, c) {
+                if (state.phase !== 'setup') return;
+                const key = coordKey(r, c);
+                const idx = state.playerAgents.indexOf(key);
+                if (idx >= 0) {
+                    state.playerAgents.splice(idx, 1);
+                    addLog('System', `Removed agent from ${ROWS[r]} ${c+1}`, 'system');
+                } else {
+                    if (state.playerAgents.length >= NUM_AGENTS) {
+                        addLog('System', `Maximum ${NUM_AGENTS} agents.`, 'system');
+                        return;
+                    }
+                    state.playerAgents.push(key);
+                    addLog('System', `Placed agent at ${ROWS[r]} ${c+1}`, 'system');
+                }
+                syncAllCells();
+            }
+
+            function handleRightClick(r, c) {
+                if (state.phase !== 'play') return;
+                const cell = getCell(r, c);
+                const current = state.playerMatrix[r][c];
+                if (current === null || current === 'AI_MISS' || current === 'AUTO_X') {
+                    // Save previous state (if any)
+                    state.prevMatrix[r][c] = current;
+                    state.playerMatrix[r][c] = 'MANUAL_X';
+                    addLog('System', `Manual block placed at ${ROWS[r]} ${c+1}`, 'system');
+                } else if (current === 'MANUAL_X') {
+                    // Restore previous state
+                    const prev = state.prevMatrix[r][c];
+                    state.playerMatrix[r][c] = prev;
+                    state.prevMatrix[r][c] = null;
+                    addLog('System', `Manual block removed at ${ROWS[r]} ${c+1}`, 'system');
+                } else {
+                    addLog('System', 'Cannot override a probed square.', 'system');
+                }
+                syncAllCells();
+            }
+
+            function executeCheckpoint(r, c) {
+                const key = coordKey(r, c);
+                const isHit = state.aiAgents.includes(key);
+                const loc = `${ROWS[r]} ${c+1}`;
+
+                if (isHit) {
+                    state.playerMatrix[r][c] = 'P_HIT';
+                    state.playerFound++;
+                    addLog('Player', `⚡ CHECKPOINT! ${loc} → HIT! (${state.playerFound}/${NUM_AGENTS})`, 'player');
+                    if (checkWinCondition()) return;
+                    state.turn = 'player';
+                    syncAllCells();
+                } else {
+                    const radar = scanRadar(r, c, state.aiAgents);
+                    state.playerMatrix[r][c] = radar.count;
+                    addLog('Player', `⚡ Checkpoint! ${loc} → miss. Your agent is revealed!`, 'player');
+
+                    state.aiInternalMatrix[r][c] = 'H';
+                    state.aiFound++;
+                    addLog('AI', `Learned your agent at ${loc} (Checkpoint miss)`, 'ai');
+
+                    if (radar.count === 0) {
+                        for (const [cr, cc] of radar.clearPaths) {
+                            if (state.playerMatrix[cr][cc] === null) {
+                                state.playerMatrix[cr][cc] = 'AUTO_X';
+                            }
+                        }
+                        addLog('System', 'Zero trace – auto‑blocking lines.', 'system');
+                    }
+
+                    const idx = state.playerAgents.indexOf(key);
+                    if (idx >= 0) state.playerAgents.splice(idx, 1);
+
+                    if (state.playerAgents.length === 0) {
+                        state.phase = 'ended';
+                        state.winner = 'ai';
+                        addLog('System', 'CRITICAL FAILURE: All agents eliminated.', 'danger');
+                        showEndModal('💀 DEFEAT', 'All your agents have been eliminated. The enemy has overrun your position.');
+                        syncAllCells();
+                        return;
+                    }
+                    if (state.aiFound >= NUM_AGENTS) {
+                        state.phase = 'ended';
+                        state.winner = 'ai';
+                        addLog('System', 'AI has found all your agents.', 'danger');
+                        showEndModal('💀 DEFEAT', 'The AI has located all your agents. Mission failed.');
+                        syncAllCells();
+                        return;
+                    }
+
+                    state.turn = 'ai';
+                    syncAllCells();
+                    setTimeout(() => { if (state.phase === 'play' && state.turn === 'ai') aiTurn(); }, 800);
+                }
+            }
+
+            function activateCheckpoint() {
+                if (state.phase !== 'play' || state.turn !== 'player') return;
+                let hasCandidate = false;
+                for (const key of state.playerAgents) {
+                    const [r, c] = key.split('-').map(Number);
+                    const val = state.playerMatrix[r][c];
+                    if (val === null || val === 'AUTO_X' || val === 'MANUAL_X' || val === 'AI_MISS') { hasCandidate = true;
+                        break; }
+                }
+                if (!hasCandidate) {
+                    addLog('System', 'No valid Checkpoint! candidates (all your agent squares already probed).', 'system');
+                    return;
+                }
+                state.checkpointMode = !state.checkpointMode;
+                if (state.checkpointMode) {
+                    addLog('System', '⚡ Checkpoint! mode active – click a highlighted square.', 'system');
+                } else {
+                    addLog('System', 'Checkpoint! mode cancelled.', 'system');
+                }
+                syncAllCells();
+            }
+
+            // --- AI Turn ---
+            function aiTurn() {
+                if (state.phase !== 'play' || state.turn !== 'ai') return;
+
+                if (state.aiAgents.length === 0) placeAIAgents();
+
+                const available = [];
+                for (let r = 0; r < 7; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        const key = coordKey(r, c);
+                        if (state.aiInternalMatrix[r][c] !== null) continue;
+                        if (state.aiAgents.includes(key)) continue;
+                        available.push({ r, c });
+                    }
+                }
+                if (available.length === 0) {
+                    state.turn = 'player';
+                    syncAllCells();
+                    return;
+                }
+
+                if (state.aiPossible.length === 0) {
+                    const all = [];
+                    for (let r = 0; r < 7; r++) {
+                        for (let c = 0; c < COLS; c++) {
+                            const key = coordKey(r, c);
+                            if (!state.aiAgents.includes(key)) all.push({ r, c });
+                        }
+                    }
+                    state.aiPossible = all;
+                }
+
+                let filtered = state.aiPossible.filter(p => {
+                    const val = state.aiInternalMatrix[p.r][p.c];
+                    if (val === 'H') return true;
+                    if (val === 'X') return false;
+                    if (typeof val === 'number') return true;
+                    if (state.aiAgents.some(a => a === coordKey(p.r, p.c))) return false;
+                    return true;
+                });
+
+                const allPossible = [];
+                for (let r = 0; r < 7; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        if (state.aiAgents.some(a => a === coordKey(r, c))) continue;
+                        allPossible.push({ r, c });
+                    }
+                }
+
+                filtered = allPossible.filter(candidate => {
+                    for (let r = 0; r < 7; r++) {
+                        for (let c = 0; c < COLS; c++) {
+                            const val = state.aiInternalMatrix[r][c];
+                            if (typeof val === 'number' && val === 0) {
+                                const line = getLineSquares(r, c);
+                                if (line.some(s => s.r === candidate.r && s.c === candidate.c)) {
+                                    return false;
+                                }
+                            }
+                            if (val === 'H') {
+                                if (candidate.r === r && candidate.c === c) continue;
+                                else return false;
+                            }
+                        }
+                    }
+                    return true;
+                });
+
+                filtered = filtered.filter(p => state.aiInternalMatrix[p.r][p.c] !== 'X');
+                filtered = filtered.filter(p => !state.aiAgents.some(a => a === coordKey(p.r, p.c)));
+
+                if (filtered.length === 0) filtered = available;
+
+                state.aiPossible = filtered;
+                const candidates = filtered.filter(p => available.some(a => a.r === p.r && a.c === p.c));
+                let pick = null;
+                if (candidates.length > 0) {
+                    const idx = Math.floor(Math.random() * candidates.length);
+                    pick = candidates[idx];
+                } else {
+                    const idx = Math.floor(Math.random() * available.length);
+                    pick = available[idx];
+                }
+
+                if (!pick) {
+                    state.turn = 'player';
+                    syncAllCells();
+                    return;
+                }
+
+                const r = pick.r,
+                    c = pick.c;
+                const loc = `${ROWS[r]} ${c+1}`;
+                const key = coordKey(r, c);
+                const isHit = state.playerAgents.includes(key);
+                const cell = getCell(r, c);
+
+                if (cell) {
+                    cell.classList.add('flash-ai');
+                    setTimeout(() => cell.classList.remove('flash-ai'), 1200);
+                }
+
+                if (isHit) {
+                    state.aiFound++;
+                    const idx = state.playerAgents.indexOf(key);
+                    if (idx >= 0) state.playerAgents.splice(idx, 1);
+                    state.playerMatrix[r][c] = 'AI_HIT';
+                    state.aiInternalMatrix[r][c] = 'H';
+                    addLog('AI', `STRIKE at ${loc}! Your agent eliminated. (${state.aiFound}/${NUM_AGENTS})`, 'ai');
+
+                    if (state.playerAgents.length === 0) {
+                        state.phase = 'ended';
+                        state.winner = 'ai';
+                        addLog('System', 'CRITICAL FAILURE: All agents eliminated.', 'danger');
+                        showEndModal('💀 DEFEAT', 'All your agents have been eliminated. The enemy has overrun your position.');
+                        syncAllCells();
+                        return;
+                    }
+                    if (state.aiFound >= NUM_AGENTS) {
+                        state.phase = 'ended';
+                        state.winner = 'ai';
+                        addLog('System', 'AI has found all your agents.', 'danger');
+                        showEndModal('💀 DEFEAT', 'The AI has located all your agents. Mission failed.');
+                        syncAllCells();
+                        return;
+                    }
+                    state.turn = 'ai';
+                    syncAllCells();
+                    setTimeout(() => { if (state.phase === 'play' && state.turn === 'ai') aiTurn(); }, 800);
+                } else {
+                    const radar = scanRadar(r, c, state.playerAgents);
+                    state.aiInternalMatrix[r][c] = radar.count;
+                    // Only show AI miss dot if player hasn't already probed this square
+                    if (state.playerMatrix[r][c] === null) {
+                        state.playerMatrix[r][c] = 'AI_MISS';
+                    }
+                    addLog('AI', `Probed ${loc}. (no hit)`, 'ai');
+
+                    if (radar.count === 0) {
+                        for (const [cr, cc] of radar.clearPaths) {
+                            if (state.aiInternalMatrix[cr][cc] === null) {
+                                state.aiInternalMatrix[cr][cc] = 'X';
+                            }
+                        }
+                    }
+
+                    state.turn = 'player';
+                    syncAllCells();
+                }
+            }
+
+            function getLineSquares(r, c) {
+                const dirs = [
+                    [-1, -1],
+                    [-1, 0],
+                    [-1, 1],
+                    [0, -1],
+                    [0, 1],
+                    [1, -1],
+                    [1, 0],
+                    [1, 1]
+                ];
+                const result = [];
+                for (const [dr, dc] of dirs) {
+                    let nr = r + dr,
+                        nc = c + dc;
+                    while (isOnBoard(nr, nc)) {
+                        result.push({ r: nr, c: nc });
+                        nr += dr;
+                        nc += dc;
+                    }
+                }
+                return result;
+            }
+
+            function placeAIAgents() {
+                const agents = [];
+                while (agents.length < NUM_AGENTS) {
+                    const r = Math.floor(Math.random() * 7);
+                    const c = Math.floor(Math.random() * COLS);
+                    const key = coordKey(r, c);
+                    if (!agents.includes(key) && !state.playerAgents.includes(key)) {
+                        agents.push(key);
+                    }
+                }
+                state.aiAgents = agents;
+                state.aiInternalMatrix = Array(7).fill(null).map(() => Array(9).fill(null));
+                state.aiPossible = [];
+            }
+
+            function checkWinCondition() {
+                if (state.playerFound >= NUM_AGENTS) {
+                    state.phase = 'ended';
+                    state.winner = 'player';
+                    addLog('System', 'VICTORY! All hostiles eliminated.', 'system');
+                    showEndModal('🏆 VICTORY', 'You have successfully eliminated all enemy agents. The field is clear.');
+                    syncAllCells();
+                    return true;
+                }
+                if (state.playerAgents.length === 0) {
+                    state.phase = 'ended';
+                    state.winner = 'ai';
+                    addLog('System', 'CRITICAL FAILURE: All agents eliminated.', 'danger');
+                    showEndModal('💀 DEFEAT', 'All your agents have been eliminated. The enemy has overrun your position.');
+                    syncAllCells();
+                    return true;
+                }
+                if (state.aiFound >= NUM_AGENTS) {
+                    state.phase = 'ended';
+                    state.winner = 'ai';
+                    addLog('System', 'AI has found all your agents.', 'danger');
+                    showEndModal('💀 DEFEAT', 'The AI has located all your agents. Mission failed.');
+                    syncAllCells();
+                    return true;
+                }
+                return false;
+            }
+
+            function showEndModal(title, message) {
+                modalTitle.textContent = title;
+                modalMessage.textContent = message;
+                modalOverlay.classList.add('active');
+            }
+
+            function addLog(sender, text, type) {
+                const entry = document.createElement('div');
+                entry.className = `log-entry log-${type}`;
+                entry.innerHTML = `<strong>[${sender}]:</strong> ${text}`;
+                logEl.appendChild(entry);
+                logEl.scrollTop = logEl.scrollHeight;
+                if (logEl.children.length > 100) {
+                    logEl.removeChild(logEl.children[0]);
+                }
+            }
+
+            function startGame() {
+                if (state.playerAgents.length !== NUM_AGENTS) return;
+                placeAIAgents();
+                state.phase = 'play';
+                state.turn = 'player';
+                state.playerMatrix = Array(7).fill(null).map(() => Array(9).fill(null));
+                state.prevMatrix = Array(7).fill(null).map(() => Array(9).fill(null));
+                state.aiInternalMatrix = Array(7).fill(null).map(() => Array(9).fill(null));
+                state.aiPossible = [];
+                state.playerFound = 0;
+                state.aiFound = 0;
+                state.checkpointMode = false;
+                addLog('System', 'Theater active. Green H = your hit, Red H = AI hit.', 'system');
+                syncAllCells();
+            }
+
+            function resetGame() {
+                state.phase = 'setup';
+                state.turn = 'player';
+                state.playerAgents = [];
+                state.aiAgents = [];
+                state.playerMatrix = Array(7).fill(null).map(() => Array(9).fill(null));
+                state.prevMatrix = Array(7).fill(null).map(() => Array(9).fill(null));
+                state.aiInternalMatrix = Array(7).fill(null).map(() => Array(9).fill(null));
+                state.aiPossible = [];
+                state.playerFound = 0;
+                state.aiFound = 0;
+                state.checkpointMode = false;
+                state.winner = null;
+                modalOverlay.classList.remove('active');
+                logEl.innerHTML = '';
+                addLog('System', 'New game initialized. Place your agents.', 'system');
+                syncAllCells();
+                startBtn.disabled = true;
+            }
+
+            function init() {
+                renderGrid();
+                resetGame();
+
+                startBtn.addEventListener('click', startGame);
+                checkpointBtn.addEventListener('click', activateCheckpoint);
+                resetBtn.addEventListener('click', resetGame);
+                playAgainBtn.addEventListener('click', resetGame);
+
+                // Close modal if clicked outside
+                modalOverlay.addEventListener('click', (e) => {
+                    if (e.target === modalOverlay) {
+                        modalOverlay.classList.remove('active');
+                    }
+                });
+            }
+
+            document.addEventListener('DOMContentLoaded', init);
+        })();
+    </script>
+</body>
+</html>

@@ -517,20 +517,22 @@
         if (!hit) { for (let d of drips) { if (d.collidesWith(player)) { hit = true; break; } } }
 
         if (hit) {
-            lives--;
-            updateHUD();
-            if (lives <= 0) {
-                gameOver = true;
-            } else {
-                const startRow = Math.floor((WORLD_ROWS - 1) / 2) * 2 + 1;
-                const startCol = Math.floor((WORLD_COLS - 1) / 2 / 2) * 2 + 1;
-                player.x = startCol * TILE + TILE / 2;
-                player.y = startRow * TILE + TILE / 2;
-                drips = [];
-                mummies.forEach(m => { m.alive = true; });
-                bats.forEach(b => { b.alive = true; });
-            }
-        }
+    lives--;
+    updateHUD();
+    if (lives <= 0) {
+        gameOver = true;
+    } else {
+        // Regenerate the entire maze with new enemies
+        const savedLives = lives;
+        const savedScore = score;
+        const savedLevel = level;
+        initLevel();
+        lives = savedLives;
+        score = savedScore;
+        level = savedLevel;
+        updateHUD();
+    }
+}
 
         if (win) {
             score += 100 + level * 50;

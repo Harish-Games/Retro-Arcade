@@ -1,112 +1,139 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Retro Bowling 1978</title>
     <style>
+        * {
+            box-sizing: border-box;
+        }
         body {
-            background-color: #111;
-            color: #fff;
-            font-family: 'Courier New', Courier, monospace;
+            background: #1a1410;
+            margin: 0;
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-height: 100vh;
-            margin: 0;
+            font-family: 'Courier New', Courier, monospace;
             user-select: none;
+            padding: 20px;
         }
 
-        h1 {
-            margin-bottom: 5px;
-            color: #ffcc00;
-            text-shadow: 2px 2px #c00;
-        }
-
-        .instructions {
-            font-size: 14px;
-            margin-bottom: 15px;
-            text-align: center;
-            color: #aaa;
-            max-width: 600px;
-            line-height: 1.4;
-        }
-
-        #game-container {
+        .cabinet {
+            background: #2b1f16;
+            padding: 24px 28px 28px 28px;
+            border-radius: 18px 18px 12px 12px;
+            box-shadow: 0 12px 0 #0d0a07, 0 20px 40px rgba(0, 0, 0, 0.8);
+            border-bottom: 6px solid #1f150f;
             position: relative;
-            box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
-            background: #000;
-            padding: 10px;
-            border: 4px solid #333;
+        }
+        .cabinet-inner {
+            background: #0e0b08;
+            padding: 12px;
+            border-radius: 10px;
+        }
+
+        .screen {
+            position: relative;
+            border-radius: 6px;
+            overflow: hidden;
         }
 
         canvas {
             display: block;
-            background: #000;
+            width: 800px;
+            height: 400px;
+            background: #0a0a0a;
+            border-radius: 4px;
         }
 
         .controls-hint {
-            margin-top: 10px;
-            font-size: 12px;
-            color: #666;
+            margin-top: 16px;
+            font-size: 13px;
+            color: #987a5e;
             text-align: center;
+            letter-spacing: 1px;
+            background: #1f1712;
+            padding: 8px 18px;
+            border-radius: 30px;
+            border-bottom: 3px solid #0d0a07;
+            font-weight: bold;
+        }
+        .controls-hint span {
+            color: #ccb092;
+        }
+
+        @media (max-width: 860px) {
+            canvas {
+                width: 100%;
+                height: auto;
+                aspect-ratio: 800 / 400;
+            }
+            .cabinet {
+                padding: 12px;
+                border-radius: 10px;
+            }
+            .cabinet-inner {
+                padding: 6px;
+            }
         }
     </style>
 </head>
 <body>
 
-    <h1>ATARI BOWLING '78</h1>
-    <div class="instructions">
-        <strong>[UP / DOWN ARROWS]</strong> Move Bowler / Steer Ball in flight<br>
-        <strong>[SPACEBAR]</strong> Release Ball &nbsp;|&nbsp; <strong>[R]</strong> Restart Game
-    </div>
-
-    <div id="game-container">
-        <canvas id="bowlingCanvas" width="800" height="400"></canvas>
+    <div class="cabinet">
+        <div class="cabinet-inner">
+            <div class="screen">
+                <canvas id="bowlingCanvas" width="800" height="400"></canvas>
+            </div>
+        </div>
     </div>
 
     <div class="controls-hint">
-        Tip: You can actively steer the ball up and down *after* throwing it to hit splits!
+        <span>↑ / ↓</span> Move &nbsp;·&nbsp; <span>SPACE</span> Release &nbsp;·&nbsp; <span>R</span> Restart
     </div>
 
     <script>
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  CORE GAME — SCORING FIXED, ORIGINAL LOGIC RESTORED
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
         const canvas = document.getElementById('bowlingCanvas');
         const ctx = canvas.getContext('2d');
+        const W = 800,
+            H = 400;
 
-        // Game Constants
         const LANE_Y_TOP = 80;
         const LANE_Y_BOTTOM = 360;
         const LANE_X_START = 120;
         const LANE_X_END = 750;
 
-        // Key states
         const keys = { ArrowUp: false, ArrowDown: false, Space: false };
 
-        // Game State Variables
-        let gameState = 'AIMING'; // AIMING, ROLLING, SCORING, GAME_OVER
+        let gameState = 'AIMING';
         let currentFrame = 1;
         let currentRoll = 1;
-        
-        // Traditional Bowling Scoring Arrays
+
         let frameScores = Array(10).fill().map(() => ({ roll1: null, roll2: null, roll3: null, total: null }));
         let cumulativeScores = Array(10).fill(null);
 
-        // Entities
         let bowler = { x: 70, y: 220, targetY: 220, speed: 4, height: 40 };
         let ball = { x: 0, y: 0, vx: 0, vy: 0, radius: 8, baseSpeed: 7, steerSpeed: 2.5 };
         let pins = [];
 
-        // Pin positions (Standard 10-pin triangle layout, rotated for side-view lane)
-        // Bowling lane runs Left to Right. Headpin is closest to the left of the triangle.
         const pinSpacings = [
-            { row: 1, x: 650, ys: [220] },                      // Headpin (Pin 1)
-            { row: 2, x: 680, ys: [200, 240] },                 // Pins 2, 3
-            { row: 3, x: 710, ys: [180, 220, 260] },            // Pins 4, 5, 6
-            { row: 4, x: 740, ys: [160, 200, 240, 280] }         // Pins 7, 8, 9, 10
+            { row: 1, x: 650, ys: [220] },
+            { row: 2, x: 680, ys: [200, 240] },
+            { row: 3, x: 710, ys: [180, 220, 260] },
+            { row: 4, x: 740, ys: [160, 200, 240, 280] }
         ];
 
-        function initPins() {
+        // Pin setter animation state
+        let pinSetters = { active: false, progress: 0 };
+
+        function initPins(animate = false) {
             pins = [];
             let id = 1;
             pinSpacings.forEach(pRow => {
@@ -114,25 +141,28 @@
                     pins.push({
                         id: id++,
                         x: pRow.x,
-                        y: yPos,
-                        ox: pRow.x, // original x
-                        oy: yPos, // original y
+                        y: animate ? 50 : yPos,
+                        oy: yPos,
                         isDown: false,
                         vx: 0,
                         vy: 0,
-                        color: '#FFFFFF'
+                        hitFlash: 0
                     });
                 });
             });
+            if (animate) {
+                pinSetters.active = true;
+                pinSetters.progress = 0;
+            }
         }
 
         function resetPositions() {
             bowler.y = 220;
-            bowler.targetY = 220;
             ball.x = bowler.x + 20;
             ball.y = bowler.y;
             ball.vx = 0;
             ball.vy = 0;
+            ballTrail = [];
         }
 
         function startNewGame() {
@@ -140,18 +170,26 @@
             currentRoll = 1;
             frameScores = Array(10).fill().map(() => ({ roll1: null, roll2: null, roll3: null, total: null }));
             cumulativeScores = Array(10).fill(null);
-            initPins();
+            initPins(false);
             resetPositions();
             gameState = 'AIMING';
+            flashEffect.active = false;
+            audioEngine.stopAll();
         }
 
-        // Input Listeners
+        // ─── Input ───
         window.addEventListener('keydown', (e) => {
             if (['Space', 'ArrowUp', 'ArrowDown', ' '].includes(e.key) || e.keyCode === 32) {
-                e.preventDefault(); // Stop page scrolling
+                e.preventDefault();
             }
-            if (e.key === 'ArrowUp') keys.ArrowUp = true;
-            if (e.key === 'ArrowDown') keys.ArrowDown = true;
+            if (e.key === 'ArrowUp') {
+                if (!keys.ArrowUp) audioEngine.playFootstep();
+                keys.ArrowUp = true;
+            }
+            if (e.key === 'ArrowDown') {
+                if (!keys.ArrowDown) audioEngine.playFootstep();
+                keys.ArrowDown = true;
+            }
             if (e.key === ' ' || e.code === 'Space') {
                 if (!keys.Space && gameState === 'AIMING') {
                     throwBall();
@@ -160,6 +198,7 @@
             }
             if (e.key === 'r' || e.key === 'R') {
                 startNewGame();
+                audioEngine.playStartChime();
             }
         });
 
@@ -169,29 +208,49 @@
             if (e.key === ' ' || e.code === 'Space') keys.Space = false;
         });
 
+        // ─── Throw ───
         function throwBall() {
             gameState = 'ROLLING';
             ball.x = bowler.x + 15;
             ball.y = bowler.y;
             ball.vx = ball.baseSpeed;
             ball.vy = 0;
+            ballTrail = [];
+            audioEngine.startRoll();
         }
 
-        // Logic Processing
+        // ─── Ball Trail ───
+        let ballTrail = [];
+
+        // ─── Update ───
         function update() {
+            // Pin setter animation
+            if (pinSetters.active) {
+                pinSetters.progress += 0.035;
+                if (pinSetters.progress >= 1) {
+                    pinSetters.active = false;
+                    pinSetters.progress = 1;
+                    pins.forEach(p => p.y = p.oy);
+                } else {
+                    const ease = 1 - Math.pow(1 - pinSetters.progress, 2);
+                    pins.forEach(p => {
+                        p.y = 50 + (p.oy - 50) * ease;
+                    });
+                }
+            }
+
             if (gameState === 'AIMING') {
-                // Bowler Movement
-                if (keys.ArrowUp && bowler.y > LANE_Y_TOP + bowler.height/2) {
+                if (keys.ArrowUp && bowler.y > LANE_Y_TOP + bowler.height / 2) {
                     bowler.y -= bowler.speed;
                 }
-                if (keys.ArrowDown && bowler.y < LANE_Y_BOTTOM - bowler.height/2) {
+                if (keys.ArrowDown && bowler.y < LANE_Y_BOTTOM - bowler.height / 2) {
                     bowler.y += bowler.speed;
                 }
                 ball.y = bowler.y;
                 ball.x = bowler.x + 15;
-            } 
-            else if (gameState === 'ROLLING') {
-                // Steering Mechanics (Classic 1978 Feature)
+
+            } else if (gameState === 'ROLLING') {
+                // Steering
                 if (keys.ArrowUp && ball.y > LANE_Y_TOP + ball.radius) {
                     ball.vy = -ball.steerSpeed;
                 } else if (keys.ArrowDown && ball.y < LANE_Y_BOTTOM - ball.radius) {
@@ -200,74 +259,87 @@
                     ball.vy = 0;
                 }
 
-                // Move Ball
                 ball.x += ball.vx;
                 ball.y += ball.vy;
 
-                // Handle Pin Physics & Collisions
+                // Ball trail
+                ballTrail.push({ x: ball.x, y: ball.y, life: 8 });
+                if (ballTrail.length > 6) ballTrail.shift();
+                ballTrail.forEach(t => t.life--);
+                ballTrail = ballTrail.filter(t => t.life > 0);
+
+                // Pin collisions
                 pins.forEach(pin => {
-                    if (!pin.isDown) {
-                        // Check collision with ball
+                    if (!pin.isDown && pin.y > 50) {
                         let dx = ball.x - pin.x;
                         let dy = ball.y - pin.y;
                         let dist = Math.sqrt(dx * dx + dy * dy);
-                        
-                        if (dist < ball.radius + 6) { // 6 is pin radius approximation
+                        if (dist < ball.radius + 6) {
                             pin.isDown = true;
-                            // Send pin flying
+                            pin.hitFlash = 6;
                             pin.vx = ball.vx * 0.6 + (Math.random() * 2);
                             pin.vy = ball.vy * 0.5 + (Math.random() * 6 - 3);
+                            audioEngine.playPinHit();
                         }
-                    } else {
-                        // Move flying down pins
+                    } else if (pin.isDown) {
                         pin.x += pin.vx;
                         pin.y += pin.vy;
                         pin.vx *= 0.95;
                         pin.vy *= 0.95;
+                        if (pin.hitFlash > 0) pin.hitFlash--;
                     }
                 });
 
-                // Pin-to-Pin chain reactions
+                // Pin-to-pin chain
                 for (let i = 0; i < pins.length; i++) {
                     if (pins[i].isDown && Math.abs(pins[i].vx) + Math.abs(pins[i].vy) > 0.5) {
                         for (let j = 0; j < pins.length; j++) {
-                            if (!pins[j].isDown) {
+                            if (!pins[j].isDown && pins[j].y > 50) {
                                 let dx = pins[i].x - pins[j].x;
                                 let dy = pins[i].y - pins[j].y;
                                 let dist = Math.sqrt(dx * dx + dy * dy);
                                 if (dist < 14) {
                                     pins[j].isDown = true;
+                                    pins[j].hitFlash = 6;
                                     pins[j].vx = pins[i].vx * 0.8 + (Math.random() * 2);
                                     pins[j].vy = pins[i].vy * 0.8 + (Math.random() * 4 - 2);
+                                    audioEngine.playPinHit();
                                 }
                             }
                         }
                     }
                 }
 
-                // Out of Bounds check for the ball
-                if (ball.x > width + 50 || ball.y < LANE_Y_TOP || ball.y > LANE_Y_BOTTOM) {
+                // Out of bounds → gutter
+                if (ball.x > W + 50 || ball.y < LANE_Y_TOP || ball.y > LANE_Y_BOTTOM) {
+                    audioEngine.stopRoll();
                     processRollEnd();
                 }
             }
         }
 
+        // ─── Scoring — FIXED ──────────────────────────────────────────────
         function processRollEnd() {
             gameState = 'SCORING';
-            
-            // Count how many pins fell this specific roll
-            let downThisRoll = pins.filter(p => p.isDown).length;
-            
-            if (currentRoll === 1) {
-                let currentFell = downThisRoll;
-                frameScores[currentFrame - 1].roll1 = currentFell;
 
-                if (currentFell === 10 && currentFrame < 10) {
+            // Count pins that fell THIS roll (pins that are down AND still on the lane)
+            let downThisRoll = pins.filter(p => p.isDown && p.y > 50).length;
+
+            if (downThisRoll === 0 && currentRoll === 1) {
+                audioEngine.playGutter();
+            }
+
+            if (currentRoll === 1) {
+                frameScores[currentFrame - 1].roll1 = downThisRoll;
+
+                if (downThisRoll === 10 && currentFrame < 10) {
                     // Strike! Skip roll 2 for frames 1-9
+                    audioEngine.playStrike();
+                    triggerFlash('#FFD700');
                     calculateScores();
                     setTimeout(() => {
                         currentFrame++;
-                        initPins();
+                        initPins(true);
                         resetPositions();
                         gameState = 'AIMING';
                     }, 1000);
@@ -275,49 +347,60 @@
                     // Move to Roll 2
                     setTimeout(() => {
                         currentRoll = 2;
-                        // Clean up fallen pins visually, leave standing pins
+                        // Remove fallen pins from the board
                         pins = pins.map(p => {
-                            if (p.isDown) {
-                                return { ...p, x: -999, y: -999, vx: 0, vy: 0 }; // Remove from board safely
-                            }
+                            if (p.isDown) return { ...p, x: -999, y: -999, vx: 0, vy: 0 };
                             return p;
                         });
                         resetPositions();
                         gameState = 'AIMING';
                     }, 1000);
                 }
+
             } else if (currentRoll === 2) {
-                // In frame 10, roll 2 logic differs if roll 1 was a strike
-                let prevFell = frameScores[currentFrame - 1].roll1;
-                let currentFell = downThisRoll - (prevFell < 10 ? prevFell : 0);
+                // FIXED: downThisRoll already counts only pins that fell this roll
+                // (because roll 1 pins are moved to -999)
+                let currentFell = downThisRoll;
                 frameScores[currentFrame - 1].roll2 = currentFell;
 
+                let prevFell = frameScores[currentFrame - 1].roll1 || 0;
+                let total = prevFell + currentFell;
+
                 if (currentFrame === 10) {
-                    // Check if 10th frame earns a 3rd bonus roll
-                    if (prevFell === 10 || (prevFell + currentFell >= 10)) {
+                    // 10th frame: check for bonus roll
+                    if (prevFell === 10 || total >= 10) {
+                        if (total >= 10) audioEngine.playSpare();
                         setTimeout(() => {
                             currentRoll = 3;
-                            initPins(); // reset pins for bonus roll
+                            initPins(true);
                             resetPositions();
                             gameState = 'AIMING';
                         }, 1000);
                     } else {
+                        if (total === 10) audioEngine.playSpare();
+                        calculateScores();
                         endGame();
                     }
                 } else {
-                    // Regular frame end
+                    // Regular frame (1-9)
+                    if (total === 10) audioEngine.playSpare();
                     calculateScores();
                     setTimeout(() => {
                         currentFrame++;
                         currentRoll = 1;
-                        initPins();
+                        initPins(true);
                         resetPositions();
                         gameState = 'AIMING';
                     }, 1000);
                 }
+
             } else if (currentRoll === 3) {
-                // Final 10th frame bonus roll
+                // 10th frame bonus roll
                 frameScores[9].roll3 = downThisRoll;
+                let total = (frameScores[9].roll1 || 0) + (frameScores[9].roll2 || 0) + (frameScores[9].roll3 || 0);
+                if (total >= 20) audioEngine.playStrike();
+                else if (total >= 10) audioEngine.playSpare();
+                calculateScores();
                 endGame();
             }
         }
@@ -326,22 +409,21 @@
             calculateScores();
             setTimeout(() => {
                 gameState = 'GAME_OVER';
+                audioEngine.playGameOver();
             }, 1000);
         }
 
-        // Traditional Bowling Score Calculation Engine
         function calculateScores() {
             let runningSum = 0;
             for (let i = 0; i < 10; i++) {
                 let f = frameScores[i];
                 if (f.roll1 === null) break;
 
-                if (i < 9) { // Frames 1 - 9
-                    if (f.roll1 === 10) { // Strike
+                if (i < 9) {
+                    if (f.roll1 === 10) {
                         let nextF = frameScores[i + 1];
                         if (nextF && nextF.roll1 !== null) {
                             if (nextF.roll1 === 10 && i < 8) {
-                                // Double Strike down the line
                                 let nextNextF = frameScores[i + 2];
                                 if (nextNextF && nextNextF.roll1 !== null) {
                                     f.total = 20 + nextNextF.roll1;
@@ -349,20 +431,18 @@
                             } else {
                                 if (nextF.roll2 !== null) {
                                     f.total = 10 + nextF.roll1 + nextF.roll2;
-                                } else if (i === 8 && nextF.roll2 !== null) { 
-                                    f.total = 10 + nextF.roll1 + nextF.roll2;
                                 } else { f.total = null; }
                             }
                         } else { f.total = null; }
-                    } else if (f.roll1 + f.roll2 === 10) { // Spare
+                    } else if (f.roll1 + f.roll2 === 10) {
                         let nextF = frameScores[i + 1];
                         if (nextF && nextF.roll1 !== null) {
                             f.total = 10 + nextF.roll1;
                         } else { f.total = null; }
-                    } else { // Open Frame
+                    } else {
                         f.total = f.roll1 + f.roll2;
                     }
-                } else { // Frame 10 Mechanics
+                } else {
                     if (f.roll2 !== null) {
                         if (f.roll1 === 10 || f.roll1 + f.roll2 === 10) {
                             if (f.roll3 !== null) {
@@ -383,183 +463,453 @@
             }
         }
 
-        // Rendering functions
-        let width = canvas.width;
-        let height = canvas.height;
+        // ─── Visual Effects ───
+        let flashEffect = { active: false, color: '#FFFFFF', alpha: 0, life: 0 };
 
-        function draw() {
-            // Background
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(0, 0, width, height);
+        function triggerFlash(color) {
+            flashEffect.active = true;
+            flashEffect.color = color;
+            flashEffect.alpha = 0.3;
+            flashEffect.life = 12;
+        }
 
-            // Draw Bowling Score Sheet (Classic Retro Style Layout)
-            drawScoreboard();
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  AUDIO ENGINE
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-            // Draw Bowling Lane
-            ctx.fillStyle = '#002244'; // Classic Atari deep blue lane color
-            ctx.fillRect(LANE_X_START, LANE_Y_TOP, LANE_X_END - LANE_X_START, LANE_Y_BOTTOM - LANE_Y_TOP);
-            
-            // Lane boundaries
-            ctx.strokeStyle = '#FFFFFF';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(LANE_X_START, LANE_Y_TOP);
-            ctx.lineTo(LANE_X_END, LANE_Y_TOP);
-            ctx.moveTo(LANE_X_START, LANE_Y_BOTTOM);
-            ctx.lineTo(LANE_X_END, LANE_Y_BOTTOM);
-            ctx.stroke();
+        const audioEngine = (() => {
+            let ctx = null;
+            let rollOsc = null;
+            let rollGain = null;
+            let footstepTimer = 0;
 
-            // Draw Bowler (1978 Retro Blocky Human sprite representation)
-            ctx.fillStyle = '#55FF55'; // Vibrant Retro green
-            ctx.fillRect(bowler.x, bowler.y - bowler.height/2, 14, bowler.height); // Torso/head block
-            ctx.fillStyle = '#FF5555';
-            ctx.fillRect(bowler.x - 4, bowler.y - 8, 4, 16); // Arm backup structure
-
-            // Draw Ball
-            if (gameState === 'AIMING' || gameState === 'ROLLING') {
-                ctx.fillStyle = '#FFaa00';
-                ctx.beginPath();
-                ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-                ctx.fill();
+            function init() {
+                if (!ctx) {
+                    try { ctx = new(window.AudioContext || window.webkitAudioContext)(); } catch (_) { return; }
+                }
+                if (ctx.state === 'suspended') ctx.resume();
             }
 
-            // Draw Pins
+            function playTone(freq, dur, type = 'square', vol = 0.15) {
+                try {
+                    init();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+                    gain.gain.setValueAtTime(vol, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(ctx.currentTime);
+                    osc.stop(ctx.currentTime + dur);
+                } catch (_) {}
+            }
+
+            function playNoise(dur, vol = 0.12, freq = 400) {
+                try {
+                    init();
+                    const bufferSize = ctx.sampleRate * dur;
+                    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                    const data = buffer.getChannelData(0);
+                    for (let i = 0; i < bufferSize; i++) {
+                        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+                    }
+                    const source = ctx.createBufferSource();
+                    source.buffer = buffer;
+                    const gain = ctx.createGain();
+                    gain.gain.setValueAtTime(vol, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+                    const filter = ctx.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.value = freq;
+                    source.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(ctx.destination);
+                    source.start(ctx.currentTime);
+                    source.stop(ctx.currentTime + dur);
+                } catch (_) {}
+            }
+
+            return {
+                playFootstep() {
+                    try {
+                        init();
+                        const now = ctx.currentTime;
+                        if (now - footstepTimer < 0.08) return;
+                        footstepTimer = now;
+                        playNoise(0.04, 0.06, 200);
+                        playTone(120, 0.03, 'sine', 0.05);
+                    } catch (_) {}
+                },
+                startRoll() {
+                    try {
+                        init();
+                        this.stopRoll();
+                        rollGain = ctx.createGain();
+                        rollGain.gain.setValueAtTime(0.05, ctx.currentTime);
+                        rollGain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.6);
+                        rollGain.connect(ctx.destination);
+                        rollOsc = ctx.createOscillator();
+                        rollOsc.type = 'sine';
+                        rollOsc.frequency.setValueAtTime(180, ctx.currentTime);
+                        rollOsc.frequency.exponentialRampToValueAtTime(380, ctx.currentTime + 1.0);
+                        rollOsc.connect(rollGain);
+                        rollOsc.start(ctx.currentTime);
+                    } catch (_) {}
+                },
+                stopRoll() {
+                    try {
+                        if (rollOsc) {
+                            rollOsc.stop(ctx.currentTime + 0.1);
+                            rollOsc.disconnect();
+                            rollOsc = null;
+                        }
+                        if (rollGain) {
+                            rollGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+                            setTimeout(() => { if (rollGain) { rollGain.disconnect();
+                                    rollGain = null; } }, 150);
+                        }
+                    } catch (_) {}
+                },
+                playPinHit() {
+                    const freq = 600 + Math.random() * 400;
+                    playTone(freq, 0.06, 'square', 0.05);
+                    playNoise(0.04, 0.04, 800);
+                },
+                playStrike() {
+                    [523, 659, 784, 1047].forEach((f, i) => {
+                        setTimeout(() => playTone(f, 0.2, 'square', 0.1), i * 70);
+                    });
+                    setTimeout(() => playNoise(0.3, 0.1, 300), 280);
+                    triggerFlash('#FFD700');
+                },
+                playSpare() {
+                    playTone(880, 0.15, 'square', 0.1);
+                    setTimeout(() => playTone(1100, 0.2, 'square', 0.1), 120);
+                    triggerFlash('#88DDFF');
+                },
+                playGutter() {
+                    playTone(300, 0.3, 'sawtooth', 0.04);
+                    setTimeout(() => playTone(200, 0.4, 'sawtooth', 0.03), 150);
+                    setTimeout(() => playTone(120, 0.5, 'sawtooth', 0.02), 300);
+                },
+                playGameOver() {
+                    [400, 350, 300, 250].forEach((f, i) => {
+                        setTimeout(() => playTone(f, 0.25, 'square', 0.06), i * 150);
+                    });
+                },
+                playStartChime() {
+                    playTone(523, 0.1, 'square', 0.07);
+                    setTimeout(() => playTone(659, 0.1, 'square', 0.07), 100);
+                },
+                stopAll() {
+                    this.stopRoll();
+                    try { if (ctx) ctx.close(); } catch (_) {}
+                    ctx = null;
+                }
+            };
+        })();
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  DRAWING — No blur, single ball
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+        function draw() {
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0, 0, W, H);
+
+            // ── Lane ──
+            for (let x = LANE_X_START; x < LANE_X_END; x += 18) {
+                ctx.fillStyle = (Math.floor((x - LANE_X_START) / 18) % 2 === 0) ? '#1a2a3a' : '#1f3142';
+                ctx.fillRect(x, LANE_Y_TOP, 18, LANE_Y_BOTTOM - LANE_Y_TOP);
+            }
+
+            ctx.strokeStyle = '#2a5a7a';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(LANE_X_START, LANE_Y_TOP, LANE_X_END - LANE_X_START, LANE_Y_BOTTOM - LANE_Y_TOP);
+
+            // Gutter shadows
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.fillRect(LANE_X_START, LANE_Y_TOP, LANE_X_END - LANE_X_START, 12);
+            ctx.fillRect(LANE_X_START, LANE_Y_BOTTOM - 12, LANE_X_END - LANE_X_START, 12);
+
+            // Lane arrows
+            ctx.fillStyle = 'rgba(180, 200, 220, 0.2)';
+            const arrowX = [350, 450, 550, 650];
+            arrowX.forEach(ax => {
+                ctx.beginPath();
+                ctx.moveTo(ax, LANE_Y_TOP + 12);
+                ctx.lineTo(ax - 6, LANE_Y_TOP + 24);
+                ctx.lineTo(ax + 6, LANE_Y_TOP + 24);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(ax, LANE_Y_BOTTOM - 12);
+                ctx.lineTo(ax - 6, LANE_Y_BOTTOM - 24);
+                ctx.lineTo(ax + 6, LANE_Y_BOTTOM - 24);
+                ctx.fill();
+            });
+
+            // ── Draw Pins ──
             pins.forEach(pin => {
-                if (pin.x > LANE_X_START && pin.x < width) {
-                    ctx.fillStyle = pin.isDown ? '#555555' : '#FFFFFF';
+                if (pin.x > LANE_X_START && pin.x < W + 20 && pin.y > 30) {
+                    let color = '#CCCCCC';
+                    if (pin.isDown) {
+                        color = '#444';
+                        if (pin.hitFlash > 0) color = '#FFDD88';
+                    } else {
+                        if (pin.hitFlash > 0) color = '#FFFFFF';
+                    }
+                    ctx.fillStyle = color;
                     ctx.beginPath();
-                    ctx.arc(pin.x, pin.y, 5, 0, Math.PI * 2);
+                    ctx.arc(pin.x, pin.y, 6, 0, Math.PI * 2);
                     ctx.fill();
-                    // Pin head dot detail
-                    if (!pin.isDown) {
-                        ctx.fillStyle = '#FF0000';
+                    if (!pin.isDown || pin.hitFlash > 0) {
+                        ctx.fillStyle = pin.isDown ? '#FF8844' : '#FF3333';
                         ctx.beginPath();
-                        ctx.arc(pin.x, pin.y, 1.5, 0, Math.PI * 2);
+                        ctx.arc(pin.x, pin.y, 2, 0, Math.PI * 2);
                         ctx.fill();
                     }
                 }
             });
 
-            // Handle Game Over Screen overlay
+            // ── Ball Trail (only during rolling) ──
+            if (gameState === 'ROLLING') {
+                ballTrail.forEach((t, i) => {
+                    const size = ball.radius * (0.4 + 0.6 * (t.life / 8));
+                    ctx.fillStyle = '#FFaa44';
+                    ctx.globalAlpha = 0.3;
+                    ctx.beginPath();
+                    ctx.arc(t.x, t.y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                });
+            }
+
+            // ── Draw Ball ──
+            // ONLY during rolling! During aiming, the ball is part of the bowler sprite.
+            if (gameState === 'ROLLING') {
+                ctx.fillStyle = '#FF8800';
+                ctx.beginPath();
+                ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#FFCC44';
+                ctx.beginPath();
+                ctx.arc(ball.x - 2, ball.y - 3, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // ── Draw Bowler ──
+            drawBowler();
+
+            // ── Scoreboard ──
+            drawScoreboard();
+
+            // ── Flash overlay ──
+            if (flashEffect.active) {
+                flashEffect.life--;
+                flashEffect.alpha = Math.max(0, flashEffect.life / 12) * 0.3;
+                ctx.fillStyle = flashEffect.color;
+                ctx.globalAlpha = flashEffect.alpha;
+                ctx.fillRect(0, 0, W, H);
+                ctx.globalAlpha = 1;
+                if (flashEffect.life <= 0) flashEffect.active = false;
+            }
+
+            // ── Game Over ──
             if (gameState === 'GAME_OVER') {
                 ctx.fillStyle = 'rgba(0,0,0,0.85)';
-                ctx.fillRect(0, 0, width, height);
-                ctx.fillStyle = '#FFCC00';
-                ctx.font = 'bold 32px "Courier New"';
+                ctx.fillRect(0, 0, W, H);
+                ctx.fillStyle = '#FFD700';
+                ctx.font = 'bold 40px "Courier New"';
                 ctx.textAlign = 'center';
-                ctx.fillText("GAME OVER", width/2, height/2 - 20);
+                ctx.fillText('GAME OVER', W / 2, H / 2 - 20);
                 ctx.fillStyle = '#FFFFFF';
-                ctx.font = '20px "Courier New"';
+                ctx.font = '24px "Courier New"';
                 let finalScore = cumulativeScores[9] || 0;
-                ctx.fillText(`FINAL SCORE: ${finalScore}`, width/2, height/2 + 20);
-                ctx.font = '14px "Courier New"';
+                ctx.fillText('SCORE: ' + finalScore, W / 2, H / 2 + 30);
                 ctx.fillStyle = '#888';
-                ctx.fillText("Press 'R' to play again", width/2, height/2 + 60);
+                ctx.font = '16px "Courier New"';
+                ctx.fillText('Press  R  to replay', W / 2, H / 2 + 75);
             }
         }
 
-        function drawScoreboard() {
-            let boxWidth = 60;
-            let boxHeight = 45;
-            let startX = 20;
-            let startY = 15;
+        // ─── Bowler Sprite — Single Ball ──────────────────────────────────
+        function drawBowler() {
+            const bx = bowler.x;
+            const by = bowler.y;
+            const isAiming = gameState === 'AIMING';
 
-            ctx.strokeStyle = '#555';
-            ctx.lineWidth = 1;
+            // Legs
+            ctx.fillStyle = '#223366';
+            ctx.fillRect(bx - 2, by + 6, 6, 14);
+            ctx.fillRect(bx + 6, by + 6, 6, 14);
+
+            // Shoes
+            ctx.fillStyle = '#111122';
+            ctx.fillRect(bx - 4, by + 18, 10, 4);
+            ctx.fillRect(bx + 4, by + 18, 10, 4);
+
+            // Body (bowling shirt)
+            ctx.fillStyle = '#EEEEFF';
+            ctx.fillRect(bx, by - 14, 14, 20);
+
+            // Shirt stripes
+            ctx.fillStyle = '#CC2244';
+            ctx.fillRect(bx, by - 14, 14, 3);
+            ctx.fillRect(bx + 2, by + 3, 10, 3);
+
+            // V-neck
+            ctx.fillStyle = '#DD3366';
+            ctx.beginPath();
+            ctx.moveTo(bx + 2, by - 14);
+            ctx.lineTo(bx + 7, by - 8);
+            ctx.lineTo(bx + 12, by - 14);
+            ctx.fill();
+
+            // Head
+            ctx.fillStyle = '#FFD5A0';
+            ctx.fillRect(bx + 1, by - 22, 12, 10);
+
+            // Hair
+            ctx.fillStyle = '#442211';
+            ctx.fillRect(bx, by - 24, 14, 4);
+            ctx.fillRect(bx - 1, by - 22, 2, 4);
+            ctx.fillRect(bx + 13, by - 22, 2, 4);
+
+            // Sideburns
+            ctx.fillRect(bx - 1, by - 18, 2, 4);
+            ctx.fillRect(bx + 13, by - 18, 2, 4);
+
+            // Eyes
+            ctx.fillStyle = '#222';
+            ctx.fillRect(bx + 3, by - 18, 2, 2);
+            ctx.fillRect(bx + 9, by - 18, 2, 2);
+
+            // Mouth
+            if (isAiming) {
+                ctx.fillStyle = '#883333';
+                ctx.fillRect(bx + 5, by - 13, 4, 1);
+            }
+
+            // ─── Arm and Ball (SINGLE BALL) ─────────────────────────────
+            if (isAiming) {
+                // Arm swung back, holding ball behind
+                ctx.fillStyle = '#FFD5A0';
+                ctx.fillRect(bx - 8, by - 6, 4, 12);
+
+                // Ball behind — this is the ONLY ball during aiming
+                ctx.fillStyle = '#FF8800';
+                ctx.beginPath();
+                ctx.arc(bx - 10, by + 4, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#FFCC44';
+                ctx.beginPath();
+                ctx.arc(bx - 12, by + 2, 2, 0, Math.PI * 2);
+                ctx.fill();
+
+            } else if (gameState === 'ROLLING') {
+                // Arm following through (ball is drawn separately at ball.x, ball.y)
+                ctx.fillStyle = '#FFD5A0';
+                ctx.fillRect(bx + 12, by - 6, 4, 10);
+                ctx.fillRect(bx + 16, by - 4, 2, 3);
+                ctx.fillRect(bx + 16, by + 1, 2, 3);
+            }
+        }
+
+        // ─── Scoreboard ──────────────────────────────────────────────────
+        function drawScoreboard() {
+            const boxWidth = 62;
+            const boxHeight = 48;
+            const startX = 16;
+            const startY = 10;
+
+            ctx.fillStyle = '#0a0e14';
+            ctx.fillRect(startX - 4, startY - 4, 10 * boxWidth + 30, boxHeight + 12);
+            ctx.strokeStyle = '#2a4a6a';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(startX - 4, startY - 4, 10 * boxWidth + 30, boxHeight + 12);
+
             ctx.textAlign = 'center';
             ctx.font = '12px "Courier New"';
 
-            // Draw 10 frames boxes
             for (let i = 0; i < 10; i++) {
-                let x = startX + (i * boxWidth);
-                if (i === 9) boxWidth = 85; // wider box for 3 possible rolls in 10th frame
+                const x = startX + (i * boxWidth);
+                const w = (i === 9) ? 80 : boxWidth;
 
-                // Outer boundary
-                ctx.fillStyle = (currentFrame === i + 1 && gameState !== 'GAME_OVER') ? '#222' : '#000';
-                ctx.fillRect(x, startY, boxWidth, boxHeight);
-                ctx.strokeRect(x, startY, boxWidth, boxHeight);
+                ctx.fillStyle = (currentFrame === i + 1 && gameState !== 'GAME_OVER') ? '#142230' : '#0a0f18';
+                ctx.fillRect(x, startY, w, boxHeight);
+                ctx.strokeStyle = '#2a4a6a';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x, startY, w, boxHeight);
 
-                // Frame title number
-                ctx.fillStyle = '#888';
-                ctx.fillText(i + 1, x + boxWidth/2, startY + 12);
+                ctx.fillStyle = '#4a7a9a';
+                ctx.font = '10px "Courier New"';
+                ctx.fillText(i + 1, x + w / 2, startY + 12);
 
-                // Score markers inside boxes
-                let f = frameScores[i];
-                ctx.fillStyle = '#FFF';
+                const f = frameScores[i];
+                ctx.fillStyle = '#88DDEE';
                 ctx.font = 'bold 14px "Courier New"';
 
                 if (i < 9) {
-                    // Left and right small internal roll indicators
-                    ctx.strokeRect(x + boxWidth - 20, startY, 20, 20);
-                    
-                    if (f.roll1 !== null) {
-                        if (f.roll1 === 10) {
-                            ctx.fillText('X', x + boxWidth - 10, startY + 14); // Strike
-                        } else {
-                            ctx.fillText(f.roll1, x + boxWidth - 30, startY + 24);
-                        }
+                    ctx.strokeStyle = '#1a3a5a';
+                    ctx.strokeRect(x + w - 22, startY + 14, 20, 20);
+                    if (f.roll1 !== null && f.roll1 !== undefined) {
+                        ctx.fillText(f.roll1 === 10 ? 'X' : f.roll1, x + w - 32, startY + 28);
                     }
-                    if (f.roll2 !== null) {
-                        if (f.roll1 + f.roll2 === 10) {
-                            ctx.fillText('/', x + boxWidth - 10, startY + 14); // Spare
-                        } else {
-                            ctx.fillText(f.roll2, x + boxWidth - 10, startY + 14);
-                        }
+                    if (f.roll2 !== null && f.roll2 !== undefined) {
+                        const display = (f.roll1 + f.roll2 === 10 && f.roll1 !== 10) ? '/' : f.roll2;
+                        ctx.fillText(display, x + w - 12, startY + 28);
                     }
                 } else {
-                    // Frame 10 box partitioning rules
-                    ctx.strokeRect(x + boxWidth - 60, startY, 20, 20);
-                    ctx.strokeRect(x + boxWidth - 40, startY, 20, 20);
-                    ctx.strokeRect(x + boxWidth - 20, startY, 20, 20);
-
-                    if (f.roll1 !== null) {
-                        ctx.fillText(f.roll1 === 10 ? 'X' : f.roll1, x + boxWidth - 50, startY + 14);
-                    }
-                    if (f.roll2 !== null) {
-                        if (f.roll1 !== 10 && f.roll1 + f.roll2 === 10) {
-                            ctx.fillText('/', x + boxWidth - 30, startY + 14);
-                        } else {
-                            ctx.fillText(f.roll2 === 10 ? 'X' : f.roll2, x + boxWidth - 30, startY + 14);
+                    [0, 1, 2].forEach(idx => {
+                        const sx = x + w - 60 + idx * 20;
+                        ctx.strokeStyle = '#1a3a5a';
+                        ctx.strokeRect(sx, startY + 14, 18, 20);
+                        const val = idx === 0 ? f.roll1 : idx === 1 ? f.roll2 : f.roll3;
+                        if (val !== null && val !== undefined) {
+                            let display = val === 10 ? 'X' : val;
+                            if (idx === 1 && f.roll1 !== 10 && (f.roll1 || 0) + (f.roll2 || 0) === 10) display = '/';
+                            ctx.fillText(display, sx + 9, startY + 28);
                         }
-                    }
-                    if (f.roll3 !== null) {
-                        ctx.fillText(f.roll3 === 10 ? 'X' : f.roll3, x + boxWidth - 10, startY + 14);
-                    }
+                    });
                 }
 
-                // Cumulative totals rendering below frame box internal rows
                 if (cumulativeScores[i] !== null) {
-                    ctx.fillStyle = '#FFCC00';
-                    ctx.font = '14px "Courier New"';
-                    ctx.fillText(cumulativeScores[i], x + boxWidth/2, startY + 38);
+                    ctx.fillStyle = '#FFD866';
+                    ctx.font = 'bold 13px "Courier New"';
+                    ctx.fillText(cumulativeScores[i], x + w / 2, startY + 44);
                 }
             }
 
-            // Total Continuous Score indicator to side
-            ctx.fillStyle = '#FFCC00';
-            ctx.font = 'bold 20px "Courier New"';
-            ctx.textAlign = 'left';
             let currentTotal = 0;
-            // Lookup highest valid entry
-            for(let c=9; c>=0; c--) {
-                if(cumulativeScores[c] !== null) {
-                    currentTotal = cumulativeScores[c];
-                    break;
-                }
+            for (let c = 9; c >= 0; c--) {
+                if (cumulativeScores[c] !== null) { currentTotal = cumulativeScores[c]; break; }
             }
-            ctx.fillText(`SCORE: ${currentTotal}`, 695, 43);
+            ctx.fillStyle = '#FFD866';
+            ctx.font = 'bold 18px "Courier New"';
+            ctx.textAlign = 'right';
+            ctx.fillText('SCORE', 780, 30);
+            ctx.font = 'bold 22px "Courier New"';
+            ctx.fillText(currentTotal, 780, 52);
+            ctx.textAlign = 'left';
         }
 
-        // Standard Game loop architecture
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        //  GAME LOOP
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
         function loop() {
             update();
             draw();
             requestAnimationFrame(loop);
         }
 
-        // Run game initiation
         startNewGame();
         loop();
+
+        document.addEventListener('click', () => { audioEngine.init(); }, { once: true });
+        document.addEventListener('keydown', () => { audioEngine.init(); }, { once: true });
     </script>
 </body>
 </html>

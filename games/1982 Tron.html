@@ -3,309 +3,729 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Tron Light Cycles</title>
-<style>
-  body {
-    background: black;
-    margin: 0;
-    overflow: hidden;
-    font-family: monospace;
-    color: white;
-    text-align: center;
-  }
-  #hud {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-  }
-</style>
+    <meta charset="UTF-8">
+    <title>Tron Light Cycles</title>
+    <style>
+        body {
+            background: black;
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            color: #0ff;
+            text-align: center;
+        }
+        #hud {
+            position: absolute;
+            top: 12px;
+            left: 16px;
+            user-select: none;
+            pointer-events: none;
+            z-index: 10;
+            font-size: 16px;
+            letter-spacing: 1px;
+            text-shadow: 0 0 6px rgba(0, 255, 255, 0.3);
+        }
+        #hud .score {
+            font-size: 20px;
+            font-weight: bold;
+            color: #8ff;
+            text-shadow: 0 0 12px rgba(0, 255, 255, 0.5);
+        }
+        #hud .speed {
+            font-size: 14px;
+            color: #4ff;
+            opacity: 0.8;
+        }
+        #pause-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.75);
+            font-size: 60px;
+            color: #0ff;
+            letter-spacing: 8px;
+            pointer-events: none;
+            z-index: 20;
+            text-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+        }
+        #pause-overlay.show {
+            display: flex;
+        }
+        #click-to-start {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.88);
+            color: #0ff;
+            font-size: 28px;
+            cursor: pointer;
+            z-index: 30;
+            flex-direction: column;
+            gap: 16px;
+            text-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+        }
+        #click-to-start.hidden {
+            display: none;
+        }
+        #click-to-start .title {
+            font-size: 52px;
+            font-weight: bold;
+            letter-spacing: 12px;
+            text-shadow: 0 0 40px rgba(0, 255, 255, 0.4);
+        }
+        #click-to-start .sub {
+            font-size: 18px;
+            opacity: 0.7;
+            letter-spacing: 2px;
+        }
+    </style>
 </head>
 <body>
 
-<div id="hud"></div>
-<canvas id="game" width="800" height="600"></canvas>
+    <div id="hud"></div>
+    <div id="pause-overlay">⏸ PAUSED</div>
+    <div id="click-to-start">
+        <div class="title">⚡ TRON</div>
+        <div class="sub">Press SPACE to start game</div>
+    </div>
+    <canvas id="game" width="800" height="600"></canvas>
 
-<script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+    <script>
+        const canvas = document.getElementById("game");
+        const ctx = canvas.getContext("2d");
+        const pauseOverlay = document.getElementById("pause-overlay");
+        const clickToStart = document.getElementById("click-to-start");
 
-const W = canvas.width;
-const H = canvas.height;
-const CELL = 4;
+        const W = canvas.width;
+        const H = canvas.height;
+        const CELL = 4;
 
-// Occupancy grid
-let board;
+        // ─── Off-screen canvas for background (grid + border) ──
+        const bgCanvas = document.createElement('canvas');
+        bgCanvas.width = W;
+        bgCanvas.height = H;
+        const bgCtx = bgCanvas.getContext('2d');
 
-// Player
-let player;
+        // ─── audio ──────────────────────────────────────────────────────────────
+        let audioCtx = null;
 
-// All possible AIs (we spawn 1 per level)
-const allAIs = [
-  { color: "orange",  id: 2 },
-  { color: "magenta", id: 3 },
-  { color: "yellow",  id: 4 },
-  { color: "green",   id: 5 }
-];
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
 
-let ais = []; // active AIs for current level
+        function handleStartInteraction() {
+            initAudio();
+            clickToStart.classList.add('hidden');
+            if (!countdownActive && !gameActive) {
+                level = 1;
+                score = 0;
+                speed = 0.6;
+                startNextRound();
+            }
+            document.removeEventListener('click', handleStartInteraction);
+            document.removeEventListener('keydown', handleStartInteraction);
+        }
 
-let level = 1;
-let speed = 0.6; // slow start
-let score = 0;
-let highScore = parseInt(localStorage.getItem("tronHighScore") || "0", 10);
+        document.addEventListener('click', handleStartInteraction);
+        document.addEventListener('keydown', handleStartInteraction);
 
-let keys = {};
-let loopID = null;
+        function playTone(freq, duration, type = 'square', vol = 0.12, pitchBend = 0) {
+            try {
+                initAudio();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                if (pitchBend) {
+                    osc.frequency.exponentialRampToValueAtTime(freq + pitchBend, audioCtx.currentTime + duration * 0.3);
+                    osc.frequency.exponentialRampToValueAtTime(freq, audioCtx.currentTime + duration);
+                }
+                gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (_) { /* silent fail */ }
+        }
 
-let survivalTimer = 0; // counts frames survived
+        function playNoise(duration, vol = 0.15) {
+            try {
+                initAudio();
+                const bufferSize = audioCtx.sampleRate * duration;
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+                }
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = buffer;
+                const gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+                noise.connect(gain);
+                gain.connect(audioCtx.destination);
+                noise.start();
+                noise.stop(audioCtx.currentTime + duration);
+            } catch (_) { /* silent fail */ }
+        }
 
-document.addEventListener("keydown", e => keys[e.key] = true);
-document.addEventListener("keyup", e => keys[e.key] = false);
+        function soundTurn() {
+            playTone(1200, 0.03, 'square', 0.05, 300);
+            setTimeout(() => playTone(1800, 0.02, 'sine', 0.02, 0), 10);
+        }
 
-function updateHUD(message = "") {
-  const hud = document.getElementById("hud");
-  hud.innerHTML =
-    `Level: ${level} | Score: ${score} | High Score: ${highScore}<br>${message}`;
-}
+        function soundCrash() {
+            playNoise(0.25, 0.2);
+            playTone(100, 0.3, 'sawtooth', 0.12, -30);
+            setTimeout(() => playTone(60, 0.2, 'sawtooth', 0.08, -20), 50);
+        }
 
-// Draw neon border
-function drawBorder() {
-  ctx.strokeStyle = "#0ff";
-  ctx.lineWidth = 6;
-  ctx.strokeRect(0, 0, W, H);
-}
+        function soundLevelComplete() {
+            playTone(880, 0.15, 'square', 0.1, 0);
+            setTimeout(() => playTone(1100, 0.2, 'square', 0.1, 0), 180);
+        }
 
-// Player input
-function handleInput() {
-  if (keys["ArrowUp"] && player.dy === 0) {
-    player.dx = 0; player.dy = -1;
-  }
-  if (keys["ArrowDown"] && player.dy === 0) {
-    player.dx = 0; player.dy = 1;
-  }
-  if (keys["ArrowLeft"] && player.dx === 0) {
-    player.dx = -1; player.dy = 0;
-  }
-  if (keys["ArrowRight"] && player.dx === 0) {
-    player.dx = 1; player.dy = 0;
-  }
-}
+        // ─── state ──────────────────────────────────────────────────────────────
+        let board;
+        let player;
+        let ais = [];
+        let level = 1;
+        let speed = 0.6;
+        let score = 0;
+        let highScore = parseInt(localStorage.getItem("tronHighScore") || "0", 10);
+        let survivalTimer = 0;
+        let gameActive = true;
+        let paused = false;
+        let loopID = null;
 
-// AI logic
-function aiLogic(ai) {
-  if (ai.dead) return;
+        // ─── countdown state ──────────────────────────────────────────────────
+        let countdownActive = false;
+        let countdownValue = 3;
+        let countdownTimer = 0;
+        const COUNTDOWN_FRAMES = 35;
 
-  let fx = ai.x + ai.dx * CELL;
-  let fy = ai.y + ai.dy * CELL;
+        // ─── particles ──────────────────────────────────────────────────────────
+        let particles = [];
+        let gameOverMessage = "";
 
-  if (!isBlocked(fx, fy)) return;
-
-  let left = turnLeft(ai.dx, ai.dy);
-  let lx = ai.x + left.dx * CELL;
-  let ly = ai.y + left.dy * CELL;
-  if (!isBlocked(lx, ly)) {
-    ai.dx = left.dx;
-    ai.dy = left.dy;
-    return;
-  }
-
-  let right = turnRight(ai.dx, ai.dy);
-  let rx = ai.x + right.dx * CELL;
-  let ry = ai.y + right.dy * CELL;
-  if (!isBlocked(rx, ry)) {
-    ai.dx = right.dx;
-    ai.dy = right.dy;
-    return;
-  }
-}
-
-function turnLeft(dx, dy) {
-  return { dx: -dy, dy: dx };
-}
-
-function turnRight(dx, dy) {
-  return { dx: dy, dy: -dx };
-}
-
-function isBlocked(x, y) {
-  if (x < CELL || y < CELL || x >= W - CELL || y >= H - CELL) return true;
-  const cx = Math.floor(x / CELL);
-  const cy = Math.floor(y / CELL);
-  return board[cx][cy] !== 0;
-}
-
-// Move cycle and handle collisions
-function moveCycle(cycle) {
-  if (cycle.dead) return false;
-
-  cycle.x += cycle.dx * CELL;
-  cycle.y += cycle.dy * CELL;
-
-  // wall collision
-  if (cycle.x < CELL || cycle.y < CELL || cycle.x >= W - CELL || cycle.y >= H - CELL) {
-    cycle.dead = true;
-    if (cycle.id === 1) {
-      gameOver("You crashed into the wall!");
-    } else {
-      score += 100;
-      checkRoundEnd();
+        function spawnExplosion(x, y, color, count = 32) {
+    for (let i = 0; i < count; i++) {
+        const angle = Math.random() * 2 * Math.PI;
+        const speed = 1.25 + Math.random() * 3.75;      // ~25% faster
+        const size = 2.5 + Math.random() * 5;           // ~25% bigger
+        particles.push({
+            x: x + (Math.random() - 0.5) * 7.5,         // ~25% wider spread
+            y: y + (Math.random() - 0.5) * 7.5,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 1.0,
+            decay: 0.008 + Math.random() * 0.015,
+            size: size,
+            color: color
+        });
     }
-    return true;
-  }
-
-  let cx = Math.floor(cycle.x / CELL);
-  let cy = Math.floor(cycle.y / CELL);
-
-  // trail collision
-  if (board[cx][cy] !== 0) {
-    cycle.dead = true;
-    if (cycle.id === 1) {
-      gameOver("You hit a trail!");
-    } else {
-      score += 100;
-      checkRoundEnd();
-    }
-    return true;
-  }
-
-  // leave trail
-  board[cx][cy] = cycle.id;
-
-  ctx.fillStyle = cycle.color;
-  ctx.fillRect(cx * CELL, cy * CELL, CELL, CELL);
-
-  return false;
 }
 
-function checkRoundEnd() {
-  const aliveAIs = ais.filter(ai => !ai.dead);
-  if (aliveAIs.length === 0) {
-    score += 500;
-    if (level < 4) {
-      level++;
-      startNextRound();
-    } else {
-      gameOver("You cleared all levels!");
-    }
-  }
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vx *= 0.98;
+                p.vy *= 0.98;
+                p.life -= p.decay;
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        function drawParticles() {
+            for (const p of particles) {
+                ctx.globalAlpha = p.life;
+                ctx.shadowColor = p.color;
+                ctx.shadowBlur = 8;
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+                ctx.shadowBlur = 0;
+            }
+            ctx.globalAlpha = 1.0;
+        }
+
+        // ─── input ──────────────────────────────────────────────────────────────
+        const keys = {};
+        document.addEventListener("keydown", e => {
+            keys[e.key] = true;
+            if (e.key === "p" || e.key === "P") {
+                togglePause();
+            }
+            if (e.key === " " && !gameActive && !countdownActive) {
+                e.preventDefault();
+                restartGame();
+            }
+        });
+        document.addEventListener("keyup", e => keys[e.key] = false);
+
+        function togglePause() {
+            if (!gameActive || countdownActive) return;
+            paused = !paused;
+            pauseOverlay.classList.toggle("show", paused);
+        }
+
+        // ─── HUD ────────────────────────────────────────────────────────────────
+        function updateHUD(message = "") {
+            const hud = document.getElementById("hud");
+            hud.innerHTML = `
+                <div>LEVEL <span style="color:#8ff;">${level}</span> &nbsp;|&nbsp; SCORE <span class="score">${score}</span> &nbsp;|&nbsp; HIGH <span class="score">${highScore}</span></div>
+                <div style="display:flex; gap:20px; margin-top:4px;">
+                    <span class="speed">⚡ SPEED ${speed.toFixed(2)}</span>
+                    ${message ? `<span style="opacity:0.4;">|</span><span style="font-size:14px; opacity:0.5;">${message}</span>` : ''}
+                </div>
+            `;
+        }
+
+        // ─── drawing helpers ──────────────────────────────────────────────────
+        function drawBackground() {
+            bgCtx.strokeStyle = 'hsl(300, 60%, 10%)';
+            bgCtx.lineWidth = 0.8;
+            const step = 20;
+
+            for (let x = 0; x <= W; x += step) {
+                bgCtx.beginPath();
+                bgCtx.moveTo(x, 0);
+                bgCtx.lineTo(x, H);
+                bgCtx.stroke();
+            }
+            for (let y = 0; y <= H; y += step) {
+                bgCtx.beginPath();
+                bgCtx.moveTo(0, y);
+                bgCtx.lineTo(W, y);
+                bgCtx.stroke();
+            }
+
+            bgCtx.shadowColor = 'rgba(0, 255, 255, 0.15)';
+            bgCtx.shadowBlur = 8;
+            bgCtx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
+            bgCtx.lineWidth = 2;
+            bgCtx.strokeRect(0, 0, W, H);
+            bgCtx.shadowBlur = 0;
+            bgCtx.strokeStyle = 'rgba(0, 255, 255, 0.08)';
+            bgCtx.lineWidth = 1;
+            bgCtx.strokeRect(2, 2, W - 4, H - 4);
+            bgCtx.shadowBlur = 0;
+        }
+
+        drawBackground();
+
+        function clearBoard() {
+            board = [];
+            for (let x = 0; x < W / CELL; x++) {
+                board[x] = [];
+                for (let y = 0; y < H / CELL; y++) {
+                    board[x][y] = 0;
+                }
+            }
+            ctx.clearRect(0, 0, W, H);
+            ctx.drawImage(bgCanvas, 0, 0);
+        }
+
+        function drawTrailCell(x, y, color) {
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = color;
+            ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+            ctx.shadowBlur = 0;
+        }
+
+        // ─── cycle factories ──────────────────────────────────────────────────
+        function resetPlayer() {
+            player = {
+                x: 200,
+                y: H / 2,
+                dx: 1,
+                dy: 0,
+                color: "cyan",
+                id: 1,
+                dead: false
+            };
+        }
+
+        const ALL_AI_TEMPLATES = [
+            { color: "orange", id: 2 },
+            { color: "magenta", id: 3 },
+            { color: "yellow", id: 4 },
+            { color: "green", id: 5 }
+        ];
+
+        function resetAIs() {
+            ais = [];
+            const count = Math.min(level, ALL_AI_TEMPLATES.length);
+            for (let i = 0; i < count; i++) {
+                ais.push({
+                    x: W - 200,
+                    y: H / 2 + (i * 80) - 80,
+                    dx: -1,
+                    dy: 0,
+                    color: ALL_AI_TEMPLATES[i].color,
+                    id: ALL_AI_TEMPLATES[i].id,
+                    dead: false
+                });
+            }
+        }
+
+        function startNextRound() {
+            particles = [];
+            board = [];
+            for (let x = 0; x < W / CELL; x++) {
+                board[x] = [];
+                for (let y = 0; y < H / CELL; y++) {
+                    board[x][y] = 0;
+                }
+            }
+            resetPlayer();
+            resetAIs();
+            speed = 0.6 + 0.15 * (level - 1);
+            survivalTimer = 0;
+            gameActive = true;
+            paused = false;
+            pauseOverlay.classList.remove("show");
+            countdownActive = true;
+            countdownValue = 3;
+            countdownTimer = 0;
+            
+            ctx.clearRect(0, 0, W, H);
+            ctx.drawImage(bgCanvas, 0, 0);
+            updateHUD("Get ready!");
+        }
+
+        // ─── collision / grid ──────────────────────────────────────────────────
+        function isBlocked(x, y) {
+            if (x < CELL || y < CELL || x >= W - CELL || y >= H - CELL) return true;
+            const cx = Math.floor(x / CELL);
+            const cy = Math.floor(y / CELL);
+            return board[cx][cy] !== 0;
+        }
+
+        function turnLeft(dx, dy) { return { dx: -dy, dy: dx }; }
+        function turnRight(dx, dy) { return { dx: dy, dy: -dx }; }
+
+        // ─── AI ──────────────────────────────────────────────────────────────────
+        function aiLogic(ai) {
+            if (ai.dead) return;
+
+            const left = turnLeft(ai.dx, ai.dy);
+            const right = turnRight(ai.dx, ai.dy);
+
+            const canGo = (dx, dy) => {
+                const nx = ai.x + dx * CELL;
+                const ny = ai.y + dy * CELL;
+                return !isBlocked(nx, ny);
+            };
+
+            if (Math.random() < 0.0005) {
+                const first = Math.random() < 0.5 ? left : right;
+                const second = (first === left) ? right : left;
+                if (canGo(first.dx, first.dy)) {
+                    ai.dx = first.dx;
+                    ai.dy = first.dy;
+                    soundTurn();
+                    return;
+                }
+                if (canGo(second.dx, second.dy)) {
+                    ai.dx = second.dx;
+                    ai.dy = second.dy;
+                    soundTurn();
+                    return;
+                }
+            }
+
+            const fx = ai.x + ai.dx * CELL;
+            const fy = ai.y + ai.dy * CELL;
+            if (!isBlocked(fx, fy)) return;
+
+            const first = Math.random() < 0.5 ? left : right;
+            const second = (first === left) ? right : left;
+
+            if (canGo(first.dx, first.dy)) {
+                ai.dx = first.dx;
+                ai.dy = first.dy;
+                soundTurn();
+                return;
+            }
+            if (canGo(second.dx, second.dy)) {
+                ai.dx = second.dx;
+                ai.dy = second.dy;
+                soundTurn();
+                return;
+            }
+        }
+function getBrighterColor(color) {
+    const colorMap = {
+        "cyan": "#66ffff",
+        "orange": "#ffaa44",
+        "magenta": "#ff66ff",
+        "yellow": "#ffff66",
+        "green": "#66ff66"
+    };
+    return colorMap[color] || color;
 }
 
-function clearBoard() {
-  board = [];
-  for (let x = 0; x < W / CELL; x++) {
-    board[x] = [];
-    for (let y = 0; y < H / CELL; y++) {
-      board[x][y] = 0;
-    }
-  }
-  ctx.clearRect(0, 0, W, H);
-}
+        // ─── move cycle ──────────────────────────────────────────────────────
+        function moveCycle(cycle) {
+            if (cycle.dead) return false;
 
-function resetPlayer() {
-  player = {
-    x: 200,
-    y: H / 2,
-    dx: 1,
-    dy: 0,
-    color: "cyan",
-    id: 1,
-    dead: false
-  };
-}
+            cycle.x += cycle.dx * CELL;
+            cycle.y += cycle.dy * CELL;
 
-function resetAIs() {
-  ais = [];
-  const count = Math.min(level, allAIs.length);
+            if (cycle.x < CELL || cycle.y < CELL || cycle.x >= W - CELL || cycle.y >= H - CELL) {
+                cycle.dead = true;
+                spawnExplosion(cycle.x, cycle.y, getBrighterColor(cycle.color));
+                soundCrash();
+                if (cycle.id === 1) {
+                    gameActive = false;
+                    gameOverMessage = "You crashed into the wall!";
+                    saveHighScore();
+                } else {
+                    score += 100;
+                    checkRoundEnd();
+                }
+                return true;
+            }
 
-  for (let i = 0; i < count; i++) {
-    ais.push({
-      x: W - 200,
-      y: H / 2 + (i * 80) - 80,
-      dx: -1,
-      dy: 0,
-      color: allAIs[i].color,
-      id: allAIs[i].id,
-      dead: false
-    });
-  }
-}
+            const cx = Math.floor(cycle.x / CELL);
+            const cy = Math.floor(cycle.y / CELL);
 
-function startNextRound() {
-  clearBoard();
-  resetPlayer();
-  resetAIs();
+            if (board[cx][cy] !== 0) {
+                cycle.dead = true;
+                spawnExplosion(cycle.x, cycle.y, getBrighterColor(cycle.color));
+                soundCrash();
+                if (cycle.id === 1) {
+                    gameActive = false;
+                    gameOverMessage = "You hit a trail!";
+                    saveHighScore();
+                } else {
+                    score += 100;
+                    checkRoundEnd();
+                }
+                return true;
+            }
 
-  speed = 0.6 + 0.15 * (level - 1);
-  survivalTimer = 0;
+            board[cx][cy] = cycle.id;
+            drawTrailCell(cx, cy, cycle.color);
+            return false;
+        }
 
-  updateHUD("Next round!");
-}
+        // ─── high score ──────────────────────────────────────────────────────
+        function saveHighScore() {
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem("tronHighScore", String(highScore));
+            }
+        }
 
-function gameOver(msg) {
-  if (score > highScore) {
-    highScore = score;
-    localStorage.setItem("tronHighScore", highScore);
-  }
+        // ─── round / level management ──────────────────────────────────────
+        function checkRoundEnd() {
+            const aliveAIs = ais.filter(ai => !ai.dead);
+            if (aliveAIs.length === 0) {
+                score += 500;
+                soundLevelComplete();
+                level++;
+                startNextRound();
+            }
+        }
 
-  updateHUD(msg + " | Press SPACE to restart");
+        // ─── restart game ──────────────────────────────────────────────────
+        function restartGame() {
+            if (loopID) {
+                cancelAnimationFrame(loopID);
+                loopID = null;
+            }
+            
+            saveHighScore();
+            
+            gameActive = true;
+            paused = false;
+            pauseOverlay.classList.remove("show");
+            gameOverMessage = "";
+            particles = [];
+            level = 1;
+            score = 0;
+            speed = 0.6;
+            survivalTimer = 0;
 
-  ctx.fillStyle = "white";
-  ctx.font = "40px monospace";
-  ctx.fillText(msg, W / 2 - 200, H / 2);
+            startNextRound();
+            
+            if (loopID === null) {
+                loopID = requestAnimationFrame(loop);
+            }
+        }
 
-  cancelAnimationFrame(loopID);
+        // ─── input handling ──────────────────────────────────────────────────
+        function handleInput() {
+            if (keys["ArrowUp"] && player.dy === 0) {
+                player.dx = 0;
+                player.dy = -1;
+                soundTurn();
+            }
+            if (keys["ArrowDown"] && player.dy === 0) {
+                player.dx = 0;
+                player.dy = 1;
+                soundTurn();
+            }
+            if (keys["ArrowLeft"] && player.dx === 0) {
+                player.dx = -1;
+                player.dy = 0;
+                soundTurn();
+            }
+            if (keys["ArrowRight"] && player.dx === 0) {
+                player.dx = 1;
+                player.dy = 0;
+                soundTurn();
+            }
+        }
 
-  document.addEventListener("keydown", restartOnSpace);
-}
+        // ─── main loop ──────────────────────────────────────────────────────
+        function loop() {
+            // ── countdown ──
+            if (countdownActive) {
+                ctx.clearRect(0, 0, W, H);
+                ctx.drawImage(bgCanvas, 0, 0);
+                drawParticles();
+                
+                countdownTimer++;
+                
+                if (countdownTimer >= COUNTDOWN_FRAMES) {
+                    countdownTimer = 0;
+                    countdownValue--;
+                    
+                    ctx.clearRect(0, 0, W, H);
+                    ctx.drawImage(bgCanvas, 0, 0);
+                    drawParticles();
+                    
+                    if (countdownValue <= 0) {
+                        countdownActive = false;
+                        gameActive = true;
+                        updateHUD("");
+                        ctx.clearRect(0, 0, W, H);
+                        ctx.drawImage(bgCanvas, 0, 0);
+                        drawParticles();
+                    }
+                }
+                
+                if (countdownActive && countdownValue > 0) {
+                    ctx.fillStyle = "rgba(0, 255, 255, 0.9)";
+                    ctx.font = "120px 'Courier New', monospace";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(countdownValue, W / 2, H / 2 - 20);
+                    ctx.textAlign = "left";
+                    ctx.textBaseline = "alphabetic";
+                } else if (countdownActive && countdownValue === 0) {
+                    ctx.fillStyle = "#0ff";
+                    ctx.font = "60px 'Courier New', monospace";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText("GO!", W / 2, H / 2 - 20);
+                    ctx.textAlign = "left";
+                    ctx.textBaseline = "alphabetic";
+                }
+                
+                loopID = requestAnimationFrame(loop);
+                return;
+            }
 
-function restartOnSpace(e) {
-  if (e.key === " ") {
-    document.removeEventListener("keydown", restartOnSpace);
-    restartGame();
-  }
-}
+            // ── game over ──
+            if (!gameActive) {
+                // Draw background
+                ctx.drawImage(bgCanvas, 0, 0);
+                
+                // Dim overlay
+                ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
+                ctx.fillRect(0, 0, W, H);
+                
+                // Draw particles ON TOP of dim overlay (so they're visible)
+                drawParticles();
+                
+                // Text on top of everything
+                ctx.fillStyle = "white";
+                ctx.font = "40px 'Courier New', monospace";
+                ctx.textAlign = "center";
+                ctx.shadowColor = '#0ff';
+                ctx.shadowBlur = 10;
+                ctx.fillText("💥 GAME OVER", W / 2, H / 2 - 80);
+                ctx.shadowBlur = 0;
+                ctx.font = "20px 'Courier New', monospace";
+                ctx.fillText(gameOverMessage, W / 2, H / 2 - 30);
+                ctx.fillText("Press SPACE to restart", W / 2, H / 2 + 20);
+                ctx.textAlign = "left";
+                
+                updateHUD("");
 
-function restartGame() {
-  cancelAnimationFrame(loopID);   // IMPORTANT FIX
-  level = 1;
-  score = 0;
-  speed = 0.6;
-  survivalTimer = 0;
+                loopID = requestAnimationFrame(loop);
+                return;
+            }
 
-  clearBoard();
-  resetPlayer();
-  resetAIs();
+            // ── paused ──
+            if (paused) {
+                loopID = requestAnimationFrame(loop);
+                return;
+            }
 
-  updateHUD("Game restarted");
+            // ── game active ──
+            drawParticles();
+            updateHUD();
 
-  loopID = requestAnimationFrame(loop);
-}
+            survivalTimer++;
+            if (survivalTimer % 60 === 0) score += 10;
 
-function loop() {
-  drawBorder();
-  updateHUD();
+            handleInput();
 
-  // survival scoring
-  survivalTimer++;
-  if (survivalTimer % 60 === 0) score += 10;
+            ais.forEach(ai => aiLogic(ai));
 
-  handleInput();
+            moveCycle(player);
 
-  ais.forEach(ai => aiLogic(ai));
+            ais.forEach(ai => {
+                if (!ai.dead) moveCycle(ai);
+            });
 
-  if (!player.dead) moveCycle(player);
-  ais.forEach(ai => {
-    if (!ai.dead) moveCycle(ai);
-  });
+            loopID = requestAnimationFrame(loop);
+        }
 
-  loopID = requestAnimationFrame(loop);
-}
+        // ─── start ──────────────────────────────────────────────────────────
+        gameActive = false;
+        countdownActive = false;
+        
+        board = [];
+        for (let x = 0; x < W / CELL; x++) {
+            board[x] = [];
+            for (let y = 0; y < H / CELL; y++) {
+                board[x][y] = 0;
+            }
+        }
+        
+        ctx.drawImage(bgCanvas, 0, 0);
+        resetPlayer();
+        resetAIs();
+        updateHUD("");
 
-// init
-startNextRound();
-loopID = requestAnimationFrame(loop);
-</script>
+        loopID = requestAnimationFrame(loop);
+    </script>
 
 </body>
 </html>

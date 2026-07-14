@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>⚫ Go (1968)</title>
+    <title>⚫ Go (1968) – Ko + Enhanced UI</title>
     <style>
         * {
             margin: 0;
@@ -37,6 +37,7 @@
             width: 600px;
             height: 600px;
             image-rendering: pixelated;
+            cursor: pointer;
         }
         .info {
             display: flex;
@@ -51,6 +52,19 @@
         }
         .info span {
             color: #ffcc77;
+        }
+        .status-bar {
+            text-align: center;
+            color: #8899bb;
+            font-size: 14px;
+            margin-top: 4px;
+            min-height: 1.5rem;
+        }
+        .status-bar.detail {
+            color: #7799aa;
+            font-size: 13px;
+            min-height: 1.3rem;
+            margin-top: 0;
         }
         .controls {
             color: #6688aa;
@@ -67,13 +81,6 @@
             border: 1px solid #3a3a6a;
             color: #cce;
         }
-        .status-bar {
-            text-align: center;
-            color: #8899bb;
-            font-size: 14px;
-            margin-top: 6px;
-            min-height: 1.5rem;
-        }
         @media (max-width: 650px) {
             .game-wrapper {
                 padding: 12px;
@@ -86,6 +93,12 @@
                 font-size: 13px;
                 flex-wrap: wrap;
                 gap: 4px;
+            }
+            .status-bar {
+                font-size: 12px;
+            }
+            .status-bar.detail {
+                font-size: 11px;
             }
         }
     </style>
@@ -100,6 +113,7 @@
             <div>📜 <span id="moveCount">0</span></div>
         </div>
         <div class="status-bar" id="statusMessage">Black's turn – click a point to place stone</div>
+        <div class="status-bar detail" id="statusDetail">&nbsp;</div>
         <div class="controls">
             <kbd>R</kbd> restart &nbsp;|&nbsp; <kbd>U</kbd> undo &nbsp;|&nbsp; <kbd>P</kbd> pass
         </div>
@@ -107,10 +121,10 @@
 
     <script>
         // ============================================================
-        // GO (1968) – 13x13 – FIXED
+        // GO (1968) – with Ko rule & enhanced UI (two‑line status)
         // ============================================================
 
-        // ----- SETUP -----
+        // ----- DOM refs -----
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const turnDisplay = document.getElementById('turnDisplay');
@@ -118,6 +132,7 @@
         const whiteCount = document.getElementById('whiteCount');
         const moveCountDisplay = document.getElementById('moveCount');
         const statusDiv = document.getElementById('statusMessage');
+        const statusDetail = document.getElementById('statusDetail');
 
         const SIZE = 600;
         const BOARD_SIZE = 13;
@@ -128,17 +143,20 @@
         // ----- GAME STATE -----
         let board = [];
         let currentPlayer = 'black';
-        let moveHistory = [];
-        let boardHistory = [];
+        let moveHistory = []; // { row, col, color, captured }
+        let boardStateHistory = []; // array of board arrays (after each move, starting with initial)
         let gameOver = false;
         let moveCount = 0;
         let passes = 0;
         let aiThinking = false;
         let lastMove = null;
-
-        // ----- STONE COUNT -----
         let blackStones = 0;
         let whiteStones = 0;
+
+        // Hover state
+        let hoverRow = -1;
+        let hoverCol = -1;
+        let hoverValid = false;
 
         // ----- AUDIO -----
         let audioCtx = null;
@@ -208,40 +226,20 @@
             } catch (e) { /* ignore */ }
         }
 
-        // ----- INIT BOARD -----
-        function initBoard() {
-            board = [];
-            for (let r = 0; r < BOARD_SIZE; r++) {
-                board[r] = [];
-                for (let c = 0; c < BOARD_SIZE; c++) {
-                    board[r][c] = null;
-                }
-            }
-            currentPlayer = 'black';
-            moveHistory = [];
-            boardHistory = [];
-            gameOver = false;
-            moveCount = 0;
-            passes = 0;
-            aiThinking = false;
-            lastMove = null;
-            blackStones = 0;
-            whiteStones = 0;
-            updateUI();
-            statusDiv.textContent = "Black's turn – click a point to place stone";
-        }
-
-        // ----- CLONE BOARD (FIXED) -----
+        // ----- BOARD HELPERS -----
         function cloneBoard(b) {
             return b.map(row => row.map(cell => cell === 'black' ? 'black' : cell === 'white' ? 'white' : null));
         }
 
-        // ----- SAVE BOARD STATE -----
-        function saveBoardState() {
-            boardHistory.push(cloneBoard(board));
+        function boardsEqual(b1, b2) {
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (b1[r][c] !== b2[r][c]) return false;
+                }
+            }
+            return true;
         }
 
-        // ----- GET NEIGHBORS -----
         function getNeighbors(row, col) {
             const neighbors = [];
             const dirs = [
@@ -260,7 +258,6 @@
             return neighbors;
         }
 
-        // ----- GET GROUP -----
         function getGroup(row, col, boardState) {
             const color = boardState[row][col];
             if (!color) return [];
@@ -284,7 +281,6 @@
             return group;
         }
 
-        // ----- GET LIBERTIES -----
         function getLiberties(group, boardState) {
             const liberties = new Set();
             for (const pos of group) {
@@ -298,7 +294,6 @@
             return liberties;
         }
 
-        // ----- REMOVE CAPTURED STONES -----
         function removeCaptured(boardState, color) {
             const captured = [];
             const opponent = color === 'black' ? 'white' : 'black';
@@ -324,7 +319,7 @@
             return captured;
         }
 
-        // ----- PLACE STONE -----
+        // ----- PLACE STONE (with Ko check) -----
         function placeStone(row, col, boardState, color) {
             if (boardState[row][col] !== null) return null;
 
@@ -333,9 +328,9 @@
 
             const captured = removeCaptured(testBoard, color);
 
+            // Check suicide: if the group has no liberties and captured nothing, it's illegal
             const group = getGroup(row, col, testBoard);
             const liberties = getLiberties(group, testBoard);
-
             if (liberties.size === 0 && captured.length === 0) {
                 return null;
             }
@@ -343,125 +338,96 @@
             return { board: testBoard, captured };
         }
 
-        // ----- GET AI MOVE -----
-        function getAIMove() {
-            const color = currentPlayer;
-            const opponent = color === 'black' ? 'white' : 'black';
+        // ----- KO DETECTION -----
+        function isKoMove(row, col, boardState, color) {
+            // Simulate the move and check if it repeats a board state from two moves ago
+            if (boardStateHistory.length < 2) return false; // no previous state to compare
 
-            // 1. Capture opponent with 1 liberty
-            for (let r = 0; r < BOARD_SIZE; r++) {
-                for (let c = 0; c < BOARD_SIZE; c++) {
-                    if (board[r][c] === opponent) {
-                        const group = getGroup(r, c, board);
-                        const liberties = getLiberties(group, board);
-                        if (liberties.size === 1) {
-                            const [liberty] = liberties;
-                            const [lr, lc] = liberty.split(',').map(Number);
-                            const result = placeStone(lr, lc, board, color);
-                            if (result) return { row: lr, col: lc };
-                        }
-                    }
-                }
-            }
+            const result = placeStone(row, col, boardState, color);
+            if (!result) return false; // invalid move anyway
 
-            // 2. Save own stones with 1 liberty
-            for (let r = 0; r < BOARD_SIZE; r++) {
-                for (let c = 0; c < BOARD_SIZE; c++) {
-                    if (board[r][c] === color) {
-                        const group = getGroup(r, c, board);
-                        const liberties = getLiberties(group, board);
-                        if (liberties.size === 1) {
-                            const [liberty] = liberties;
-                            const [lr, lc] = liberty.split(',').map(Number);
-                            if (board[lr][lc] === null) {
-                                const result = placeStone(lr, lc, board, color);
-                                if (result) return { row: lr, col: lc };
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 3. Try to capture groups with 2 liberties
-            for (let r = 0; r < BOARD_SIZE; r++) {
-                for (let c = 0; c < BOARD_SIZE; c++) {
-                    if (board[r][c] === opponent) {
-                        const group = getGroup(r, c, board);
-                        const liberties = getLiberties(group, board);
-                        if (liberties.size === 2) {
-                            const [liberty1, liberty2] = [...liberties];
-                            const [lr1, lc1] = liberty1.split(',').map(Number);
-                            const [lr2, lc2] = liberty2.split(',').map(Number);
-                            const result1 = placeStone(lr1, lc1, board, color);
-                            if (result1) return { row: lr1, col: lc1 };
-                            const result2 = placeStone(lr2, lc2, board, color);
-                            if (result2) return { row: lr2, col: lc2 };
-                        }
-                    }
-                }
-            }
-
-            // 4. Play near center
-            const center = Math.floor(BOARD_SIZE / 2);
-            for (let r = center - 3; r <= center + 3; r++) {
-                for (let c = center - 3; c <= center + 3; c++) {
-                    if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
-                        if (board[r][c] === null) {
-                            const result = placeStone(r, c, board, color);
-                            if (result) return { row: r, col: c };
-                        }
-                    }
-                }
-            }
-
-            // 5. Random valid move
-            const validMoves = [];
-            for (let r = 0; r < BOARD_SIZE; r++) {
-                for (let c = 0; c < BOARD_SIZE; c++) {
-                    if (board[r][c] === null) {
-                        const result = placeStone(r, c, board, color);
-                        if (result) validMoves.push({ row: r, col: c });
-                    }
-                }
-            }
-            if (validMoves.length > 0) {
-                return validMoves[Math.floor(Math.random() * validMoves.length)];
-            }
-
-            return null;
+            const newBoard = result.board;
+            // Compare with the board state from two moves ago (before the opponent's last move)
+            const previousBoard = boardStateHistory[boardStateHistory.length - 2];
+            return boardsEqual(newBoard, previousBoard);
         }
 
-        // ----- DO AI MOVE -----
-        function doAIMove() {
-            if (aiThinking || gameOver || currentPlayer !== 'white') return;
-
-            aiThinking = true;
-            statusDiv.textContent = 'AI thinking...';
-
-            setTimeout(() => {
-                const move = getAIMove();
-                if (!move) {
-                    passMove();
-                    aiThinking = false;
-                    return;
+        // ----- INIT -----
+        function initBoard() {
+            board = [];
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                board[r] = [];
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    board[r][c] = null;
                 }
-                makeMove(move.row, move.col);
-                aiThinking = false;
-            }, 300);
+            }
+            currentPlayer = 'black';
+            moveHistory = [];
+            boardStateHistory = [cloneBoard(board)]; // initial state
+            gameOver = false;
+            moveCount = 0;
+            passes = 0;
+            aiThinking = false;
+            lastMove = null;
+            blackStones = 0;
+            whiteStones = 0;
+            hoverRow = -1;
+            hoverCol = -1;
+            hoverValid = false;
+            updateUI();
+            setStatus("Black's turn – click a point to place stone", "");
         }
 
-        // ----- MAKE MOVE -----
+        // ----- STATUS UPDATE (two lines) -----
+        function setStatus(main, detail = "") {
+            statusDiv.textContent = main;
+            statusDetail.textContent = detail || "\u00A0"; // non-breaking space to keep height
+        }
+
+        // ----- UPDATE UI -----
+        function updateUI() {
+            turnDisplay.textContent = currentPlayer === 'black' ? 'Black' : 'White';
+            turnDisplay.style.color = currentPlayer === 'black' ? '#cccccc' : '#ffffff';
+            blackCount.textContent = blackStones;
+            whiteCount.textContent = whiteStones;
+            moveCountDisplay.textContent = moveCount;
+        }
+
+        // ----- MAKE MOVE (with Ko) -----
         function makeMove(row, col) {
-            const color = currentPlayer;
-            const result = placeStone(row, col, board, color);
+            if (gameOver || aiThinking) return false;
 
-            if (!result) {
-                statusDiv.textContent = "Invalid move! Try again.";
+            // Check if it's human's turn (Black)
+            if (currentPlayer !== 'black') {
+                setStatus("Wait for AI to finish", "");
                 return false;
             }
 
-            saveBoardState();
-            board = result.board;
+            // Check Ko
+            if (isKoMove(row, col, board, currentPlayer)) {
+                setStatus("Invalid move – Ko violation", "You cannot repeat the previous board position");
+                return false;
+            }
+
+            const color = currentPlayer;
+            const result = placeStone(row, col, board, color);
+            if (!result) {
+                setStatus("Invalid move – try again", "That point is occupied or would be suicide");
+                return false;
+            }
+
+            // Save board state history (before move) for undo
+            // We already have boardStateHistory with previous states; we'll push new board after move
+            const newBoard = result.board;
+            const captured = result.captured;
+
+            // Check if this move would cause a Ko violation (we already checked, but we check again after capture)
+            // Actually we already checked, but we might have missed because we compared with two moves ago.
+            // The check above is sufficient.
+
+            // Apply move
+            const oldBoard = cloneBoard(board);
+            board = newBoard;
             moveCount++;
             passes = 0;
             lastMove = { row, col, color };
@@ -478,31 +444,40 @@
             blackStones = b;
             whiteStones = w;
 
-            if (result.captured.length > 0) {
-                playSound('capture');
-                statusDiv.textContent = `${color} captured ${result.captured.length} stone(s)!`;
-            } else {
-                playSound('place');
-                const colLabel = String.fromCharCode(65 + col);
-                const rowLabel = BOARD_SIZE - row;
-                statusDiv.textContent = `${color} placed at ${colLabel}${rowLabel}`;
-            }
-
+            // Store move history
             moveHistory.push({
                 row: row,
                 col: col,
                 color: color,
-                captured: result.captured.length,
+                captured: captured.length,
             });
 
+            // Push new board state into history
+            boardStateHistory.push(cloneBoard(board));
+
+            // Sound & status
+            if (captured.length > 0) {
+                playSound('capture');
+                const detail = `Captured ${captured.length} stone${captured.length>1?'s':''}`;
+                setStatus(`${color} captured ${captured.length} stone(s)!`, detail);
+            } else {
+                playSound('place');
+                const colLabel = String.fromCharCode(65 + col);
+                const rowLabel = BOARD_SIZE - row;
+                setStatus(`${color} placed at ${colLabel}${rowLabel}`, `Move #${moveCount}`);
+            }
+
+            // Switch player
             currentPlayer = (color === 'black') ? 'white' : 'black';
             updateUI();
 
+            // Check for game end (two passes) – but only if both passed, we handle later
             if (passes >= 2) {
                 endGame();
                 return true;
             }
 
+            // AI turn if white
             if (!gameOver && currentPlayer === 'white') {
                 setTimeout(() => {
                     if (!gameOver) doAIMove();
@@ -516,20 +491,21 @@
         function passMove() {
             if (gameOver) return;
             if (aiThinking) return;
-
-            if (currentPlayer === 'white' && !gameOver) {
+            if (currentPlayer === 'white') {
+                // AI pass
                 passes++;
                 playSound('pass');
-                statusDiv.textContent = "White passes";
+                setStatus("White passes", `Pass ${passes}`);
                 currentPlayer = 'black';
                 updateUI();
                 if (passes >= 2) endGame();
                 return;
             }
 
+            // Human pass (black)
             passes++;
             playSound('pass');
-            statusDiv.textContent = "You pass";
+            setStatus("You pass", `Pass ${passes}`);
             currentPlayer = 'white';
             updateUI();
             if (passes >= 2) {
@@ -544,7 +520,168 @@
             }, 200);
         }
 
-        // ----- END GAME -----
+        // ----- AI MOVE (with Ko awareness) -----
+        function getAIMove() {
+            const color = currentPlayer;
+            const opponent = color === 'black' ? 'white' : 'black';
+
+            // Helper to test if a move is legal and not Ko
+            function isValidAndNotKo(row, col) {
+                if (board[row][col] !== null) return false;
+                if (isKoMove(row, col, board, color)) return false;
+                const result = placeStone(row, col, board, color);
+                return result !== null;
+            }
+
+            // 1. Capture opponent with 1 liberty
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c] === opponent) {
+                        const group = getGroup(r, c, board);
+                        const liberties = getLiberties(group, board);
+                        if (liberties.size === 1) {
+                            const [liberty] = liberties;
+                            const [lr, lc] = liberty.split(',').map(Number);
+                            if (isValidAndNotKo(lr, lc)) return { row: lr, col: lc };
+                        }
+                    }
+                }
+            }
+
+            // 2. Save own stones with 1 liberty
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c] === color) {
+                        const group = getGroup(r, c, board);
+                        const liberties = getLiberties(group, board);
+                        if (liberties.size === 1) {
+                            const [liberty] = liberties;
+                            const [lr, lc] = liberty.split(',').map(Number);
+                            if (isValidAndNotKo(lr, lc)) return { row: lr, col: lc };
+                        }
+                    }
+                }
+            }
+
+            // 3. Try to capture groups with 2 liberties
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c] === opponent) {
+                        const group = getGroup(r, c, board);
+                        const liberties = getLiberties(group, board);
+                        if (liberties.size === 2) {
+                            const [liberty1, liberty2] = [...liberties];
+                            const [lr1, lc1] = liberty1.split(',').map(Number);
+                            const [lr2, lc2] = liberty2.split(',').map(Number);
+                            if (isValidAndNotKo(lr1, lc1)) return { row: lr1, col: lc1 };
+                            if (isValidAndNotKo(lr2, lc2)) return { row: lr2, col: lc2 };
+                        }
+                    }
+                }
+            }
+
+            // 4. Play near center
+            const center = Math.floor(BOARD_SIZE / 2);
+            for (let r = center - 3; r <= center + 3; r++) {
+                for (let c = center - 3; c <= center + 3; c++) {
+                    if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
+                        if (isValidAndNotKo(r, c)) return { row: r, col: c };
+                    }
+                }
+            }
+
+            // 5. Random valid move (excluding Ko)
+            const validMoves = [];
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (isValidAndNotKo(r, c)) validMoves.push({ row: r, col: c });
+                }
+            }
+            if (validMoves.length > 0) {
+                return validMoves[Math.floor(Math.random() * validMoves.length)];
+            }
+
+            return null; // no legal moves
+        }
+
+        function doAIMove() {
+            if (aiThinking || gameOver || currentPlayer !== 'white') return;
+
+            aiThinking = true;
+            setStatus("AI thinking...", "");
+
+            setTimeout(() => {
+                const move = getAIMove();
+                if (!move) {
+                    passMove();
+                    aiThinking = false;
+                    return;
+                }
+
+                // AI makes move (bypass Ko check because we already filtered)
+                const color = currentPlayer;
+                const result = placeStone(move.row, move.col, board, color);
+                if (!result) {
+                    // Should not happen, but fallback
+                    passMove();
+                    aiThinking = false;
+                    return;
+                }
+
+                // Apply move (similar to makeMove but without the human restrictions)
+                const newBoard = result.board;
+                const captured = result.captured;
+                board = newBoard;
+                moveCount++;
+                passes = 0;
+                lastMove = { row: move.row, col: move.col, color };
+
+                let b = 0,
+                    w = 0;
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        if (board[r][c] === 'black') b++;
+                        if (board[r][c] === 'white') w++;
+                    }
+                }
+                blackStones = b;
+                whiteStones = w;
+
+                moveHistory.push({
+                    row: move.row,
+                    col: move.col,
+                    color: color,
+                    captured: captured.length,
+                });
+                boardStateHistory.push(cloneBoard(board));
+
+                if (captured.length > 0) {
+                    playSound('capture');
+                    setStatus(`AI (White) captured ${captured.length} stone(s)!`, `Captured ${captured.length}`);
+                } else {
+                    playSound('place');
+                    const colLabel = String.fromCharCode(65 + move.col);
+                    const rowLabel = BOARD_SIZE - move.row;
+                    setStatus(`AI (White) placed at ${colLabel}${rowLabel}`, `Move #${moveCount}`);
+                }
+
+                currentPlayer = 'black';
+                updateUI();
+
+                if (passes >= 2) {
+                    endGame();
+                    aiThinking = false;
+                    return;
+                }
+
+                aiThinking = false;
+                if (!gameOver && currentPlayer === 'black') {
+                    setStatus("Black's turn – click a point to place stone", "");
+                }
+            }, 300);
+        }
+
+        // ----- END GAME (scoring) -----
         function endGame() {
             gameOver = true;
             let b = 0,
@@ -572,56 +709,78 @@
             else if (blackScore === whiteScore) winner = 'Draw';
 
             playSound('win');
-            statusDiv.textContent = `🏆 ${winner} wins! Black: ${blackScore} · White: ${whiteScore}`;
+            setStatus(`🏆 ${winner} wins! Black: ${blackScore} · White: ${whiteScore}`, "Game over – press R to restart");
             updateUI();
         }
 
-        // ----- UNDO -----
+        // ----- UNDO (with history) -----
         function undoMove() {
             if (gameOver) return;
             if (moveHistory.length === 0) {
-                statusDiv.textContent = "No moves to undo";
+                setStatus("No moves to undo", "");
                 return;
             }
             if (aiThinking) return;
             if (currentPlayer !== 'black') {
-                statusDiv.textContent = "Wait for AI to finish";
+                setStatus("Wait for AI to finish", "");
                 return;
             }
 
-            if (boardHistory.length > 0) {
-                board = cloneBoard(boardHistory.pop());
-                const lastMove2 = moveHistory.pop();
-                if (lastMove2) {
-                    currentPlayer = lastMove2.color;
-                    passes = 0;
-                    moveCount = moveHistory.length;
-                    let b = 0,
-                        w = 0;
-                    for (let r = 0; r < BOARD_SIZE; r++) {
-                        for (let c = 0; c < BOARD_SIZE; c++) {
-                            if (board[r][c] === 'black') b++;
-                            if (board[r][c] === 'white') w++;
-                        }
+            // Undo last move (AI's move) and then human's move if present
+            let undone = 0;
+            // We need to pop from boardStateHistory and moveHistory
+            if (moveHistory.length > 0) {
+                const last = moveHistory.pop();
+                boardStateHistory.pop(); // remove the state after that move
+                if (boardStateHistory.length > 0) {
+                    board = cloneBoard(boardStateHistory[boardStateHistory.length - 1]);
+                } else {
+                    // Should not happen
+                    initBoard();
+                    return;
+                }
+                undone++;
+                // If there was a previous human move, we want to undo that too
+                if (moveHistory.length > 0 && moveHistory[moveHistory.length - 1].color === 'black') {
+                    // Undo human move as well (since we want to go back to before human's move)
+                    const humanMove = moveHistory.pop();
+                    boardStateHistory.pop();
+                    if (boardStateHistory.length > 0) {
+                        board = cloneBoard(boardStateHistory[boardStateHistory.length - 1]);
+                    } else {
+                        initBoard();
+                        return;
                     }
-                    blackStones = b;
-                    whiteStones = w;
-                    updateUI();
-                    statusDiv.textContent = `Undo successful`;
+                    undone++;
                 }
             }
+
+            // Recalculate counts
+            let b = 0,
+                w = 0;
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c] === 'black') b++;
+                    if (board[r][c] === 'white') w++;
+                }
+            }
+            blackStones = b;
+            whiteStones = w;
+            moveCount = moveHistory.length;
+            currentPlayer = 'black';
+            passes = 0;
+            gameOver = false;
+            if (moveHistory.length > 0) {
+                const last = moveHistory[moveHistory.length - 1];
+                lastMove = { row: last.row, col: last.col, color: last.color };
+            } else {
+                lastMove = null;
+            }
+            updateUI();
+            setStatus(`Undo successful (${undone} move${undone>1?'s':''} undone)`, "");
         }
 
-        // ----- UPDATE UI -----
-        function updateUI() {
-            turnDisplay.textContent = currentPlayer === 'black' ? 'Black' : 'White';
-            turnDisplay.style.color = currentPlayer === 'black' ? '#cccccc' : '#ffffff';
-            blackCount.textContent = blackStones;
-            whiteCount.textContent = whiteStones;
-            moveCountDisplay.textContent = moveCount;
-        }
-
-        // ----- DRAW -----
+        // ----- DRAW (with hover preview) -----
         function draw() {
             ctx.clearRect(0, 0, SIZE, SIZE);
 
@@ -674,7 +833,7 @@
                 ctx.fill();
             }
 
-            // ---- DRAW STONES (FIXED: colors are strings) ----
+            // ---- STONES ----
             for (let r = 0; r < BOARD_SIZE; r++) {
                 for (let c = 0; c < BOARD_SIZE; c++) {
                     const stone = board[r][c];
@@ -692,7 +851,7 @@
                         grad2.addColorStop(0.6, '#222222');
                         grad2.addColorStop(1, '#000000');
                         ctx.fillStyle = grad2;
-                    } else { // stone === 'white'
+                    } else {
                         const grad2 = ctx.createRadialGradient(x - 2, y - 2, 2, x, y, RADIUS);
                         grad2.addColorStop(0, '#ffffff');
                         grad2.addColorStop(0.6, '#eeeeee');
@@ -717,6 +876,36 @@
                         ctx.fill();
                     }
                 }
+            }
+
+            // ---- HOVER PREVIEW (semi-transparent) ----
+            if (hoverValid && !gameOver && currentPlayer === 'black' && !aiThinking) {
+                const x = MARGIN + hoverCol * CELL;
+                const y = MARGIN + hoverRow * CELL;
+                ctx.save();
+                ctx.globalAlpha = 0.5;
+                ctx.shadowColor = 'rgba(0,0,0,0.2)';
+                ctx.shadowBlur = 6;
+                const grad2 = ctx.createRadialGradient(x - 2, y - 2, 2, x, y, RADIUS);
+                grad2.addColorStop(0, '#555555');
+                grad2.addColorStop(0.6, '#222222');
+                grad2.addColorStop(1, '#000000');
+                ctx.fillStyle = grad2;
+                ctx.beginPath();
+                ctx.arc(x, y, RADIUS, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                // Show coordinate label
+                const colLabel = String.fromCharCode(65 + hoverCol);
+                const rowLabel = BOARD_SIZE - hoverRow;
+                ctx.save();
+                ctx.fillStyle = '#4a3a2a';
+                ctx.font = 'bold 14px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                ctx.fillText(`${colLabel}${rowLabel}`, x, y - RADIUS - 6);
+                ctx.restore();
             }
 
             // Last move indicator
@@ -746,7 +935,7 @@
                 ctx.fillText(BOARD_SIZE - i, MARGIN - 8, y);
             }
 
-            // Game Over
+            // Game Over overlay
             if (gameOver) {
                 ctx.fillStyle = 'rgba(0,0,0,0.6)';
                 ctx.fillRect(0, 0, SIZE, SIZE);
@@ -767,12 +956,34 @@
             }
         }
 
-        // ----- MOUSE -----
-        function handleClick(e) {
+        // ----- MOUSE EVENTS (click + hover) -----
+        function getIntersection(mouseX, mouseY) {
+            let minDist = Infinity;
+            let bestRow = -1,
+                bestCol = -1;
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    const px = MARGIN + c * CELL;
+                    const py = MARGIN + r * CELL;
+                    const d = Math.hypot(mouseX - px, mouseY - py);
+                    if (d < minDist) {
+                        minDist = d;
+                        bestRow = r;
+                        bestCol = c;
+                    }
+                }
+            }
+            if (minDist > CELL * 0.6) {
+                return null;
+            }
+            return { row: bestRow, col: bestCol };
+        }
+
+        canvas.addEventListener('click', (e) => {
             if (gameOver) return;
             if (aiThinking) return;
             if (currentPlayer === 'white') {
-                statusDiv.textContent = "AI is thinking...";
+                setStatus("AI is thinking...", "");
                 return;
             }
 
@@ -782,37 +993,66 @@
             const x = (e.clientX - rect.left) * scaleX;
             const y = (e.clientY - rect.top) * scaleY;
 
-            let minDist = Infinity;
-            let bestRow = -1,
-                bestCol = -1;
-            for (let r = 0; r < BOARD_SIZE; r++) {
-                for (let c = 0; c < BOARD_SIZE; c++) {
-                    const px = MARGIN + c * CELL;
-                    const py = MARGIN + r * CELL;
-                    const d = Math.hypot(x - px, y - py);
-                    if (d < minDist) {
-                        minDist = d;
-                        bestRow = r;
-                        bestCol = c;
-                    }
-                }
-            }
-
-            if (minDist > CELL * 0.6) {
-                statusDiv.textContent = "Click on an intersection";
+            const pos = getIntersection(x, y);
+            if (!pos) {
+                setStatus("Click on an intersection", "");
                 return;
             }
 
-            makeMove(bestRow, bestCol);
-        }
+            makeMove(pos.row, pos.col);
+        });
 
-        canvas.addEventListener('click', handleClick);
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            const pos = getIntersection(x, y);
+            if (!pos) {
+                hoverRow = -1;
+                hoverCol = -1;
+                hoverValid = false;
+                // Clear detail if not showing other info
+                if (!gameOver && !aiThinking && currentPlayer === 'black') {
+                    setStatus(statusDiv.textContent, ""); // keep main, clear detail
+                }
+                return;
+            }
+
+            hoverRow = pos.row;
+            hoverCol = pos.col;
+
+            // Check if it's a valid placement (empty, not Ko)
+            const valid = !gameOver && currentPlayer === 'black' && board[pos.row][pos.col] === null &&
+                !isKoMove(pos.row, pos.col, board, currentPlayer);
+            hoverValid = valid;
+
+            // Update detail line with coordinate
+            const colLabel = String.fromCharCode(65 + pos.col);
+            const rowLabel = BOARD_SIZE - pos.row;
+            let detail = `Hover: ${colLabel}${rowLabel}`;
+            if (!valid && board[pos.row][pos.col] !== null) detail += " (occupied)";
+            else if (!valid && !gameOver && currentPlayer === 'black') detail += " (illegal move)";
+            // If game over or not black, we still show coordinate
+            setStatus(statusDiv.textContent, detail);
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            hoverRow = -1;
+            hoverCol = -1;
+            hoverValid = false;
+            if (!gameOver && !aiThinking && currentPlayer === 'black') {
+                setStatus(statusDiv.textContent, "");
+            }
+        });
 
         // ----- KEYBOARD -----
         document.addEventListener('keydown', (e) => {
             if (e.key === 'r' || e.key === 'R') {
                 initBoard();
-                statusDiv.textContent = "Game restarted – Black's turn";
+                setStatus("Game restarted – Black's turn", "");
                 return;
             }
             if (e.key === 'u' || e.key === 'U') {
@@ -835,8 +1075,8 @@
         }
         gameLoop();
 
-        console.log('⚫ Go (1968) – 13x13 loaded!');
-        console.log('Click to place stones. R = restart, U = undo, P = pass');
+        console.log('⚫ Go (1968) – with Ko rule & enhanced UI loaded!');
+        console.log('Click to place stones. R=restart, U=undo, P=pass');
     </script>
 </body>
 </html>
