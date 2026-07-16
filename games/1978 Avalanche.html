@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Avalanche (1978) – Enhanced</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0b0b1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+            user-select: none;
+        }
+        .game-wrapper {
+            background: #12122a;
+            padding: 20px 20px 16px;
+            border-radius: 16px;
+            box-shadow: 0 0 50px rgba(0, 120, 255, 0.15);
+            border: 1px solid #2a3a6e;
+            width: 660px;
+            max-width: 100%;
+        }
+        canvas {
+            display: block;
+            background: #0a0a1a;
+            border: 2px solid #2a4a7a;
+            border-radius: 8px;
+            cursor: none;
+            width: 100%;
+            aspect-ratio: 1/1;
+            touch-action: none;
+        }
+        .info-panel {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 14px;
+            color: #8ab0e0;
+            font-size: 17px;
+            padding: 0 6px;
+            gap: 6px 12px;
+            min-height: 36px;
+        }
+        .info-panel .stat {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+        .info-panel .stat span {
+            color: #ffd866;
+            font-weight: bold;
+            font-size: 20px;
+            min-width: 32px;
+            display: inline-block;
+            text-align: right;
+        }
+        .info-panel .stat .lives-icon {
+            color: #ff6b7a;
+            font-size: 20px;
+        }
+        .info-panel .stat .high-score {
+            color: #ff9f7a;
+        }
+        .controls-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+        }
+        .mode-selector {
+            display: flex;
+            gap: 6px;
+            background: #1a1a3a;
+            padding: 4px 10px 4px 14px;
+            border-radius: 30px;
+            border: 1px solid #2a4a7a;
+        }
+        .mode-btn {
+            background: transparent;
+            border: none;
+            color: #6a8aaa;
+            font-family: 'Courier New', monospace;
+            font-size: 15px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-weight: bold;
+        }
+        .mode-btn.active {
+            background: #2a5a9a;
+            color: #fff;
+            box-shadow: 0 0 12px rgba(50, 150, 255, 0.3);
+        }
+        .mode-btn:hover {
+            background: #2a4a7a;
+            color: #cce;
+        }
+        .mode-btn.active:hover {
+            background: #3a6aaa;
+        }
+        button {
+            background: #2a3a6e;
+            border: none;
+            color: #fff;
+            padding: 6px 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            letter-spacing: 0.5px;
+        }
+        button:hover {
+            background: #3a5a9e;
+        }
+        button:active {
+            transform: scale(0.96);
+        }
+        .footer-hint {
+            color: #4a6a8a;
+            font-size: 13px;
+            text-align: center;
+            margin-top: 10px;
+            letter-spacing: 0.3px;
+            border-top: 1px solid #1a2a4a;
+            padding-top: 10px;
+        }
+        .pause-indicator {
+            color: #ffd866;
+            font-weight: bold;
+            font-size: 16px;
+            animation: pulse 1s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        @media (max-width: 700px) {
+            .game-wrapper { width: 100%; padding: 12px; }
+            .info-panel { font-size: 14px; gap: 4px 8px; }
+            .info-panel .stat span { font-size: 17px; min-width: 26px; }
+            .controls-row { gap: 8px; }
+            .mode-btn { font-size: 13px; padding: 3px 8px; }
+            button { font-size: 14px; padding: 5px 14px; }
+        }
+    </style>
+</head>
+<body>
+<div class="game-wrapper">
+    <canvas id="gameCanvas" width="600" height="600"></canvas>
+
+    <div class="info-panel">
+        <div class="stat">💎 <span id="scoreDisplay">0</span></div>
+        <div class="stat">🏆 <span class="high-score" id="highScoreDisplay">0</span></div>
+        <div class="stat">Level <span id="levelDisplay">1</span></div>
+        <div class="stat"><span class="lives-icon">❤️</span> <span id="livesDisplay">3</span></div>
+        <div class="controls-row">
+            <div class="mode-selector">
+                <button class="mode-btn" data-mode="3">3</button>
+                <button class="mode-btn active" data-mode="2">2</button>
+                <button class="mode-btn" data-mode="1">1</button>
+            </div>
+            <button id="restartBtn">↻ Restart</button>
+        </div>
+        <div class="stat pause-indicator" id="pauseIndicator" style="display:none;">⏸ PAUSED</div>
+    </div>
+    <div class="footer-hint">🖱️ Mouse / touch • ← → Arrow keys • Space to pause</div>
+</div>
+
+<script>
+    // ============================================================
+    //  AVALANCHE (1978) – Keyboard + Pause
+    // ============================================================
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreSpan = document.getElementById('scoreDisplay');
+    const highScoreSpan = document.getElementById('highScoreDisplay');
+    const livesSpan = document.getElementById('livesDisplay');
+    const levelSpan = document.getElementById('levelDisplay');
+    const pauseIndicator = document.getElementById('pauseIndicator');
+
+    // ---------- HIGH SCORE ----------
+    let highScore = parseInt(localStorage.getItem('avalancheHighScore')) || 0;
+    highScoreSpan.textContent = highScore;
+
+    function updateHighScore() {
+        if (GAME.score > highScore) {
+            highScore = GAME.score;
+            localStorage.setItem('avalancheHighScore', highScore);
+            highScoreSpan.textContent = highScore;
+        }
+    }
+
+    // ---------- AUDIO ----------
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function resumeAudio() {
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+        }
+    }
+    document.addEventListener('click', resumeAudio, { once: false });
+    document.addEventListener('touchstart', resumeAudio, { once: false });
+    document.addEventListener('mousemove', resumeAudio, { once: false });
+
+    function playCatchSound() {
+        try {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.05);
+            gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.08);
+        } catch(e) { /* ignore */ }
+    }
+
+    function playBoomSound() {
+        try {
+            const now = audioCtx.currentTime;
+            const osc1 = audioCtx.createOscillator();
+            const gain1 = audioCtx.createGain();
+            osc1.type = 'sawtooth';
+            osc1.frequency.setValueAtTime(80, now);
+            osc1.frequency.exponentialRampToValueAtTime(40, now + 0.3);
+            gain1.gain.setValueAtTime(0.3, now);
+            gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+            osc1.connect(gain1);
+            gain1.connect(audioCtx.destination);
+            osc1.start(now);
+            osc1.stop(now + 0.3);
+
+            const osc2 = audioCtx.createOscillator();
+            const gain2 = audioCtx.createGain();
+            osc2.type = 'square';
+            osc2.frequency.setValueAtTime(150, now);
+            osc2.frequency.exponentialRampToValueAtTime(60, now + 0.2);
+            gain2.gain.setValueAtTime(0.15, now);
+            gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+            osc2.connect(gain2);
+            gain2.connect(audioCtx.destination);
+            osc2.start(now);
+            osc2.stop(now + 0.2);
+
+            const osc3 = audioCtx.createOscillator();
+            const gain3 = audioCtx.createGain();
+            osc3.type = 'sawtooth';
+            osc3.frequency.setValueAtTime(200, now);
+            osc3.frequency.exponentialRampToValueAtTime(30, now + 0.25);
+            gain3.gain.setValueAtTime(0.1, now);
+            gain3.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+            osc3.connect(gain3);
+            gain3.connect(audioCtx.destination);
+            osc3.start(now);
+            osc3.stop(now + 0.25);
+        } catch(e) { /* ignore */ }
+    }
+
+    // ---------- GAME STATE ----------
+    const GAME = {
+        running: false,
+        over: false,
+        paused: false,
+        score: 0,
+        lives: 3,
+        level: 1,
+        maxLives: 5,
+        paddleMode: 2,
+        wave: 1,
+        rocksPerRow: 8,
+        rowCount: 6,
+        baseSpeed: 0.50,
+        speedMultiplier: 1.0,
+        frameCounter: 0,
+        spawnTimer: 0,
+        rocks: [],
+        fallingRocks: [],
+        particles: [],
+        rowValues: [],
+    };
+
+    // ---------- PADDLES ----------
+    const PADDLE = {
+        width: 80,
+        height: 12,
+        gap: 34,
+        yBase: 530,
+        x: 0,
+    };
+
+    let paddlePositions = [];
+    let paddleX = 300 - PADDLE.width/2;
+
+    // ---------- KEYBOARD STATE ----------
+    const keys = {
+        left: false,
+        right: false,
+    };
+
+    // ============================================================
+    //  ROCK SHAPE
+    // ============================================================
+    function generateRockShape(radius, vertexCount = 8) {
+        const points = [];
+        for (let i = 0; i < vertexCount; i++) {
+            const angle = (i / vertexCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+            const r = radius * (0.75 + Math.random() * 0.45);
+            points.push({
+                x: Math.cos(angle) * r,
+                y: Math.sin(angle) * r,
+            });
+        }
+        return points;
+    }
+
+    // ============================================================
+    //  INIT / RESET
+    // ============================================================
+    function resetGame() {
+        GAME.running = true;
+        GAME.over = false;
+        GAME.paused = false;
+        GAME.score = 0;
+        GAME.lives = 3;
+        GAME.level = 1;
+        GAME.wave = 1;
+        GAME.frameCounter = 0;
+        GAME.spawnTimer = 0;
+        GAME.rocks = [];
+        GAME.fallingRocks = [];
+        GAME.particles = [];
+        GAME.speedMultiplier = 1.0;
+        GAME.baseSpeed = 0.50;
+        GAME.rocksPerRow = 8;
+        GAME.rowCount = 6;
+        buildRockGrid();
+        computeRowValues();
+        updatePaddlePositions();
+        updateDisplay();
+        PADDLE.x = 300 - PADDLE.width/2;
+        paddleX = PADDLE.x;
+        pauseIndicator.style.display = 'none';
+    }
+
+    function buildRockGrid() {
+        GAME.rocks = [];
+        const cols = GAME.rocksPerRow;
+        const rows = GAME.rowCount;
+        const spacingX = 600 / (cols + 1);
+        const startY = 18;
+        const spacingY = 26;
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const x = spacingX * (c + 1);
+                const y = startY + r * spacingY;
+                const radius = 11 + Math.random() * 3;
+                const shape = generateRockShape(radius, 7 + Math.floor(Math.random() * 3));
+                GAME.rocks.push({
+                    row: r,
+                    col: c,
+                    active: true,
+                    x: x,
+                    y: y,
+                    radius: radius,
+                    shape: shape,
+                    baseSpeed: GAME.baseSpeed + r * 0.04,
+                });
+            }
+        }
+    }
+
+    function computeRowValues() {
+        GAME.rowValues = [];
+        for (let r = 0; r < GAME.rowCount; r++) {
+            GAME.rowValues.push(10 + (GAME.rowCount - r) * 4);
+        }
+    }
+
+    function updatePaddlePositions() {
+        const mode = GAME.paddleMode;
+        paddlePositions = [];
+        const bottomY = PADDLE.yBase;
+        if (mode === 1) {
+            paddlePositions.push(bottomY);
+        } else if (mode === 2) {
+            paddlePositions.push(bottomY - PADDLE.gap - PADDLE.height);
+            paddlePositions.push(bottomY);
+        } else {
+            paddlePositions.push(bottomY - PADDLE.gap*2 - PADDLE.height*2);
+            paddlePositions.push(bottomY - PADDLE.gap - PADDLE.height);
+            paddlePositions.push(bottomY);
+        }
+    }
+
+    function resetLevel() {
+        GAME.rocks = [];
+        GAME.fallingRocks = [];
+        GAME.particles = [];
+        GAME.rocksPerRow = Math.min(12, 6 + GAME.wave);
+        GAME.rowCount = Math.min(8, 4 + Math.floor(GAME.wave / 2));
+        GAME.baseSpeed = 0.50 + (GAME.wave - 1) * 0.16;
+        GAME.speedMultiplier = 1.0 + (GAME.wave - 1) * 0.06;
+        buildRockGrid();
+        computeRowValues();
+        updateDisplay();
+    }
+
+    // ============================================================
+    //  ROCK FALLING
+    // ============================================================
+    function updateFallingRocks() {
+        const toRemove = [];
+        for (let i = 0; i < GAME.fallingRocks.length; i++) {
+            const fr = GAME.fallingRocks[i];
+            fr.speed += 0.006;
+            fr.y += fr.speed;
+
+            let caught = false;
+            const px = PADDLE.x;
+            const pw = PADDLE.width;
+            const pr = fr.radius;
+
+            for (const py of paddlePositions) {
+                const closestX = Math.max(px, Math.min(fr.x, px + pw));
+                const closestY = Math.max(py, Math.min(fr.y, py + PADDLE.height));
+                const dx = fr.x - closestX;
+                const dy = fr.y - closestY;
+                if (dx*dx + dy*dy < pr*pr) {
+                    caught = true;
+                    break;
+                }
+            }
+
+            if (caught) {
+                playCatchSound();
+                const rowVal = GAME.rowValues[fr.row] || 10;
+                const bonus = Math.floor(GAME.wave * 1.5);
+                GAME.score += rowVal + bonus;
+                createBurst(fr.x, fr.y, '#7ac8ff', 12);
+                toRemove.push(i);
+                const rock = GAME.rocks.find(r => r.row === fr.row && r.col === fr.col && r.active);
+                if (rock) rock.active = false;
+                updateDisplay();
+                updateHighScore();
+                continue;
+            }
+
+            if (fr.y - fr.radius > canvas.height) {
+                playBoomSound();
+                GAME.lives--;
+                createBurst(fr.x, canvas.height - 20, '#ff5a6a', 25);
+                toRemove.push(i);
+                const rock = GAME.rocks.find(r => r.row === fr.row && r.col === fr.col && r.active);
+                if (rock) rock.active = false;
+                updateDisplay();
+                if (GAME.lives <= 0) {
+                    GAME.over = true;
+                    GAME.running = false;
+                    updateHighScore();
+                }
+                continue;
+            }
+        }
+
+        for (let i = toRemove.length-1; i >= 0; i--) {
+            GAME.fallingRocks.splice(toRemove[i], 1);
+        }
+
+        const anyActive = GAME.rocks.some(r => r.active);
+        if (!anyActive && GAME.fallingRocks.length === 0 && GAME.running && !GAME.over) {
+            GAME.wave++;
+            GAME.level = GAME.wave;
+            GAME.score += 50 + GAME.wave * 10;
+            createBurst(canvas.width/2, canvas.height/2, '#ffd866', 35);
+            resetLevel();
+            updateDisplay();
+            updateHighScore();
+        }
+    }
+
+    // ============================================================
+    //  SPAWN
+    // ============================================================
+    function spawnNextRock() {
+        if (!GAME.running || GAME.over || GAME.paused) return;
+        const activeRocks = GAME.rocks.filter(r => r.active);
+        if (activeRocks.length === 0) return;
+
+        const idx = Math.floor(Math.random() * activeRocks.length);
+        const rock = activeRocks[idx];
+
+        const rowRocks = GAME.rocks.filter(r => r.row === rock.row && r.active);
+        const remainingInRow = rowRocks.length;
+        const speedFactor = 1.0 + (GAME.rocksPerRow - remainingInRow) * 0.18;
+        const speed = (GAME.baseSpeed + rock.row * 0.03) * GAME.speedMultiplier * speedFactor;
+
+        GAME.fallingRocks.push({
+            x: rock.x,
+            y: rock.y,
+            radius: rock.radius,
+            row: rock.row,
+            col: rock.col,
+            speed: speed,
+            startY: rock.y,
+            shape: rock.shape,
+        });
+
+        rock.active = false;
+    }
+
+    // ============================================================
+    //  PARTICLES
+    // ============================================================
+    function createBurst(x, y, color, count = 16) {
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const spd = 1.2 + Math.random() * 3.5;
+            GAME.particles.push({
+                x, y,
+                vx: Math.cos(angle) * spd,
+                vy: Math.sin(angle) * spd - 0.8,
+                radius: 2 + Math.random() * 4,
+                life: 1.0,
+                decay: 0.012 + Math.random() * 0.018,
+                color: color,
+            });
+        }
+    }
+
+    function updateParticles() {
+        for (let i = GAME.particles.length-1; i >= 0; i--) {
+            const p = GAME.particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.06;
+            p.life -= p.decay;
+            if (p.life <= 0) GAME.particles.splice(i, 1);
+        }
+    }
+
+    // ============================================================
+    //  UPDATE
+    // ============================================================
+    function update() {
+        if (!GAME.running || GAME.over || GAME.paused) return;
+
+        GAME.frameCounter++;
+
+        const spawnInterval = Math.max(10, 40 - GAME.wave * 1.3);
+        if (GAME.frameCounter % Math.floor(spawnInterval) === 0) {
+            spawnNextRock();
+        }
+
+        updateFallingRocks();
+        updateParticles();
+
+        if (GAME.frameCounter % 400 === 0) {
+            GAME.speedMultiplier += 0.018;
+        }
+
+        // Keyboard input
+        if (keys.left) {
+            paddleX -= 5;
+        }
+        if (keys.right) {
+            paddleX += 5;
+        }
+        paddleX = Math.max(0, Math.min(canvas.width - PADDLE.width, paddleX));
+        PADDLE.x = paddleX;
+    }
+
+    // ============================================================
+    //  DRAW
+    // ============================================================
+    function drawRockShape(x, y, shape, color1, color2, shadowColor) {
+        if (shape.length < 3) return;
+        ctx.beginPath();
+        ctx.moveTo(x + shape[0].x, y + shape[0].y);
+        for (let i = 1; i < shape.length; i++) {
+            ctx.lineTo(x + shape[i].x, y + shape[i].y);
+        }
+        ctx.closePath();
+
+        const grad = ctx.createRadialGradient(x-3, y-4, 0, x, y, 20);
+        grad.addColorStop(0, color1 || '#b0d0ff');
+        grad.addColorStop(0.7, color2 || '#6a9adf');
+        grad.addColorStop(1, '#1a2a5a');
+        ctx.fillStyle = grad;
+        ctx.shadowColor = shadowColor || 'rgba(100, 180, 255, 0.2)';
+        ctx.shadowBlur = 12;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, 600, 600);
+        ctx.fillStyle = '#0a0a1a';
+        ctx.fillRect(0, 0, 600, 600);
+        for (let i = 0; i < 600; i+=30) {
+            ctx.strokeStyle = 'rgba(30, 60, 120, 0.06)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(i, 0);
+            ctx.lineTo(i, 600);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, i);
+            ctx.lineTo(600, i);
+            ctx.stroke();
+        }
+
+        // static rocks
+        for (const rock of GAME.rocks) {
+            if (!rock.active) continue;
+            drawRockShape(rock.x, rock.y, rock.shape, '#b8d8ff', '#6a9adf', 'rgba(100, 180, 255, 0.25)');
+        }
+
+        // falling rocks
+        for (const fr of GAME.fallingRocks) {
+            drawRockShape(fr.x, fr.y, fr.shape, '#ffdd88', '#ddaa55', 'rgba(255, 200, 80, 0.35)');
+        }
+
+        // paddles
+        const px = PADDLE.x;
+        const pw = PADDLE.width;
+        for (const py of paddlePositions) {
+            const glow = ctx.createRadialGradient(px+pw/2, py+PADDLE.height/2, 0, px+pw/2, py+PADDLE.height/2, pw*0.7);
+            glow.addColorStop(0, 'rgba(80, 200, 255, 0.15)');
+            glow.addColorStop(1, 'rgba(80, 200, 255, 0)');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.ellipse(px+pw/2, py+PADDLE.height/2, pw*0.6, 16, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            const pGrad = ctx.createLinearGradient(px, py, px, py+PADDLE.height);
+            pGrad.addColorStop(0, '#7ad8ff');
+            pGrad.addColorStop(0.6, '#3aa8f0');
+            pGrad.addColorStop(1, '#1a6aaa');
+            ctx.fillStyle = pGrad;
+            ctx.shadowColor = 'rgba(60, 180, 255, 0.4)';
+            ctx.shadowBlur = 16;
+            ctx.beginPath();
+            ctx.roundRect(px, py, pw, PADDLE.height, 8);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
+            ctx.beginPath();
+            ctx.roundRect(px+10, py+2, pw-20, 4, 3);
+            ctx.fill();
+        }
+
+        // particles
+        for (const p of GAME.particles) {
+            ctx.globalAlpha = p.life * 0.9;
+            ctx.fillStyle = p.color;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius * p.life, 0, Math.PI*2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
+
+        // Pause overlay
+        if (GAME.paused && !GAME.over) {
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(0, 0, 600, 600);
+            ctx.fillStyle = '#ffd866';
+            ctx.font = 'bold 48px "Courier New", monospace';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = '#ffd866';
+            ctx.shadowBlur = 20;
+            ctx.fillText('⏸ PAUSED', 300, 300);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#8ab0e0';
+            ctx.font = '18px "Courier New", monospace';
+            ctx.fillText('Press SPACE to resume', 300, 360);
+        }
+
+        if (GAME.over) {
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillRect(0, 0, 600, 600);
+            ctx.fillStyle = '#ff6b7a';
+            ctx.font = 'bold 46px "Courier New", monospace';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = '#ff0040';
+            ctx.shadowBlur = 30;
+            ctx.fillText('💀 GAME OVER', 300, 280);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#aac8ff';
+            ctx.font = '20px "Courier New", monospace';
+            ctx.fillText(`Score: ${GAME.score}  •  Level: ${GAME.wave}`, 300, 350);
+            ctx.fillStyle = '#5a7a9a';
+            ctx.font = '16px "Courier New", monospace';
+            ctx.fillText('Press RESTART', 300, 400);
+        }
+    }
+
+    // ============================================================
+    //  DISPLAY
+    // ============================================================
+    function updateDisplay() {
+        scoreSpan.textContent = GAME.score;
+        livesSpan.textContent = GAME.lives;
+        levelSpan.textContent = GAME.wave;
+        highScoreSpan.textContent = highScore;
+    }
+
+    // ============================================================
+    //  GAME LOOP
+    // ============================================================
+    function gameLoop() {
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // ============================================================
+    //  POLYFILL roundRect
+    // ============================================================
+    if (!CanvasRenderingContext2D.prototype.roundRect) {
+        CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+            if (r > w/2) r = w/2;
+            if (r > h/2) r = h/2;
+            this.moveTo(x + r, y);
+            this.arcTo(x + w, y, x + w, y + h, r);
+            this.arcTo(x + w, y + h, x, y + h, r);
+            this.arcTo(x, y + h, x, y, r);
+            this.arcTo(x, y, x + w, y, r);
+            this.closePath();
+            return this;
+        };
+    }
+
+    // ============================================================
+    //  EVENT LISTENERS
+    // ============================================================
+    function handleInput(clientX) {
+        resumeAudio();
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        let x = (clientX - rect.left) * scaleX;
+        x = Math.max(0, Math.min(canvas.width, x));
+        paddleX = x - PADDLE.width/2;
+        paddleX = Math.max(0, Math.min(canvas.width - PADDLE.width, paddleX));
+    }
+
+    canvas.addEventListener('mousemove', (e) => {
+        handleInput(e.clientX);
+    });
+
+    canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        if (touch) handleInput(touch.clientX);
+    }, { passive: false });
+
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        resumeAudio();
+        const touch = e.touches[0];
+        if (touch) handleInput(touch.clientX);
+    }, { passive: false });
+
+    // Keyboard events
+    document.addEventListener('keydown', (e) => {
+        if (e.key === ' ' || e.key === 'Space') {
+            e.preventDefault();
+            if (!GAME.over && GAME.running) {
+                GAME.paused = !GAME.paused;
+                pauseIndicator.style.display = GAME.paused ? 'inline' : 'none';
+                if (!GAME.paused) resumeAudio();
+            }
+        }
+        if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            keys.left = true;
+        }
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            keys.right = true;
+        }
+    });
+
+    document.addEventListener('keyup', (e) => {
+        if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            keys.left = false;
+        }
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            keys.right = false;
+        }
+    });
+
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            resumeAudio();
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            GAME.paddleMode = parseInt(btn.dataset.mode);
+            updatePaddlePositions();
+            if (!GAME.running && !GAME.over) {
+                // just update
+            } else {
+                resetGame();
+                resetLevel();
+                updateDisplay();
+            }
+        });
+    });
+
+    document.getElementById('restartBtn').addEventListener('click', () => {
+        resumeAudio();
+        resetGame();
+        resetLevel();
+        updateDisplay();
+    });
+
+    // ============================================================
+    //  START
+    // ============================================================
+    resetGame();
+    resetLevel();
+    updateDisplay();
+    gameLoop();
+
+    console.log('❄️ Avalanche (1978) – Keyboard + Pause added');
+</script>
+</body>
+</html>

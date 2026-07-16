@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Galaga – Enhanced</title>
+    <title>Galaga – Enhanced Diving</title>
     <style>
         * {
             margin: 0;
@@ -204,6 +204,7 @@
             doubleShip: false,
             respawnTimer: 0,
             invincibleTimer: 0,
+            engineGlow: 0,
         };
 
         // ----- BULLETS -----
@@ -290,6 +291,10 @@
                         diveTargetY: 0,
                         diveProgress: 0,
                         frame: 0,
+                        // Phoenix-style smooth dive properties
+                        diveAngle: 0,
+                        diveSpeed: 0,
+                        diveArcHeight: 0,
                     });
                 }
             }
@@ -427,7 +432,7 @@
             playSound('shoot');
         }
 
-        // ----- ENEMY DIVE ATTACK -----
+        // ----- IMPROVED DIVE ATTACK (Phoenix-style arc) -----
         function startDiveAttack() {
             const currentDives = divingEnemies.filter(e => e.alive).length;
             if (currentDives >= maxSimultaneousDives) return;
@@ -446,11 +451,18 @@
             target.diveStartX = target.x;
             target.diveStartY = target.y;
 
-            target.diveTargetX = player.x + player.w / 2 + randomBetween(-40, 40);
+            // Target the player's position with some randomness
+            target.diveTargetX = player.x + player.w / 2 + randomBetween(-60, 60);
             target.diveTargetX = Math.max(30, Math.min(W - 30, target.diveTargetX));
 
-            target.diveTargetY = player.y + player.h / 2 + randomBetween(-20, 20);
-            target.diveTargetY = Math.max(180, Math.min(H - 60, target.diveTargetY));
+            // Dive goes below the player for a proper swoop
+            target.diveTargetY = player.y + player.h / 2 + randomBetween(20, 60);
+            target.diveTargetY = Math.max(180, Math.min(H - 20, target.diveTargetY));
+
+            // Phoenix-style arc properties
+            target.diveAngle = -Math.PI / 2; // Start pointing down
+            target.diveSpeed = 2.5 + level * 0.15;
+            target.diveArcHeight = randomBetween(40, 80);
 
             divingEnemies.push(target);
         }
@@ -473,7 +485,7 @@
             }
         }
 
-        // ----- DRAW SHIP-LIKE ENEMY (2-FRAME ANIMATION) -----
+        // ----- DRAW SHIP-LIKE ENEMY (Phoenix-inspired) -----
         function drawShipEnemy(ctx, e, frame, isDiving) {
             const x = e.x,
                 y = e.y,
@@ -481,18 +493,27 @@
             const color = e.color;
             const animFrame = Math.floor(frame / 15) % 2;
 
+            ctx.save();
+            ctx.translate(x + s / 2, y + s / 2);
+
+            // Rotate if diving (Phoenix-style)
+            if (isDiving && e.divePhase === 'down') {
+                const angle = Math.min(e.diveProgress * 1.2, 1.2);
+                ctx.rotate(angle);
+            }
+
             ctx.shadowColor = color;
             ctx.shadowBlur = isDiving ? 25 : 12;
 
             // ---- BODY (ship-like) ----
             ctx.fillStyle = color;
             ctx.beginPath();
-            ctx.moveTo(x + s / 2, y + 2);
-            ctx.lineTo(x + s - 4, y + 6);
-            ctx.lineTo(x + s - 2, y + s - 6);
-            ctx.lineTo(x + s / 2, y + s - 2);
-            ctx.lineTo(x + 2, y + s - 6);
-            ctx.lineTo(x + 4, y + 6);
+            ctx.moveTo(0, -s / 2 + 2);
+            ctx.lineTo(s / 2 - 4, -s / 2 + 6);
+            ctx.lineTo(s / 2 - 2, s / 2 - 6);
+            ctx.lineTo(0, s / 2 - 2);
+            ctx.lineTo(-s / 2 + 2, s / 2 - 6);
+            ctx.lineTo(-s / 2 + 4, -s / 2 + 6);
             ctx.closePath();
             ctx.fill();
 
@@ -501,29 +522,29 @@
             if (animFrame === 0) {
                 // Wings up
                 ctx.beginPath();
-                ctx.moveTo(x + 4, y + 8);
-                ctx.lineTo(x - 2, y + 4);
-                ctx.lineTo(x + 4, y + 14);
+                ctx.moveTo(-s / 2 + 4, -s / 2 + 8);
+                ctx.lineTo(-s / 2 - 2, -s / 2 + 4);
+                ctx.lineTo(-s / 2 + 4, -s / 2 + 14);
                 ctx.closePath();
                 ctx.fill();
                 ctx.beginPath();
-                ctx.moveTo(x + s - 4, y + 8);
-                ctx.lineTo(x + s + 2, y + 4);
-                ctx.lineTo(x + s - 4, y + 14);
+                ctx.moveTo(s / 2 - 4, -s / 2 + 8);
+                ctx.lineTo(s / 2 + 2, -s / 2 + 4);
+                ctx.lineTo(s / 2 - 4, -s / 2 + 14);
                 ctx.closePath();
                 ctx.fill();
             } else {
                 // Wings down
                 ctx.beginPath();
-                ctx.moveTo(x + 4, y + 8);
-                ctx.lineTo(x - 2, y + 12);
-                ctx.lineTo(x + 4, y + 16);
+                ctx.moveTo(-s / 2 + 4, -s / 2 + 8);
+                ctx.lineTo(-s / 2 - 2, -s / 2 + 12);
+                ctx.lineTo(-s / 2 + 4, -s / 2 + 16);
                 ctx.closePath();
                 ctx.fill();
                 ctx.beginPath();
-                ctx.moveTo(x + s - 4, y + 8);
-                ctx.lineTo(x + s + 2, y + 12);
-                ctx.lineTo(x + s - 4, y + 16);
+                ctx.moveTo(s / 2 - 4, -s / 2 + 8);
+                ctx.lineTo(s / 2 + 2, -s / 2 + 12);
+                ctx.lineTo(s / 2 - 4, -s / 2 + 16);
                 ctx.closePath();
                 ctx.fill();
             }
@@ -533,35 +554,36 @@
             ctx.shadowColor = isDiving ? '#ff4444' : '#88ddff';
             ctx.shadowBlur = isDiving ? 20 : 8;
             ctx.beginPath();
-            ctx.arc(x + s / 2, y + s / 2 - 2, 4, 0, Math.PI * 2);
+            ctx.arc(0, -2, 4, 0, Math.PI * 2);
             ctx.fill();
 
             // ---- EVIL EYES ----
             ctx.shadowBlur = 0;
             ctx.fillStyle = isDiving ? '#ff0000' : '#ff2222';
-            ctx.fillRect(x + 6, y + 8, 4, 4);
-            ctx.fillRect(x + s - 10, y + 8, 4, 4);
+            ctx.fillRect(-s / 2 + 6, -s / 2 + 8, 4, 4);
+            ctx.fillRect(s / 2 - 10, -s / 2 + 8, 4, 4);
 
             ctx.fillStyle = '#000000';
-            ctx.fillRect(x + 7, y + 9, 2, 3);
-            ctx.fillRect(x + s - 9, y + 9, 2, 3);
+            ctx.fillRect(-s / 2 + 7, -s / 2 + 9, 2, 3);
+            ctx.fillRect(s / 2 - 9, -s / 2 + 9, 2, 3);
 
             // ---- ANGRY EYEBROWS ----
             ctx.fillStyle = color;
-            ctx.fillRect(x + 5, y + 6, 6, 2);
-            ctx.fillRect(x + s - 11, y + 6, 6, 2);
+            ctx.fillRect(-s / 2 + 5, -s / 2 + 6, 6, 2);
+            ctx.fillRect(s / 2 - 11, -s / 2 + 6, 6, 2);
 
             // ---- MOUTH ----
             ctx.fillStyle = isDiving ? '#ff0000' : '#000000';
-            ctx.fillRect(x + 8, y + s - 8, 12, 2);
+            ctx.fillRect(-s / 2 + 8, s / 2 - 8, 12, 2);
             if (isDiving) {
                 ctx.fillStyle = '#ffffff';
-                ctx.fillRect(x + 10, y + s - 8, 2, 2);
-                ctx.fillRect(x + 14, y + s - 8, 2, 2);
-                ctx.fillRect(x + 18, y + s - 8, 2, 2);
+                ctx.fillRect(-s / 2 + 10, s / 2 - 8, 2, 2);
+                ctx.fillRect(-s / 2 + 6, s / 2 - 8, 2, 2);
+                ctx.fillRect(-s / 2 + 14, s / 2 - 8, 2, 2);
             }
 
             ctx.shadowBlur = 0;
+            ctx.restore();
         }
 
         // ----- UPDATE -----
@@ -569,6 +591,7 @@
             if (gameOver) return;
 
             frameCount++;
+            player.engineGlow = 0.5 + 0.5 * Math.sin(frameCount / 30);
 
             // ---- Bonus stage ----
             if (bonusStage) {
@@ -658,6 +681,7 @@
                     for (const e of enemies) {
                         if (e.alive && !e.isDiving) {
                             e.x += enemyDirection * 3 * speedMultiplier;
+                            e.startX = e.x;
                         }
                     }
                 }
@@ -708,7 +732,7 @@
                 }
             }
 
-            // ---- Update diving enemies (FIXED: fly down AND back up) ----
+            // ---- Update diving enemies (Phoenix-style smooth arc) ----
             for (let i = divingEnemies.length - 1; i >= 0; i--) {
                 const e = divingEnemies[i];
                 if (!e.alive) {
@@ -718,30 +742,41 @@
 
                 e.diveTimer++;
 
-                // Total dive duration: longer so they go all the way down and back
-                const diveDuration = 260;
+                // Total dive duration: smooth arc from start to target and back
+                const diveDuration = 180 + level * 5; // Longer for higher levels
                 const progress = Math.min(e.diveTimer / diveDuration, 1);
                 e.diveProgress = progress;
 
                 let x, y;
 
-                // ---- DOWNWARD LEG (0-55%) ----
-                if (progress < 0.55) {
-                    const downProgress = progress / 0.55;
-                    const startX = e.diveStartX;
-                    const targetX = e.diveTargetX;
-                    const smooth = downProgress < 0.5 ?
-                        2 * downProgress * downProgress :
-                        1 - Math.pow(-2 * downProgress + 2, 2) / 2;
-                    x = startX + (targetX - startX) * smooth;
+                // ---- PHOENIX-STYLE SMOOTH ARC ----
+                // Use bezier-like curve: start -> arc down -> target -> arc up -> return
+                const bezierProgress = progress;
 
-                    const startY = e.diveStartY;
-                    const targetY = e.diveTargetY;
-                    const easeDown = downProgress * downProgress;
-                    y = startY + (targetY - startY) * easeDown;
+                // Arc control points
+                const startX = e.diveStartX;
+                const startY = e.diveStartY;
+                const targetX = e.diveTargetX;
+                const targetY = e.diveTargetY;
+
+                // Control point for arc (swoop down)
+                const controlX = (startX + targetX) / 2 + Math.sin(progress * Math.PI) * 30;
+                const controlY = (startY + targetY) / 2 + 80 + Math.sin(progress * Math.PI) * 40;
+
+                // Quadratic bezier for the dive path
+                const t = Math.min(progress * 2, 1);
+                const smoothT = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+                // First half: dive down to target
+                if (progress < 0.5) {
+                    const p = progress * 2; // 0 to 1
+                    const smoothP = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+
+                    x = startX + (targetX - startX) * smoothP;
+                    y = startY + (targetY - startY) * smoothP + Math.sin(p * Math.PI) * 60;
 
                     // Shoot at bottom of dive
-                    if (downProgress > 0.8 && downProgress < 0.95 && !e.hasShot) {
+                    if (p > 0.7 && p < 0.95 && !e.hasShot) {
                         e.hasShot = true;
                         enemyBullets.push({
                             x: e.x + e.w / 2 - 4,
@@ -753,19 +788,17 @@
                         });
                         playSound('enemyShoot');
                     }
+
+                    e.divePhase = 'down';
                 } else {
-                    // ---- UPWARD LEG (55-100%) ----
-                    const upProgress = (progress - 0.55) / 0.45;
-                    const easeUp = upProgress * upProgress * (3 - 2 * upProgress);
+                    // Second half: arc back up to formation
+                    const p = (progress - 0.5) * 2; // 0 to 1
+                    const smoothP = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
 
-                    // Return to formation position
-                    const startX = e.diveTargetX;
-                    const returnX = e.diveStartX;
-                    x = startX + (returnX - startX) * easeUp;
+                    x = targetX + (startX - targetX) * smoothP;
+                    y = targetY + (startY - targetY) * smoothP - Math.sin(p * Math.PI) * 40;
 
-                    const startY = e.diveTargetY;
-                    const returnY = e.diveStartY;
-                    y = startY + (returnY - startY) * easeUp;
+                    e.divePhase = 'up';
                 }
 
                 e.x = x;
@@ -825,6 +858,7 @@
                     e.diveTimer = 0;
                     e.hasShot = false;
                     e.divePhase = 'down';
+                    e.diveProgress = 0;
                     divingEnemies.splice(i, 1);
                 }
             }
@@ -997,10 +1031,22 @@
                 drawShipEnemy(ctx, e, frameCount, false);
             }
 
-            // ---- Diving enemies ----
+            // ---- Diving enemies (with glow trail) ----
             for (const e of divingEnemies) {
                 if (!e.alive) continue;
+
+                // Trail glow effect (Phoenix-style)
+                ctx.globalAlpha = 0.3;
+                ctx.fillStyle = e.color;
+                ctx.shadowColor = e.color;
+                ctx.shadowBlur = 30;
+                ctx.beginPath();
+                ctx.arc(e.x + e.w / 2, e.y + e.h / 2, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+
                 drawShipEnemy(ctx, e, frameCount, true);
+                ctx.shadowBlur = 0;
             }
 
             // ---- Player ----
@@ -1008,6 +1054,14 @@
                 if (player.invincibleTimer === 0 || Math.floor(frameCount / 6) % 2 === 0) {
                     const x = player.x,
                         y = player.y;
+
+                    // Engine glow
+                    ctx.shadowColor = '#66ddff';
+                    ctx.shadowBlur = 20;
+                    ctx.fillStyle = `rgba(100, 200, 255, ${player.engineGlow * 0.3})`;
+                    ctx.beginPath();
+                    ctx.ellipse(x + player.w / 2, y + player.h + 4, 12, 6 + player.engineGlow * 4, 0, 0, Math.PI * 2);
+                    ctx.fill();
 
                     if (player.doubleShip && !player.captured) {
                         const offsets = [-10, 10];

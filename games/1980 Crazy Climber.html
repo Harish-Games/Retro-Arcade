@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Crazy Climber - Arcade Perfect</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #020208;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        .game-container {
+            position: relative;
+            background: #000;
+            padding: 10px;
+            border: 4px solid #333;
+            box-shadow: 0 0 30px rgba(255, 0, 0, 0.3);
+        }
+        canvas {
+            display: block;
+            background: #000;
+            image-rendering: pixelated;
+        }
+        .game-container::after {
+            content: "";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%),
+                linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+            background-size: 100% 4px, 6px 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .instructions {
+            text-align: center;
+            font-size: 11px;
+            color: #888;
+            margin-top: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .key-accent {
+            color: #00ffcc;
+            font-weight: bold;
+        }
+        .key-danger {
+            color: #ff3d00;
+            font-weight: bold;
+        }
+        .warning {
+            color: #ffb300;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <canvas id="gameCanvas" width="540" height="660"></canvas>
+        <div class="instructions">
+            <span class="key-accent">W</span> Reach Left | <span class="key-accent">S</span> Pull Left |
+            <span class="key-accent">▲</span> Reach Right | <span class="key-accent">▼</span> Pull Right |
+            <span class="key-accent">A/D</span> Shift | <span class="warning">⚠️ MUST ALTERNATE HANDS!</span> | <span class="key-danger">R</span> Restart
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 540;
+        const H = 660;
+        const COL_WIDTH = 80;
+        const ROW_HEIGHT = 70;
+        const NUM_COLS = 4;
+        const BUILDING_X = (W - (COL_WIDTH * NUM_COLS)) / 2;
+
+        // Window States
+        const WIN_CLOSED = 0;
+        const WIN_HALF = 1;
+        const WIN_OPEN = 2;
+
+        // ----- AUDIO -----
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+        }
+
+        function playSound(freq, duration, type = 'square', vol = 0.04) {
+            try {
+                initAudio();
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, now);
+                gain.gain.setValueAtTime(vol, now);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + duration);
+            } catch (e) {}
+        }
+
+        // ----- GAME STATE -----
+        let score = 0;
+        let highScore = parseInt(localStorage.getItem('cc_retro_high')) || 0;
+        let lives = 3;
+        let gameOver = false;
+        let buildingHeight = 40;
+        let scrollY = 0;
+        let targetScrollY = 0;
+        let frameCount = 0;
+        let comboCount = 0;
+        let comboTimer = 0;
+        let difficultyLevel = 1;
+
+        // ----- BUILDING -----
+        let windows = [];
+
+        function initBuilding() {
+            windows = [];
+            for (let r = 0; r < buildingHeight + 20; r++) {
+                let rowWins = [];
+                // ENSURE: At least 2 closed windows per row
+                let closedCount = 0;
+                for (let c = 0; c < NUM_COLS; c++) {
+                    // Weighted random - more likely to be closed
+                    let rand = Math.random();
+                    let state;
+                    if (rand < 0.6) {
+                        state = WIN_CLOSED;
+                        closedCount++;
+                    } else if (rand < 0.85) {
+                        state = WIN_HALF;
+                    } else {
+                        state = WIN_OPEN;
+                    }
+                    
+                    // Force at least 2 closed windows per row
+                    if (c === NUM_COLS - 1 && closedCount < 2) {
+                        state = WIN_CLOSED;
+                        closedCount++;
+                    }
+                    
+                    const baseTimer = 120 + Math.random() * 100;
+                    const heightFactor = 1 + (r / buildingHeight) * 1.2;
+                    const difficultyFactor = 1 + (difficultyLevel - 1) * 0.12;
+                    
+                    rowWins.push({
+                        state: state,
+                        timer: Math.max(60, baseTimer / (heightFactor * difficultyFactor)),
+                        stateTimer: 0,
+                        cycleCount: 0,
+                    });
+                }
+                windows.push(rowWins);
+            }
+        }
+
+        // ----- PLAYER -----
+        const player = {
+            col: 1,
+            row: 1,
+            leftHandUp: false,
+            rightHandUp: false,
+            leftGripped: true,
+            rightGripped: true,
+            leftGripRow: 0,
+            rightGripRow: 0,
+            isShifting: false,
+            shiftProgress: 0,
+            targetCol: 1,
+            isFalling: false,
+            fallTimer: 0,
+            fallSpeed: 0,
+            gripFlash: 0,
+            leftGripTimer: 0,
+            rightGripTimer: 0,
+            // Track last hand that pulled - enforce alternation!
+            lastPulledHand: null,
+            climbBlocked: false,
+            blockedTimer: 0,
+        };
+
+        let fallingObjects = [];
+        let windowDroppers = [];
+        let particles = [];
+        let floatingTexts = [];
+
+        // ----- RESET -----
+        function resetPlayerPosition() {
+            player.col = 1;
+            player.targetCol = 1;
+            player.row = 1;
+            player.leftHandUp = false;
+            player.rightHandUp = false;
+            player.leftGripped = true;
+            player.rightGripped = true;
+            player.leftGripRow = 0;
+            player.rightGripRow = 0;
+            player.isFalling = false;
+            player.isShifting = false;
+            player.fallTimer = 0;
+            player.fallSpeed = 0;
+            player.gripFlash = 0;
+            player.lastPulledHand = null;
+            player.climbBlocked = false;
+            player.blockedTimer = 0;
+            scrollY = player.row * ROW_HEIGHT - 380;
+            targetScrollY = scrollY;
+            fallingObjects = [];
+            windowDroppers = [];
+            particles = [];
+            floatingTexts = [];
+        }
+
+        function spawnParticles(x, y, color, count = 10) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x,
+                    y,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4 - 1,
+                    life: 20 + Math.random() * 20,
+                    maxLife: 40,
+                    size: 2 + Math.random() * 4,
+                    color: color,
+                });
+            }
+        }
+
+        function addFloatingText(x, y, text, color = '#00ffcc') {
+            floatingTexts.push({
+                x,
+                y,
+                text,
+                color,
+                life: 40,
+                maxLife: 40,
+                vy: -1.5
+            });
+        }
+
+        // ----- SPAWN HAZARDS -----
+        function spawnMadDoctor() {
+            if (Math.random() < 0.35) {
+                const spawnRow = player.row + 2 + Math.floor(Math.random() * 4);
+                const spawnCol = Math.floor(Math.random() * NUM_COLS);
+                if (spawnRow < buildingHeight) {
+                    windowDroppers.push({
+                        row: spawnRow,
+                        col: spawnCol,
+                        timer: 0,
+                        hasDropped: false,
+                        armPhase: Math.random() * Math.PI * 2,
+                    });
+                }
+            }
+        }
+
+        function spawnFallingObject(x, y) {
+            const types = ['pot', 'tv', 'bucket'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            const colors = ['#8B4513', '#2F4F4F', '#4682B4'];
+            const sizes = [12, 16, 14];
+            const idx = Math.floor(Math.random() * types.length);
+            fallingObjects.push({
+                x,
+                y,
+                w: sizes[idx],
+                h: sizes[idx],
+                vy: 2.5 + Math.random() * 2,
+                type: types[idx],
+                color: colors[idx],
+                rotation: 0,
+                rotSpeed: (Math.random() - 0.5) * 0.1,
+            });
+        }
+
+        // ----- CHECK IF HAND CAN CATCH LEDGE -----
+        function canCatchLedge(handX, handY, col, row) {
+            if (row < 0 || row >= windows.length || col < 0 || col >= NUM_COLS) return false;
+            const win = windows[row][col];
+            if (!win || win.state === WIN_OPEN) return false;
+            const winX = BUILDING_X + col * COL_WIDTH + COL_WIDTH / 2;
+            const winY = H - (row * ROW_HEIGHT) + scrollY - 10;
+            const dist = Math.hypot(handX - winX, handY - winY);
+            return dist < 35;
+        }
+
+        // ----- UPDATE -----
+        function update() {
+            if (gameOver) return;
+            frameCount++;
+
+            // ---- Window Cycling (ENSURE closed windows exist) ----
+            for (let r = 0; r < windows.length; r++) {
+                let closedCount = 0;
+                // Count closed windows first
+                for (let c = 0; c < NUM_COLS; c++) {
+                    if (windows[r][c].state === WIN_CLOSED) closedCount++;
+                }
+                
+                for (let c = 0; c < NUM_COLS; c++) {
+                    let win = windows[r][c];
+                    win.timer--;
+                    
+                    const heightFactor = 1 + (r / buildingHeight) * 1.2;
+                    const difficultyFactor = 1 + (difficultyLevel - 1) * 0.12;
+                    const cycleSpeed = 1 + (frameCount / 4800) * 0.2;
+                    
+                    if (win.timer <= 0) {
+                        // Don't cycle to open if it would leave < 2 closed windows
+                        let nextState = (win.state + 1) % 3;
+                        let wouldBeClosed = closedCount;
+                        if (win.state === WIN_CLOSED) wouldBeClosed--;
+                        if (nextState === WIN_CLOSED) wouldBeClosed++;
+                        
+                        // Force keep at least 2 closed windows
+                        if (nextState === WIN_OPEN && wouldBeClosed < 2) {
+                            nextState = WIN_HALF;
+                        }
+                        
+                        win.state = nextState;
+                        win.stateTimer = 0;
+                        win.cycleCount++;
+                        
+                        if (win.state === WIN_CLOSED) closedCount++;
+                        else if (win.state === WIN_OPEN && nextState !== WIN_OPEN) closedCount--;
+                        
+                        const baseTimer = Math.max(80, 180 - difficultyLevel * 6 - win.cycleCount * 2);
+                        win.timer = Math.max(50, baseTimer / (heightFactor * difficultyFactor * cycleSpeed));
+                        
+                        // Window snap - lose grip!
+                        if (win.state === WIN_OPEN) {
+                            if (player.leftHandUp && player.leftGripped && 
+                                r === (player.leftGripRow) && c === player.col) {
+                                player.leftGripped = false;
+                                player.leftGripTimer = 0;
+                                playSound(150, 0.15, 'sawtooth', 0.06);
+                                spawnParticles(player.col * COL_WIDTH + BUILDING_X + COL_WIDTH / 2,
+                                    H - (player.leftGripRow * ROW_HEIGHT) + scrollY, '#ff3d00', 8);
+                                addFloatingText(player.col * COL_WIDTH + BUILDING_X + COL_WIDTH / 2,
+                                    H - (player.leftGripRow * ROW_HEIGHT) + scrollY - 20, '💥 LOST GRIP!', '#ff3d00');
+                            }
+                            if (player.rightHandUp && player.rightGripped && 
+                                r === (player.rightGripRow) && (player.col + 1) === c) {
+                                player.rightGripped = false;
+                                player.rightGripTimer = 0;
+                                playSound(150, 0.15, 'sawtooth', 0.06);
+                                spawnParticles((player.col + 1) * COL_WIDTH + BUILDING_X + COL_WIDTH / 2,
+                                    H - (player.rightGripRow * ROW_HEIGHT) + scrollY, '#ff3d00', 8);
+                                addFloatingText((player.col + 1) * COL_WIDTH + BUILDING_X + COL_WIDTH / 2,
+                                    H - (player.rightGripRow * ROW_HEIGHT) + scrollY - 20, '💥 LOST GRIP!', '#ff3d00');
+                            }
+                        }
+                    }
+                    win.stateTimer++;
+                }
+            }
+
+            // ---- Grip Timers ----
+            if (player.leftGripped) player.leftGripTimer = Math.min(player.leftGripTimer + 1, 30);
+            else player.leftGripTimer = Math.max(player.leftGripTimer - 1, 0);
+            if (player.rightGripped) player.rightGripTimer = Math.min(player.rightGripTimer + 1, 30);
+            else player.rightGripTimer = Math.max(player.rightGripTimer - 1, 0);
+            if (player.gripFlash > 0) player.gripFlash--;
+            if (player.blockedTimer > 0) player.blockedTimer--;
+
+            // ---- CATCH LEDGE WHILE FALLING ----
+            if (player.isFalling) {
+                const leftHandX = BUILDING_X + player.col * COL_WIDTH + COL_WIDTH / 2;
+                const leftHandY = H - (player.leftGripRow * ROW_HEIGHT) + scrollY - 10;
+                const rightHandX = BUILDING_X + (player.col + 1) * COL_WIDTH + COL_WIDTH / 2;
+                const rightHandY = H - (player.rightGripRow * ROW_HEIGHT) + scrollY - 10;
+
+                if (!player.leftGripped && player.leftHandUp) {
+                    const catchRow = player.leftGripRow - 1;
+                    if (canCatchLedge(leftHandX, leftHandY, player.col, catchRow)) {
+                        player.leftGripped = true;
+                        player.leftGripRow = catchRow;
+                        player.gripFlash = 20;
+                        playSound(440, 0.08, 'square', 0.05);
+                        spawnParticles(leftHandX, leftHandY, '#00ffcc', 12);
+                        addFloatingText(leftHandX, leftHandY - 20, '🫴 CAUGHT!', '#00ffcc');
+                        if (player.rightGripped) {
+                            player.isFalling = false;
+                            player.fallSpeed = 0;
+                            player.row = Math.min(player.leftGripRow, player.rightGripRow);
+                            addFloatingText(W / 2, H / 2 - 40, '✅ SAVED!', '#66ddff');
+                            playSound(600, 0.15, 'square', 0.06);
+                        }
+                    }
+                }
+
+                if (!player.rightGripped && player.rightHandUp) {
+                    const catchRow = player.rightGripRow - 1;
+                    if (canCatchLedge(rightHandX, rightHandY, player.col + 1, catchRow)) {
+                        player.rightGripped = true;
+                        player.rightGripRow = catchRow;
+                        player.gripFlash = 20;
+                        playSound(480, 0.08, 'square', 0.05);
+                        spawnParticles(rightHandX, rightHandY, '#66ddff', 12);
+                        addFloatingText(rightHandX, rightHandY - 20, '🫴 CAUGHT!', '#66ddff');
+                        if (player.leftGripped) {
+                            player.isFalling = false;
+                            player.fallSpeed = 0;
+                            player.row = Math.min(player.leftGripRow, player.rightGripRow);
+                            addFloatingText(W / 2, H / 2 - 40, '✅ SAVED!', '#66ddff');
+                            playSound(600, 0.15, 'square', 0.06);
+                        }
+                    }
+                }
+            }
+
+            // ---- DUAL JOYSTICK ENGINE ----
+            if (!player.isFalling && !player.isShifting) {
+
+                // ---- LEFT HAND (W) ----
+                if (keys.w && !player.leftHandUp) {
+                    player.leftHandUp = true;
+                    const targetRow = player.row + 1;
+                    let win = windows[targetRow]?.[player.col];
+                    player.leftGripped = (win && win.state !== WIN_OPEN);
+                    if (player.leftGripped) {
+                        player.leftGripRow = targetRow;
+                        playSound(440, 0.04, 'square', 0.03);
+                        player.gripFlash = 10;
+                        spawnParticles(player.col * COL_WIDTH + BUILDING_X + COL_WIDTH / 2,
+                            H - (targetRow * ROW_HEIGHT) + scrollY, '#00ffcc', 4);
+                    } else {
+                        playSound(200, 0.08, 'sawtooth', 0.03);
+                    }
+                }
+
+                // ---- LEFT PULL (S) ----
+                if (keys.s && player.leftHandUp && player.leftGripped) {
+                    // BLOCK: Can't pull with same hand twice in a row!
+                    if (player.lastPulledHand === 'left') {
+                        player.climbBlocked = true;
+                        player.blockedTimer = 30;
+                        playSound(150, 0.1, 'sawtooth', 0.03);
+                        addFloatingText(W / 2, H / 2 - 30, '⚠️ ALTERNATE HANDS!', '#ffb300');
+                        // Release the hand to force alternation
+                        player.leftHandUp = false;
+                        player.leftGripped = false;
+                        return;
+                    }
+                    
+                    const newRow = player.row + 1;
+                    const nextWin = windows[newRow + 1]?.[player.col];
+                    
+                    if (nextWin && nextWin.state !== WIN_OPEN) {
+                        if (player.rightHandUp && player.rightGripped) {
+                            // Both hands
+                            player.row = newRow;
+                            player.leftGripRow = newRow + 1;
+                            comboCount++;
+                            score += 25 + comboCount * 2;
+                            comboTimer = 60;
+                            addFloatingText(W / 2, H / 2 - 40, `🔥 COMBO x${comboCount}!`, '#ffdd44');
+                            playSound(500, 0.08, 'triangle', 0.05);
+                            player.lastPulledHand = 'both';
+                        } else {
+                            // Single hand climb - other hand STAYS at its grip!
+                            player.row = newRow;
+                            player.leftGripRow = newRow + 1;
+                            score += 15;
+                            playSound(400, 0.06, 'triangle', 0.04);
+                            player.lastPulledHand = 'left';
+                        }
+                        player.leftHandUp = false;
+                        spawnParticles(player.col * COL_WIDTH + BUILDING_X + COL_WIDTH / 2,
+                            H - (newRow * ROW_HEIGHT) + scrollY, '#00ffcc', 6);
+                        if (comboCount > 0) comboCount++;
+                    } else {
+                        playSound(150, 0.1, 'sawtooth', 0.03);
+                        addFloatingText(W / 2, H / 2 - 20, '🚫 WINDOW OPEN!', '#ff3d00');
+                    }
+                }
+
+                // ---- RIGHT HAND (Arrow Up) ----
+                if (keys.arrowup && !player.rightHandUp) {
+                    player.rightHandUp = true;
+                    const targetRow = player.row + 1;
+                    let win = windows[targetRow]?.[player.col + 1];
+                    player.rightGripped = (win && win.state !== WIN_OPEN);
+                    if (player.rightGripped) {
+                        player.rightGripRow = targetRow;
+                        playSound(480, 0.04, 'square', 0.03);
+                        player.gripFlash = 10;
+                        spawnParticles((player.col + 1) * COL_WIDTH + BUILDING_X + COL_WIDTH / 2,
+                            H - (targetRow * ROW_HEIGHT) + scrollY, '#66ddff', 4);
+                    } else {
+                        playSound(200, 0.08, 'sawtooth', 0.03);
+                    }
+                }
+
+                // ---- RIGHT PULL (Arrow Down) ----
+                if (keys.arrowdown && player.rightHandUp && player.rightGripped) {
+                    // BLOCK: Can't pull with same hand twice in a row!
+                    if (player.lastPulledHand === 'right') {
+                        player.climbBlocked = true;
+                        player.blockedTimer = 30;
+                        playSound(150, 0.1, 'sawtooth', 0.03);
+                        addFloatingText(W / 2, H / 2 - 30, '⚠️ ALTERNATE HANDS!', '#ffb300');
+                        player.rightHandUp = false;
+                        player.rightGripped = false;
+                        return;
+                    }
+                    
+                    const newRow = player.row + 1;
+                    const nextWin = windows[newRow + 1]?.[player.col + 1];
+                    
+                    if (nextWin && nextWin.state !== WIN_OPEN) {
+                        if (player.leftHandUp && player.leftGripped) {
+                            player.row = newRow;
+                            player.rightGripRow = newRow + 1;
+                            comboCount++;
+                            score += 25 + comboCount * 2;
+                            comboTimer = 60;
+                            addFloatingText(W / 2, H / 2 - 40, `🔥 COMBO x${comboCount}!`, '#ffdd44');
+                            playSound(520, 0.08, 'triangle', 0.05);
+                            player.lastPulledHand = 'both';
+                        } else {
+                            player.row = newRow;
+                            player.rightGripRow = newRow + 1;
+                            score += 15;
+                            playSound(420, 0.06, 'triangle', 0.04);
+                            player.lastPulledHand = 'right';
+                        }
+                        player.rightHandUp = false;
+                        spawnParticles((player.col + 1) * COL_WIDTH + BUILDING_X + COL_WIDTH / 2,
+                            H - (newRow * ROW_HEIGHT) + scrollY, '#66ddff', 6);
+                        if (comboCount > 0) comboCount++;
+                    } else {
+                        playSound(150, 0.1, 'sawtooth', 0.03);
+                        addFloatingText(W / 2, H / 2 - 20, '🚫 WINDOW OPEN!', '#ff3d00');
+                    }
+                }
+
+                // ---- LATERAL SHIFT ----
+                if (!player.leftHandUp && !player.rightHandUp) {
+                    if ((keys.a || keys.arrowleft) && player.col > 0) {
+                        player.targetCol = player.col - 1;
+                        player.isShifting = true;
+                        player.shiftProgress = 0;
+                        playSound(300, 0.03, 'square', 0.02);
+                    } else if ((keys.d || keys.arrowright) && player.col < NUM_COLS - 2) {
+                        player.targetCol = player.col + 1;
+                        player.isShifting = true;
+                        player.shiftProgress = 0;
+                        playSound(300, 0.03, 'square', 0.02);
+                    }
+                }
+            }
+
+            // ---- Shift Animation ----
+            if (player.isShifting) {
+                player.shiftProgress += 0.12;
+                if (player.shiftProgress >= 1) {
+                    player.col = player.targetCol;
+                    player.isShifting = false;
+                    player.shiftProgress = 0;
+                    if (player.leftHandUp && player.leftGripped) {
+                        let win = windows[player.leftGripRow]?.[player.col];
+                        if (!win || win.state === WIN_OPEN) player.leftGripped = false;
+                    }
+                    if (player.rightHandUp && player.rightGripped) {
+                        let win = windows[player.rightGripRow]?.[player.col + 1];
+                        if (!win || win.state === WIN_OPEN) player.rightGripped = false;
+                    }
+                }
+            }
+
+            // ---- FALL CHECK ----
+            if (!player.leftGripped && !player.rightGripped && !player.isFalling) {
+                player.isFalling = true;
+                player.fallTimer = 60;
+                player.fallSpeed = 0;
+                playSound(100, 0.6, 'sawtooth', 0.08);
+                addFloatingText(W / 2, H / 2 - 20, '💀 FALLING! TRY TO CATCH!', '#ff3d00');
+                spawnParticles(player.col * COL_WIDTH + BUILDING_X + COL_WIDTH / 2,
+                    H - (player.row * ROW_HEIGHT) + scrollY, '#ff3d00', 20);
+            }
+
+            if (player.isFalling) {
+                player.fallSpeed += 0.08;
+                if (player.fallSpeed > 3) player.fallSpeed = 3;
+                
+                if (!player.leftGripped && !player.rightGripped) {
+                    player.row -= 0.15 + player.fallSpeed * 0.02;
+                    player.fallTimer--;
+                }
+                
+                // Try to catch
+                if (!player.leftGripped || !player.rightGripped) {
+                    const leftHandX = BUILDING_X + player.col * COL_WIDTH + COL_WIDTH / 2;
+                    const leftHandY = H - (player.leftGripRow * ROW_HEIGHT) + scrollY - 10;
+                    const rightHandX = BUILDING_X + (player.col + 1) * COL_WIDTH + COL_WIDTH / 2;
+                    const rightHandY = H - (player.rightGripRow * ROW_HEIGHT) + scrollY - 10;
+                    const catchRow = Math.floor(player.row) - 1;
+                    
+                    if (!player.leftGripped && player.leftHandUp && catchRow >= 0) {
+                        if (canCatchLedge(leftHandX, leftHandY, player.col, catchRow)) {
+                            player.leftGripped = true;
+                            player.leftGripRow = catchRow;
+                            player.gripFlash = 20;
+                            playSound(440, 0.08, 'square', 0.05);
+                            spawnParticles(leftHandX, leftHandY, '#00ffcc', 12);
+                            addFloatingText(leftHandX, leftHandY - 20, '🫴 CAUGHT!', '#00ffcc');
+                        }
+                    }
+                    
+                    if (!player.rightGripped && player.rightHandUp && catchRow >= 0) {
+                        if (canCatchLedge(rightHandX, rightHandY, player.col + 1, catchRow)) {
+                            player.rightGripped = true;
+                            player.rightGripRow = catchRow;
+                            player.gripFlash = 20;
+                            playSound(480, 0.08, 'square', 0.05);
+                            spawnParticles(rightHandX, rightHandY, '#66ddff', 12);
+                            addFloatingText(rightHandX, rightHandY - 20, '🫴 CAUGHT!', '#66ddff');
+                        }
+                    }
+                    
+                    if (player.leftGripped && player.rightGripped) {
+                        player.isFalling = false;
+                        player.fallSpeed = 0;
+                        player.row = Math.min(player.leftGripRow, player.rightGripRow);
+                        addFloatingText(W / 2, H / 2 - 40, '✅ SAVED!', '#66ddff');
+                        playSound(600, 0.15, 'square', 0.06);
+                        player.lastPulledHand = null; // Reset after save
+                    }
+                }
+
+                if (player.fallTimer <= 0 || player.row < 0) {
+                    lives--;
+                    if (lives < 0) {
+                        gameOver = true;
+                        if (score > highScore) {
+                            highScore = score;
+                            localStorage.setItem('cc_retro_high', highScore);
+                        }
+                    } else {
+                        playSound(300, 0.2, 'square', 0.06);
+                        addFloatingText(W / 2, H / 2, `❤️ ${lives} LIVES LEFT`, '#66ddff');
+                        player.row = 5;
+                        player.leftGripRow = player.row + 1;
+                        player.rightGripRow = player.row + 1;
+                        player.leftGripped = false;
+                        player.rightGripped = false;
+                        player.isFalling = false;
+                        player.fallSpeed = 0;
+                        player.leftHandUp = true;
+                        player.rightHandUp = true;
+                        player.lastPulledHand = null;
+                        let winL = windows[player.leftGripRow]?.[player.col];
+                        let winR = windows[player.rightGripRow]?.[player.col + 1];
+                        if (winL && winL.state !== WIN_OPEN) player.leftGripped = true;
+                        if (winR && winR.state !== WIN_OPEN) player.rightGripped = true;
+                    }
+                }
+            }
+
+            // ---- COMBO TIMER ----
+            if (comboTimer > 0) {
+                comboTimer--;
+                if (comboTimer === 0) comboCount = 0;
+            }
+
+            // ---- LEVEL WIN ----
+            if (player.row >= buildingHeight) {
+                const bonus = 5000 + buildingHeight * 100;
+                score += bonus;
+                difficultyLevel++;
+                addFloatingText(W / 2, H / 2 - 60, `🏆 BUILDING ${difficultyLevel - 1} COMPLETE!`, '#ffdd44');
+                addFloatingText(W / 2, H / 2, `+${bonus} BONUS!`, '#ffaa44');
+                buildingHeight += 8;
+                playSound(600, 0.4, 'square', 0.08);
+                setTimeout(() => {
+                    resetPlayerPosition();
+                    initBuilding();
+                }, 100);
+                return;
+            }
+
+            // ---- SMOOTH SCROLL ----
+            targetScrollY = player.row * ROW_HEIGHT - 380;
+            scrollY += (targetScrollY - scrollY) * 0.1;
+
+            // ---- HAZARDS ----
+            if (frameCount % 120 === 0) spawnMadDoctor();
+
+            for (let i = windowDroppers.length - 1; i >= 0; i--) {
+                let d = windowDroppers[i];
+                d.timer++;
+                d.armPhase += 0.05;
+                if (d.timer > 35 && !d.hasDropped) {
+                    d.hasDropped = true;
+                    const dx = BUILDING_X + d.col * COL_WIDTH + COL_WIDTH / 2;
+                    const dy = H - (d.row * ROW_HEIGHT) + scrollY - 20;
+                    spawnFallingObject(dx - 8, dy);
+                    playSound(220, 0.1, 'sawtooth', 0.05);
+                    spawnParticles(dx, dy, '#ff8800', 6);
+                }
+                if (d.timer > 90) {
+                    windowDroppers.splice(i, 1);
+                }
+            }
+
+            // ---- Falling Objects ----
+            for (let i = fallingObjects.length - 1; i >= 0; i--) {
+                let obj = fallingObjects[i];
+                obj.y += obj.vy;
+                obj.rotation += obj.rotSpeed;
+
+                let renderCol = player.col;
+                if (player.isShifting) {
+                    renderCol += player.shiftProgress * (player.targetCol - player.col);
+                }
+
+                let px = BUILDING_X + renderCol * COL_WIDTH + COL_WIDTH;
+                let py = H - (player.row * ROW_HEIGHT) + scrollY - 16;
+
+                if (!player.isFalling && Math.abs(obj.x - px) < 35 && Math.abs(obj.y - py) < 35) {
+                    player.leftGripped = false;
+                    player.rightGripped = false;
+                    spawnParticles(obj.x, obj.y, '#ff3d00', 15);
+                    addFloatingText(obj.x, obj.y - 20, '💥 HIT!', '#ff3d00');
+                    playSound(150, 0.2, 'sawtooth', 0.08);
+                    fallingObjects.splice(i, 1);
+                    continue;
+                }
+
+                if (player.leftHandUp && player.leftGripped) {
+                    let lhX = BUILDING_X + player.col * COL_WIDTH + COL_WIDTH / 2;
+                    let lhY = H - (player.leftGripRow * ROW_HEIGHT) + scrollY - 10;
+                    if (Math.abs(obj.x - lhX) < 20 && Math.abs(obj.y - lhY) < 20) {
+                        player.leftGripped = false;
+                        spawnParticles(obj.x, obj.y, '#ff3d00', 10);
+                        addFloatingText(obj.x, obj.y - 20, '💥 HAND HIT!', '#ff3d00');
+                        playSound(150, 0.15, 'sawtooth', 0.06);
+                        fallingObjects.splice(i, 1);
+                        continue;
+                    }
+                }
+
+                if (player.rightHandUp && player.rightGripped) {
+                    let rhX = BUILDING_X + (player.col + 1) * COL_WIDTH + COL_WIDTH / 2;
+                    let rhY = H - (player.rightGripRow * ROW_HEIGHT) + scrollY - 10;
+                    if (Math.abs(obj.x - rhX) < 20 && Math.abs(obj.y - rhY) < 20) {
+                        player.rightGripped = false;
+                        spawnParticles(obj.x, obj.y, '#ff3d00', 10);
+                        addFloatingText(obj.x, obj.y - 20, '💥 HAND HIT!', '#ff3d00');
+                        playSound(150, 0.15, 'sawtooth', 0.06);
+                        fallingObjects.splice(i, 1);
+                        continue;
+                    }
+                }
+
+                if (obj.y > H) fallingObjects.splice(i, 1);
+            }
+
+            // ---- PARTICLES ----
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.05;
+                p.life--;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            // ---- FLOATING TEXTS ----
+            for (let i = floatingTexts.length - 1; i >= 0; i--) {
+                let t = floatingTexts[i];
+                t.y += t.vy;
+                t.life--;
+                if (t.life <= 0) floatingTexts.splice(i, 1);
+            }
+
+            // ---- AUTO-REGRIP ----
+            if (player.leftHandUp && !player.leftGripped && !player.isFalling) {
+                let win = windows[player.leftGripRow]?.[player.col];
+                if (win && win.state !== WIN_OPEN) {
+                    player.leftGripped = true;
+                    player.gripFlash = 10;
+                    playSound(440, 0.03, 'square', 0.02);
+                    spawnParticles(player.col * COL_WIDTH + BUILDING_X + COL_WIDTH / 2,
+                        H - (player.leftGripRow * ROW_HEIGHT) + scrollY, '#00ffcc', 3);
+                }
+            }
+            if (player.rightHandUp && !player.rightGripped && !player.isFalling) {
+                let win = windows[player.rightGripRow]?.[player.col + 1];
+                if (win && win.state !== WIN_OPEN) {
+                    player.rightGripped = true;
+                    player.gripFlash = 10;
+                    playSound(480, 0.03, 'square', 0.02);
+                    spawnParticles((player.col + 1) * COL_WIDTH + BUILDING_X + COL_WIDTH / 2,
+                        H - (player.rightGripRow * ROW_HEIGHT) + scrollY, '#66ddff', 3);
+                }
+            }
+        }
+
+        // ----- DRAW -----
+        function draw() {
+            ctx.fillStyle = "#010105";
+            ctx.fillRect(0, 0, W, H);
+
+            // ---- Grid Lines ----
+            ctx.strokeStyle = "#0d0d22";
+            ctx.lineWidth = 1;
+            for (let x = 0; x < W; x += 30) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, H);
+                ctx.stroke();
+            }
+            for (let y = 0; y < H; y += 30) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(W, y);
+                ctx.stroke();
+            }
+
+            // ---- Building ----
+            ctx.fillStyle = "#14141c";
+            ctx.fillRect(BUILDING_X - 10, 0, (COL_WIDTH * NUM_COLS) + 20, H);
+            ctx.strokeStyle = "#ff1744";
+            ctx.lineWidth = 3;
+            ctx.strokeRect(BUILDING_X - 10, -10, (COL_WIDTH * NUM_COLS) + 20, H + 20);
+
+            // ---- Windows ----
+            for (let r = 0; r < windows.length; r++) {
+                let winY = H - (r * ROW_HEIGHT) + scrollY;
+                if (winY < -100 || winY > H + 100) continue;
+
+                for (let c = 0; c < NUM_COLS; c++) {
+                    let win = windows[r][c];
+                    let winX = BUILDING_X + c * COL_WIDTH + 12;
+                    let winW = COL_WIDTH - 24;
+                    let winH = ROW_HEIGHT - 24;
+                    let yPos = winY - ROW_HEIGHT + 12;
+
+                    ctx.fillStyle = "#0a0a12";
+                    ctx.fillRect(winX, yPos, winW, winH);
+
+                    if (win.state === WIN_CLOSED) {
+                        ctx.strokeStyle = "#00ffcc";
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(winX, yPos, winW, winH);
+                        ctx.fillStyle = "rgba(0, 255, 204, 0.06)";
+                        ctx.fillRect(winX + 2, yPos + 2, winW - 4, winH - 4);
+                        ctx.strokeStyle = "rgba(0, 255, 204, 0.15)";
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(winX + winW / 2, yPos + 2);
+                        ctx.lineTo(winX + winW / 2, yPos + winH - 2);
+                        ctx.moveTo(winX + 2, yPos + winH / 2);
+                        ctx.lineTo(winX + winW - 2, yPos + winH / 2);
+                        ctx.stroke();
+                        // Extra glow for closed windows
+                        ctx.shadowColor = "#00ffcc";
+                        ctx.shadowBlur = 10;
+                        ctx.strokeStyle = "rgba(0, 255, 204, 0.1)";
+                        ctx.strokeRect(winX - 2, yPos - 2, winW + 4, winH + 4);
+                        ctx.shadowBlur = 0;
+                    } else if (win.state === WIN_HALF) {
+                        ctx.strokeStyle = "#ffb300";
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(winX, yPos, winW, winH / 2);
+                        ctx.fillStyle = "rgba(255, 179, 0, 0.08)";
+                        ctx.fillRect(winX + 2, yPos + 2, winW - 4, winH / 2 - 4);
+                    } else if (win.state === WIN_OPEN) {
+                        ctx.strokeStyle = "#ff3d00";
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(winX, yPos, winW, winH);
+                        ctx.fillStyle = "#1a0505";
+                        ctx.fillRect(winX + 2, yPos + 2, winW - 4, winH - 4);
+                        ctx.fillStyle = "rgba(255, 61, 0, 0.08)";
+                        ctx.fillRect(winX - 4, yPos - 4, winW + 8, winH + 8);
+                    }
+                }
+            }
+
+            // ---- Window Droppers ----
+            for (let d of windowDroppers) {
+                let dy = H - (d.row * ROW_HEIGHT) + scrollY;
+                let dx = BUILDING_X + d.col * COL_WIDTH + 20;
+                let yPos = dy - ROW_HEIGHT + 10;
+
+                ctx.fillStyle = "#7c4dff";
+                ctx.fillRect(dx, yPos, COL_WIDTH - 40, ROW_HEIGHT - 30);
+
+                ctx.fillStyle = "#fff";
+                ctx.font = "16px monospace";
+                ctx.textAlign = "center";
+                ctx.fillText("😡", dx + (COL_WIDTH - 40) / 2, yPos + 25);
+
+                const armAngle = Math.sin(d.timer * 0.1) * 0.5 + 0.5;
+                ctx.strokeStyle = "#7c4dff";
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(dx + COL_WIDTH - 40, yPos + 15);
+                ctx.lineTo(dx + COL_WIDTH - 20 + armAngle * 20, yPos + 30 + armAngle * 15);
+                ctx.stroke();
+
+                if (d.timer > 30 && !d.hasDropped) {
+                    ctx.fillStyle = "rgba(255, 61, 0, 0.3)";
+                    ctx.fillRect(dx + COL_WIDTH - 20, yPos + 35, 10, 10);
+                }
+            }
+
+            // ---- Falling Objects ----
+            for (let obj of fallingObjects) {
+                ctx.save();
+                ctx.translate(obj.x, obj.y);
+                ctx.rotate(obj.rotation || 0);
+
+                ctx.fillStyle = obj.color;
+                ctx.shadowColor = obj.color;
+                ctx.shadowBlur = 10;
+                ctx.fillRect(-obj.w / 2, -obj.h / 2, obj.w, obj.h);
+
+                if (obj.type === 'pot') {
+                    ctx.fillStyle = "#6B8E23";
+                    ctx.fillRect(-3, -obj.h / 2 + 2, 6, 4);
+                } else if (obj.type === 'tv') {
+                    ctx.fillStyle = "#2F4F4F";
+                    ctx.fillRect(-obj.w / 2 + 3, -obj.h / 2 + 2, obj.w - 6, 4);
+                }
+                ctx.shadowBlur = 0;
+                ctx.restore();
+            }
+
+            // ---- Player ----
+            if (!gameOver) {
+                let renderCol = player.col;
+                if (player.isShifting) {
+                    renderCol += player.shiftProgress * (player.targetCol - player.col);
+                }
+
+                let px = BUILDING_X + renderCol * COL_WIDTH + COL_WIDTH;
+                let py = H - (player.row * ROW_HEIGHT) + scrollY - 16;
+
+                // ---- LEFT HAND ----
+                let lhX = BUILDING_X + player.col * COL_WIDTH + COL_WIDTH / 2;
+                let lhY = H - (player.leftGripRow * ROW_HEIGHT) + scrollY - 10;
+
+                if (player.leftGripped) {
+                    ctx.shadowColor = "#00ffcc";
+                    ctx.shadowBlur = 20 + player.leftGripTimer * 0.5;
+                }
+                ctx.fillStyle = player.leftGripped ? "#00ffcc" : "#ff3d00";
+                ctx.beginPath();
+                ctx.arc(lhX, lhY, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                ctx.strokeStyle = player.leftGripped ? "rgba(0,255,204,0.5)" : "rgba(255,61,0,0.5)";
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(px - 14, py + 2);
+                ctx.lineTo(lhX, lhY);
+                ctx.stroke();
+
+                if (player.leftHandUp) {
+                    ctx.fillStyle = "rgba(255,255,255,0.1)";
+                    ctx.font = "8px monospace";
+                    ctx.textAlign = "center";
+                    ctx.fillText(`L${player.leftGripRow}`, lhX, lhY + 22);
+                }
+
+                // ---- RIGHT HAND ----
+                let rhX = BUILDING_X + (player.col + 1) * COL_WIDTH + COL_WIDTH / 2;
+                let rhY = H - (player.rightGripRow * ROW_HEIGHT) + scrollY - 10;
+
+                if (player.rightGripped) {
+                    ctx.shadowColor = "#66ddff";
+                    ctx.shadowBlur = 20 + player.rightGripTimer * 0.5;
+                }
+                ctx.fillStyle = player.rightGripped ? "#66ddff" : "#ff3d00";
+                ctx.beginPath();
+                ctx.arc(rhX, rhY, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                ctx.strokeStyle = player.rightGripped ? "rgba(102,221,255,0.5)" : "rgba(255,61,0,0.5)";
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(px + 14, py + 2);
+                ctx.lineTo(rhX, rhY);
+                ctx.stroke();
+
+                if (player.rightHandUp) {
+                    ctx.fillStyle = "rgba(255,255,255,0.1)";
+                    ctx.font = "8px monospace";
+                    ctx.textAlign = "center";
+                    ctx.fillText(`R${player.rightGripRow}`, rhX, rhY + 22);
+                }
+
+                // ---- BODY ----
+                ctx.fillStyle = player.isFalling ? "#ff1744" : "#ffdd00";
+                ctx.shadowColor = player.isFalling ? "#ff1744" : "#ffdd00";
+                ctx.shadowBlur = 15;
+                ctx.fillRect(px - 14, py - 14, 28, 28);
+                ctx.shadowBlur = 0;
+
+                // Helmet
+                ctx.fillStyle = "#2979ff";
+                ctx.fillRect(px - 12, py - 26, 24, 12);
+                ctx.fillStyle = "#1a5bbf";
+                ctx.fillRect(px - 8, py - 30, 16, 4);
+
+                // Face
+                ctx.fillStyle = "#ffccaa";
+                ctx.fillRect(px - 6, py - 8, 12, 8);
+
+                // Eyes
+                ctx.fillStyle = "#222";
+                if (renderCol < player.col + 0.5) {
+                    ctx.fillRect(px - 5, py - 6, 3, 3);
+                    ctx.fillRect(px + 2, py - 6, 3, 3);
+                } else {
+                    ctx.fillRect(px - 4, py - 6, 3, 3);
+                    ctx.fillRect(px + 3, py - 6, 3, 3);
+                }
+
+                // Mouth - shows if blocked
+                if (player.climbBlocked && player.blockedTimer > 0) {
+                    ctx.fillStyle = "#ff3d00";
+                    ctx.fillRect(px - 4, py + 2, 8, 3);
+                    // Angry eyebrows
+                    ctx.fillStyle = "#222";
+                    ctx.fillRect(px - 8, py - 10, 6, 2);
+                    ctx.fillRect(px + 2, py - 10, 6, 2);
+                } else {
+                    ctx.fillStyle = "#884422";
+                    ctx.fillRect(px - 3, py + 2, 6, 2);
+                }
+
+                // ---- LEGS ----
+                ctx.fillStyle = "#446688";
+                const legSwing = player.isFalling ? 0 : Math.sin(frameCount / 15) * 2;
+                ctx.fillRect(px - 10, py + 14 + legSwing, 6, 10);
+                ctx.fillRect(px + 4, py + 14 - legSwing, 6, 10);
+
+                // Boots
+                ctx.fillStyle = "#8B4513";
+                ctx.fillRect(px - 11, py + 22 + legSwing, 8, 4);
+                ctx.fillRect(px + 3, py + 22 - legSwing, 8, 4);
+
+                // ---- GRIP INDICATORS ----
+                if (player.leftGripped) {
+                    ctx.strokeStyle = "rgba(0,255,204,0.3)";
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.arc(lhX, lhY, 14, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+                if (player.rightGripped) {
+                    ctx.strokeStyle = "rgba(102,221,255,0.3)";
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.arc(rhX, rhY, 14, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                // ---- HAND STATUS ----
+                ctx.font = "8px monospace";
+                ctx.textAlign = "center";
+                ctx.fillStyle = player.leftGripped ? "#00ffcc" : "#ff3d00";
+                ctx.fillText(player.leftGripped ? "GRIP" : "FREE", lhX, lhY + 20);
+                ctx.fillStyle = player.rightGripped ? "#66ddff" : "#ff3d00";
+                ctx.fillText(player.rightGripped ? "GRIP" : "FREE", rhX, rhY + 20);
+            }
+
+            // ---- PARTICLES ----
+            for (let p of particles) {
+                ctx.globalAlpha = p.life / p.maxLife;
+                ctx.fillStyle = p.color;
+                ctx.shadowColor = p.color;
+                ctx.shadowBlur = 8;
+                ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+            }
+            ctx.globalAlpha = 1;
+            ctx.shadowBlur = 0;
+
+            // ---- FLOATING TEXTS ----
+            for (let t of floatingTexts) {
+                ctx.globalAlpha = t.life / t.maxLife;
+                ctx.fillStyle = t.color;
+                ctx.font = "bold 18px monospace";
+                ctx.textAlign = "center";
+                ctx.shadowColor = t.color;
+                ctx.shadowBlur = 15;
+                ctx.fillText(t.text, t.x, t.y);
+            }
+            ctx.globalAlpha = 1;
+            ctx.shadowBlur = 0;
+
+            // ---- HUD ----
+            ctx.fillStyle = "#fff";
+            ctx.font = "bold 16px monospace";
+            ctx.textAlign = "left";
+            ctx.fillText(`SCORE: ${String(score).padStart(6, '0')}`, 12, 30);
+            ctx.textAlign = "center";
+            ctx.fillStyle = "#ff66aa";
+            ctx.fillText(`HI: ${String(highScore).padStart(6, '0')}`, W / 2, 30);
+            ctx.textAlign = "right";
+            ctx.fillStyle = "#ff4477";
+            ctx.fillText(`❤️`.repeat(Math.max(0, lives)), W - 12, 30);
+
+            ctx.textAlign = "left";
+            ctx.fillStyle = "#888";
+            ctx.font = "10px monospace";
+            ctx.fillText(`LVL ${difficultyLevel}`, 12, 48);
+
+            // ---- HAND ALTERNATION WARNING ----
+            if (player.climbBlocked && player.blockedTimer > 0) {
+                ctx.textAlign = "center";
+                ctx.fillStyle = "#ffb300";
+                ctx.font = "bold 16px monospace";
+                ctx.shadowColor = "#ffb300";
+                ctx.shadowBlur = 20;
+                ctx.fillText("⚠️ ALTERNATE HANDS!", W / 2, 80);
+                ctx.shadowBlur = 0;
+            }
+
+            if (comboCount > 2) {
+                ctx.textAlign = "center";
+                ctx.fillStyle = "#ffdd44";
+                ctx.font = "bold 14px monospace";
+                ctx.shadowColor = "#ffdd44";
+                ctx.shadowBlur = 20;
+                ctx.fillText(`🔥 COMBO x${comboCount}`, W / 2, 55);
+                ctx.shadowBlur = 0;
+            }
+
+            // ---- PROGRESS BAR ----
+            ctx.fillStyle = "#222";
+            ctx.fillRect(10, 70, 14, 140);
+            let fillRatio = Math.min(1, player.row / buildingHeight);
+            let grad = ctx.createLinearGradient(10, 70, 10, 210);
+            grad.addColorStop(0, "#00ffcc");
+            grad.addColorStop(0.5, "#ffdd44");
+            grad.addColorStop(1, "#ff3d00");
+            ctx.fillStyle = grad;
+            ctx.fillRect(10, 70 + (140 - (140 * fillRatio)), 14, 140 * fillRatio);
+            ctx.strokeStyle = "#444";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(10, 70, 14, 140);
+
+            ctx.fillStyle = "#666";
+            ctx.font = "8px monospace";
+            ctx.textAlign = "center";
+            ctx.fillText(`FLOOR ${Math.floor(player.row)}`, 17, 220);
+
+            // ---- GAME OVER ----
+            if (gameOver) {
+                ctx.fillStyle = "rgba(0,0,0,0.85)";
+                ctx.fillRect(0, 0, W, H);
+                ctx.textAlign = "center";
+                ctx.fillStyle = "#ff1744";
+                ctx.font = "bold 52px monospace";
+                ctx.shadowColor = "#ff1744";
+                ctx.shadowBlur = 40;
+                ctx.fillText("GAME OVER", W / 2, H / 2 - 40);
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = "#fff";
+                ctx.font = "24px monospace";
+                ctx.fillText(`SCORE: ${score}`, W / 2, H / 2 + 30);
+                ctx.fillStyle = "#ff66aa";
+                ctx.font = "18px monospace";
+                ctx.fillText(`HIGH SCORE: ${highScore}`, W / 2, H / 2 + 70);
+                ctx.fillStyle = "#888";
+                ctx.font = "16px monospace";
+                ctx.fillText("PRESS 'R' TO RESTART", W / 2, H / 2 + 120);
+            }
+        }
+
+        // ----- INPUT ----
+        const keys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false,
+            arrowup: false,
+            arrowdown: false,
+            arrowleft: false,
+            arrowright: false
+        };
+
+        document.addEventListener('keydown', (e) => {
+            const k = e.key.toLowerCase();
+            if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'r'].includes(k) ||
+                e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                e.preventDefault();
+            }
+            if (k === 'r' && gameOver) {
+                score = 0;
+                lives = 3;
+                buildingHeight = 40;
+                difficultyLevel = 1;
+                gameOver = false;
+                resetPlayerPosition();
+                initBuilding();
+                return;
+            }
+            if (k in keys) keys[k] = true;
+            initAudio();
+        });
+
+        document.addEventListener('keyup', (e) => {
+            const k = e.key.toLowerCase();
+            if (k in keys) keys[k] = false;
+        });
+
+        // ----- START ----
+        initBuilding();
+        resetPlayerPosition();
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        gameLoop();
+    </script>
+</body>
+</html>

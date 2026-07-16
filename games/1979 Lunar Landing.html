@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>🌙 Lunar Lander – Ultimate</title>
+    <title>🌙 Lunar Lander – Vector Edition</title>
     <style>
         * {
             margin: 0;
@@ -11,7 +11,7 @@
             box-sizing: border-box;
         }
         body {
-            background: #0a0a12;
+            background: #0a0a0f;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -19,42 +19,52 @@
             font-family: 'Courier New', monospace;
         }
         .game-wrapper {
-            background: #12121f;
+            background: #0d0d18;
             padding: 20px 30px 25px;
             border-radius: 16px;
-            border: 2px solid #2a2a5a;
-            box-shadow: 0 0 60px rgba(0, 150, 255, 0.05);
+            border: 2px solid #1a2a3a;
+            box-shadow: 0 0 60px rgba(0, 200, 255, 0.03);
             min-width: 760px;
         }
         canvas {
             display: block;
             margin: 0 auto;
-            border: 3px solid #2a2a5a;
+            border: 2px solid #1a2a3a;
             border-radius: 8px;
-            background: #0b0b18;
+            background: #050508;
             width: 700px;
             height: 500px;
+            cursor: none;
         }
         .dashboard {
             display: grid;
-            grid-template-columns: repeat(6, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 8px;
             margin-top: 10px;
             padding: 8px 12px;
-            background: #0a0a15;
+            background: #08080f;
             border-radius: 8px;
-            border: 1px solid #1a1a3a;
+            border: 1px solid #121a2a;
         }
         .dash-item {
-            color: #aac0ff;
-            font-size: 13px;
-            font-weight: bold;
+            color: #6688aa;
             text-align: center;
-            padding: 2px 0;
+            padding: 4px 0;
+            font-weight: bold;
+            font-size: 16px;
         }
         .dash-item span {
-            color: #ffcc77;
-            font-weight: normal;
+            color: #88ddff;
+            font-weight: bold;
+            font-size: 20px;
+            display: inline-block;
+            min-width: 40px;
+        }
+        .dash-item .high-score {
+            color: #ff9f7a;
+        }
+        .dash-item .lives-icon {
+            color: #ff6b7a;
         }
         .dash-item .danger {
             color: #ff4477 !important;
@@ -75,19 +85,23 @@
             }
         }
         .controls {
-            color: #6688aa;
-            font-size: 13px;
+            color: #334466;
+            font-size: 12px;
             margin-top: 8px;
             text-align: center;
-            border-top: 1px solid #1a1a3a;
+            border-top: 1px solid #111a2a;
             padding-top: 10px;
+            letter-spacing: 0.5px;
         }
         .controls kbd {
-            background: #1a1a3a;
+            background: #111a2a;
             padding: 2px 10px;
             border-radius: 4px;
-            border: 1px solid #3a3a6a;
-            color: #cce;
+            border: 1px solid #223355;
+            color: #88aacc;
+        }
+        .controls .highlight {
+            color: #88ddff;
         }
         @media (max-width: 780px) {
             .game-wrapper {
@@ -101,9 +115,13 @@
                 aspect-ratio: 700/500;
             }
             .dashboard {
-                grid-template-columns: repeat(3, 1fr);
+                grid-template-columns: repeat(2, 1fr);
                 gap: 4px;
-                font-size: 11px;
+                font-size: 14px;
+            }
+            .dash-item span {
+                font-size: 17px;
+                min-width: 30px;
             }
         }
     </style>
@@ -112,92 +130,287 @@
     <div class="game-wrapper">
         <canvas id="gameCanvas" width="700" height="500"></canvas>
         <div class="dashboard" id="dashboard">
-            <div class="dash-item">SCORE <span id="scoreDisplay">0</span></div>
-            <div class="dash-item">FUEL <span id="fuelDisplay">120</span></div>
-            <div class="dash-item">LIVES <span id="livesDisplay">3</span></div>
-            <div class="dash-item">LEVEL <span id="levelDisplay">1</span></div>
-            <div class="dash-item">VERT <span id="vSpeedDisplay">0.00</span></div>
-            <div class="dash-item">HORIZ <span id="hSpeedDisplay">0.00</span></div>
+            <div class="dash-item">💎 SCORE <span id="scoreDisplay">0</span></div>
+            <div class="dash-item">🏆 HIGH <span class="high-score" id="highScoreDisplay">0</span></div>
+            <div class="dash-item"><span class="lives-icon">❤️</span> LIVES <span id="livesDisplay">3</span></div>
+            <div class="dash-item">🎯 LEVEL <span id="levelDisplay">1</span></div>
         </div>
         <div class="controls">
-            <kbd>←</kbd> <kbd>→</kbd> rotate &nbsp;|&nbsp; <kbd>↑</kbd> or <kbd>Space</kbd> thrust &nbsp;|&nbsp; <kbd>R</kbd> restart
+            <kbd>Space</kbd> Start &nbsp;|&nbsp; <kbd>←</kbd> <kbd>→</kbd> rotate &nbsp;|&nbsp; <kbd>↑</kbd> thrust &nbsp;|&nbsp; <kbd>R</kbd> restart &nbsp;|&nbsp; <kbd>M</kbd> mute
+            <span class="highlight" id="soundStatus">🔊</span>
         </div>
     </div>
     <script>
         // ============================================================
-        // LUNAR LANDER – Ultimate Edition
-        // Combining the best of all versions
+        // LUNAR LANDER – Vector Edition v8
+        // Larger PADS display, readable level name
         // ============================================================
 
         // ----- SETUP -----
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const scoreDisplay = document.getElementById('scoreDisplay');
-        const fuelDisplay = document.getElementById('fuelDisplay');
+        const highScoreDisplay = document.getElementById('highScoreDisplay');
         const livesDisplay = document.getElementById('livesDisplay');
         const levelDisplay = document.getElementById('levelDisplay');
-        const vSpeedDisplay = document.getElementById('vSpeedDisplay');
-        const hSpeedDisplay = document.getElementById('hSpeedDisplay');
+        const soundStatus = document.getElementById('soundStatus');
 
         const W = 700,
             H = 500;
         const GROUND_BASE = 460;
 
+        // ----- HIGH SCORE -----
+        let highScore = parseInt(localStorage.getItem('landerHighScore')) || 0;
+        highScoreDisplay.textContent = highScore;
+
+        function updateHighScore() {
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('landerHighScore', highScore);
+                highScoreDisplay.textContent = highScore;
+            }
+        }
+
+        // ----- AUDIO -----
+        let audioCtx = null;
+        let soundEnabled = true;
+        let engineOsc = null;
+        let engineGain = null;
+        let engineRunning = false;
+
+        function initAudio() {
+            if (!audioCtx) {
+                try {
+                    audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+                    if (audioCtx.state === 'suspended') {
+                        audioCtx.resume();
+                    }
+                } catch (e) { /* ignore */ }
+            }
+            return audioCtx;
+        }
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            soundStatus.textContent = soundEnabled ? '🔊' : '🔇';
+            if (!soundEnabled && engineRunning) {
+                stopEngineSound();
+            }
+            if (soundEnabled && ship && ship.thrusting) {
+                startEngineSound();
+            }
+        }
+
+        function startEngineSound() {
+            if (!soundEnabled || !audioCtx) return;
+            try {
+                if (engineRunning) return;
+                engineOsc = audioCtx.createOscillator();
+                engineGain = audioCtx.createGain();
+                const gain2 = audioCtx.createGain();
+
+                engineOsc.type = 'sawtooth';
+                engineOsc.frequency.setValueAtTime(60, audioCtx.currentTime);
+                engineOsc.frequency.linearRampToValueAtTime(80, audioCtx.currentTime + 0.1);
+
+                engineGain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+                engineGain.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + 0.1);
+
+                engineOsc.connect(engineGain);
+                engineGain.connect(gain2);
+                gain2.connect(audioCtx.destination);
+                gain2.gain.setValueAtTime(1, audioCtx.currentTime);
+
+                engineOsc.start();
+                engineRunning = true;
+            } catch (e) { /* ignore */ }
+        }
+
+        function updateEngineSound(thrusting) {
+            if (!soundEnabled || !audioCtx) return;
+            if (thrusting && !engineRunning) {
+                startEngineSound();
+            } else if (!thrusting && engineRunning) {
+                stopEngineSound();
+            }
+            if (engineRunning && engineOsc && engineGain) {
+                try {
+                    const freq = 60 + (ship ? 20 * (1 - ship.fuel / ship.maxFuel) : 0);
+                    engineOsc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                    const vol = 0.04 + 0.06 * (1 - (ship ? ship.fuel / ship.maxFuel : 1));
+                    engineGain.gain.setValueAtTime(vol, audioCtx.currentTime);
+                } catch (e) { /* ignore */ }
+            }
+        }
+
+        function stopEngineSound() {
+            if (engineOsc) {
+                try {
+                    engineOsc.stop();
+                } catch (e) { /* ignore */ }
+                engineOsc = null;
+                engineGain = null;
+            }
+            engineRunning = false;
+        }
+
+        function playTone(freq, duration, volume, type) {
+            if (!soundEnabled || !audioCtx) return;
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type || 'sine';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(volume || 0.1, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) { /* ignore */ }
+        }
+
+        function playLandingSound() {
+            playTone(440, 0.1, 0.08);
+            setTimeout(() => playTone(550, 0.1, 0.08), 100);
+            setTimeout(() => playTone(660, 0.15, 0.08), 200);
+        }
+
+        function playCrashSound() {
+            playTone(200, 0.3, 0.15, 'sawtooth');
+            setTimeout(() => playTone(100, 0.4, 0.1, 'sawtooth'), 100);
+        }
+
+        function playWarningSound() {
+            playTone(880, 0.05, 0.04);
+        }
+
         // ============================================================
         // LEVEL DEFINITIONS
         // ============================================================
         const LEVELS = [{
-            name: 'Highlands',
-            gravity: 0.030,
-            fuel: 140,
+            name: 'Training Grounds',
+            gravity: 0.025,
+            fuel: 160,
             windChance: 0,
-            terrainType: 'hills',
+            windMax: 0.02,
+            terrainAmplitude: 15,
+            terrainFrequency: 0.008,
+            pads: [{ x: 350, width: 100, points: 50, mult: 1 }],
+        }, {
+            name: 'Highlands',
+            gravity: 0.028,
+            fuel: 150,
+            windChance: 0.02,
+            windMax: 0.04,
+            terrainAmplitude: 35,
+            terrainFrequency: 0.01,
             pads: [
-                { x: 350, width: 80, points: 100, label: 'EASY', mult: 1 },
-                { x: 550, width: 40, points: 200, label: 'MEDIUM', mult: 2 },
+                { x: 250, width: 70, points: 80, mult: 1 },
+                { x: 500, width: 50, points: 150, mult: 2 },
             ],
         }, {
-            name: 'Craters',
-            gravity: 0.035,
+            name: 'Mare Serenitatis',
+            gravity: 0.030,
+            fuel: 145,
+            windChance: 0.04,
+            windMax: 0.06,
+            terrainAmplitude: 45,
+            terrainFrequency: 0.012,
+            pads: [
+                { x: 200, width: 55, points: 100, mult: 1 },
+                { x: 400, width: 35, points: 200, mult: 3 },
+                { x: 580, width: 30, points: 250, mult: 3 },
+            ],
+        }, {
+            name: 'Mare Tranquillitatis',
+            gravity: 0.032,
+            fuel: 140,
+            windChance: 0.06,
+            windMax: 0.09,
+            terrainAmplitude: 55,
+            terrainFrequency: 0.014,
+            pads: [
+                { x: 150, width: 50, points: 120, mult: 1 },
+                { x: 380, width: 25, points: 280, mult: 3 },
+                { x: 600, width: 20, points: 350, mult: 5 },
+            ],
+        }, {
+            name: 'Rimae',
+            gravity: 0.034,
             fuel: 135,
-            windChance: 0.05,
-            terrainType: 'craters',
+            windChance: 0.08,
+            windMax: 0.12,
+            terrainAmplitude: 65,
+            terrainFrequency: 0.016,
             pads: [
-                { x: 200, width: 60, points: 120, label: 'EASY', mult: 1 },
-                { x: 400, width: 35, points: 220, label: 'HARD', mult: 3 },
-                { x: 580, width: 20, points: 350, label: 'EXTREME', mult: 5 },
+                { x: 180, width: 45, points: 150, mult: 2 },
+                { x: 420, width: 25, points: 280, mult: 3 },
+                { x: 600, width: 15, points: 400, mult: 5 },
             ],
         }, {
-            name: 'Ridge',
-            gravity: 0.038,
+            name: 'Montes',
+            gravity: 0.036,
             fuel: 130,
-            windChance: 0.12,
-            terrainType: 'ridge',
+            windChance: 0.10,
+            windMax: 0.15,
+            terrainAmplitude: 75,
+            terrainFrequency: 0.018,
             pads: [
-                { x: 150, width: 50, points: 150, label: 'EASY', mult: 1 },
-                { x: 380, width: 25, points: 280, label: 'HARD', mult: 3 },
-                { x: 600, width: 15, points: 400, label: 'EXTREME', mult: 5 },
+                { x: 200, width: 35, points: 200, mult: 3 },
+                { x: 450, width: 20, points: 320, mult: 5 },
+                { x: 620, width: 12, points: 500, mult: 8 },
             ],
         }, {
-            name: 'Canyon',
+            name: 'Vallis',
+            gravity: 0.038,
+            fuel: 120,
+            windChance: 0.14,
+            windMax: 0.20,
+            terrainAmplitude: 85,
+            terrainFrequency: 0.02,
+            pads: [
+                { x: 250, width: 30, points: 220, mult: 3 },
+                { x: 500, width: 18, points: 380, mult: 5 },
+            ],
+        }, {
+            name: 'Mare Imbrium',
+            gravity: 0.040,
+            fuel: 115,
+            windChance: 0.18,
+            windMax: 0.25,
+            terrainAmplitude: 95,
+            terrainFrequency: 0.022,
+            pads: [
+                { x: 180, width: 25, points: 280, mult: 5 },
+                { x: 420, width: 15, points: 450, mult: 8 },
+                { x: 600, width: 10, points: 600, mult: 10 },
+            ],
+        }, {
+            name: 'Mare Fecunditatis',
             gravity: 0.042,
             fuel: 110,
-            windChance: 0.20,
-            terrainType: 'canyon',
+            windChance: 0.22,
+            windMax: 0.30,
+            terrainAmplitude: 105,
+            terrainFrequency: 0.025,
             pads: [
-                { x: 250, width: 40, points: 180, label: 'MEDIUM', mult: 2 },
-                { x: 480, width: 20, points: 320, label: 'HARD', mult: 3 },
+                { x: 200, width: 20, points: 320, mult: 5 },
+                { x: 450, width: 12, points: 500, mult: 8 },
+                { x: 620, width: 8, points: 700, mult: 10 },
             ],
         }, {
-            name: 'Chaos',
-            gravity: 0.048,
-            fuel: 140,
-            windChance: 0.30,
-            terrainType: 'chaos',
+            name: 'Mare Orientale',
+            gravity: 0.045,
+            fuel: 100,
+            windChance: 0.28,
+            windMax: 0.35,
+            terrainAmplitude: 120,
+            terrainFrequency: 0.028,
             pads: [
-                { x: 180, width: 30, points: 250, label: 'HARD', mult: 3 },
-                { x: 420, width: 15, points: 450, label: 'EXTREME', mult: 5 },
-                { x: 600, width: 10, points: 600, label: 'INSANE', mult: 8 },
+                { x: 200, width: 15, points: 400, mult: 8 },
+                { x: 450, width: 10, points: 600, mult: 10 },
+                { x: 620, width: 6, points: 900, mult: 15 },
             ],
         }, ];
 
@@ -214,6 +427,8 @@
         let wind = { x: 0, y: 0 };
         let deathFlash = 0;
         let padFlash = 0;
+        let gameStarted = false;
+        let splashScreen = true;
 
         // ----- RESET -----
         function resetGame() {
@@ -221,6 +436,9 @@
             score = 0;
             lives = 3;
             levelComplete = false;
+            gameStarted = false;
+            splashScreen = true;
+            stopEngineSound();
             resetLevel();
         }
 
@@ -228,112 +446,90 @@
             const level = LEVELS[currentLevel];
             ship = {
                 x: 350,
-                y: 80,
-                vx: 0.3 * (Math.random() - 0.5),
-                vy: 0,
+                y: 70,
+                vx: 0.2 * (Math.random() - 0.5),
+                vy: 0.3 * (Math.random() - 0.5),
                 angle: 0,
                 fuel: level.fuel,
                 maxFuel: level.fuel,
                 thrusting: false,
                 grounded: false,
-                sliding: false,
+                mass: 1.0,
             };
             gameOver = false;
             landed = false;
+            levelComplete = false;
             deathFlash = 0;
             padFlash = 0;
             particles = [];
             wind = { x: 0, y: 0 };
             generateTerrain(level);
             updateUI();
-            updateDashboard();
+            stopEngineSound();
         }
 
-        function crashAndRespawn(reason) {
+        function crashAndRespawn() {
             lives--;
             deathFlash = 30;
+            playCrashSound();
             updateUI();
 
             if (lives <= 0) {
                 gameOver = true;
+                updateHighScore();
                 return;
             }
 
             const level = LEVELS[currentLevel];
             ship.x = 350;
-            ship.y = 80;
-            ship.vx = 0.3 * (Math.random() - 0.5);
-            ship.vy = 0;
+            ship.y = 70;
+            ship.vx = 0.2 * (Math.random() - 0.5);
+            ship.vy = 0.3 * (Math.random() - 0.5);
             ship.angle = 0;
             ship.fuel = level.fuel;
             ship.maxFuel = level.fuel;
             ship.thrusting = false;
             ship.grounded = false;
-            ship.sliding = false;
+            ship.mass = 1.0;
             landed = false;
             particles = [];
             wind = { x: 0, y: 0 };
             generateTerrain(level);
             updateUI();
-            updateDashboard();
+            stopEngineSound();
         }
 
         // ----- TERRAIN GENERATION -----
         function generateTerrain(level) {
             terrain = [];
             pads = [];
-            const type = level.terrainType;
             const steps = 350;
-            let heights = [];
+            const amp = level.terrainAmplitude || 30;
+            const freq = level.terrainFrequency || 0.01;
 
             for (let i = 0; i <= steps; i++) {
                 const x = (i / steps) * W;
                 let h = 0;
 
-                switch (type) {
-                    case 'hills':
-                        h = Math.sin(x * 0.008) * 30 +
-                            Math.sin(x * 0.015 + 1.5) * 15 +
-                            Math.sin(x * 0.025 + 3.2) * 8;
-                        break;
-                    case 'craters':
-                        h = Math.sin(x * 0.004) * 20 +
-                            Math.sin(x * 0.012 + 2.1) * 12 +
-                            (Math.sin(x * 0.035 + 0.5) > 0.7 ? -25 : 0) +
-                            (Math.sin(x * 0.04 + 2.8) > 0.8 ? -20 : 0) +
-                            (Math.sin(x * 0.03 + 4.2) > 0.75 ? -30 : 0);
-                        break;
-                    case 'ridge':
-                        h = Math.sin(x * 0.006) * 25 +
-                            Math.sin(x * 0.01 + 1.2) * 20 +
-                            (Math.sin(x * 0.03 + 0.8) > 0.85 ? -15 : 0) +
-                            (Math.sin(x * 0.025 + 3.5) > 0.9 ? -18 : 0);
-                        break;
-                    case 'canyon':
-                        h = Math.sin(x * 0.005) * 15 +
-                            (x > 200 && x < 500 ? -20 - Math.sin((x - 350) * 0.02) * 15 : 0) +
-                            Math.sin(x * 0.02 + 2.0) * 10;
-                        break;
-                    case 'chaos':
-                        h = Math.sin(x * 0.007) * 20 +
-                            Math.sin(x * 0.02 + 1.8) * 18 +
-                            Math.sin(x * 0.035 + 3.3) * 12 +
-                            (Math.sin(x * 0.04 + 0.2) > 0.8 ? -22 : 0) +
-                            (Math.sin(x * 0.045 + 2.5) > 0.7 ? -18 : 0) +
-                            (Math.sin(x * 0.03 + 4.8) > 0.85 ? -28 : 0);
-                        break;
+                h += Math.sin(x * freq) * amp;
+                h += Math.sin(x * freq * 2.3 + 1.7) * amp * 0.6;
+                h += Math.sin(x * freq * 4.1 + 3.2) * amp * 0.3;
+                h += Math.sin(x * freq * 0.7 + 0.5) * amp * 0.4;
+
+                if (currentLevel > 4) {
+                    h += Math.sin(x * freq * 8 + 2.3) * amp * 0.15;
+                    if (Math.sin(x * freq * 3 + 1.2) > 0.8) h -= amp * 0.3;
+                }
+                if (currentLevel > 7) {
+                    h += Math.sin(x * freq * 12 + 4.5) * amp * 0.1;
+                    if (Math.sin(x * freq * 5 + 0.7) > 0.85) h -= amp * 0.4;
                 }
 
-                h = Math.max(h, -50);
-                heights.push({ x, h });
+                h = Math.max(h, -amp * 1.2);
+                const y = GROUND_BASE - (h + 60);
+                terrain.push({ x: x, y: y });
             }
 
-            for (const p of heights) {
-                const y = GROUND_BASE - (p.h + 60);
-                terrain.push({ x: p.x, y: y });
-            }
-
-            // Place landing pads
             for (const padData of level.pads) {
                 const padX = padData.x;
                 const halfW = padData.width / 2;
@@ -347,15 +543,16 @@
                 }
 
                 for (const t of terrain) {
-                    if (t.x > padX - halfW - 4 && t.x < padX + halfW + 4) {
+                    if (t.x > padX - halfW - 6 && t.x < padX + halfW + 6) {
                         const dist = Math.abs(t.x - padX);
                         if (dist < halfW) {
                             t.y = padY;
                         } else {
-                            const blend = (dist - halfW) / 4;
+                            const blend = (dist - halfW) / 6;
                             if (blend < 1) {
-                                const origY = GROUND_BASE - (60 + Math.sin(t.x * 0.01) * 30);
-                                t.y = padY + (origY - padY) * blend;
+                                const origIdx = Math.floor((t.x / W) * steps);
+                                const origH = terrain[origIdx] ? terrain[origIdx].y : padY;
+                                t.y = padY + (origH - padY) * blend;
                             }
                         }
                     }
@@ -368,7 +565,6 @@
                     halfW: halfW,
                     points: padData.points,
                     mult: padData.mult || 1,
-                    label: padData.label,
                     used: false,
                 });
             }
@@ -405,152 +601,59 @@
             return nearest;
         }
 
-        // ----- PARTICLES -----
-        function spawnThrustParticles() {
-            const angle = ship.angle;
-            for (let i = 0; i < 4; i++) {
-                const spread = (Math.random() - 0.5) * 0.6;
-                const speed = 1 + Math.random() * 2;
-                particles.push({
-                    x: ship.x + Math.sin(angle) * 6 + (Math.random() - 0.5) * 3,
-                    y: ship.y + Math.cos(angle) * 6 + (Math.random() - 0.5) * 3,
-                    vx: Math.sin(angle + spread) * speed + ship.vx * 0.15,
-                    vy: Math.cos(angle + spread) * speed + ship.vy * 0.15,
-                    life: 12 + Math.random() * 14,
-                    maxLife: 26,
-                    radius: 1 + Math.random() * 1.5,
-                    color: '#ffaa44',
-                });
-            }
-        }
-
-        function spawnCrashParticles(x, y) {
-            const colors = ['#ff4422', '#ff8844', '#ffcc44', '#ffffff'];
-            for (let i = 0; i < 50; i++) {
-                const angle = Math.random() * Math.PI * 2;
-                const speed = 1 + Math.random() * 5;
-                particles.push({
-                    x: x + (Math.random() - 0.5) * 20,
-                    y: y + (Math.random() - 0.5) * 20,
-                    vx: Math.cos(angle) * speed,
-                    vy: Math.sin(angle) * speed - 1,
-                    life: 25 + Math.random() * 35,
-                    maxLife: 60,
-                    radius: 1 + Math.random() * 2.5,
-                    color: colors[Math.floor(Math.random() * colors.length)],
-                });
-            }
-        }
-
-        function spawnLandingDust(x, y) {
-            for (let i = 0; i < 20; i++) {
-                const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.5;
-                const speed = 0.5 + Math.random() * 1.5;
-                particles.push({
-                    x: x + (Math.random() - 0.5) * 30,
-                    y: y + 4,
-                    vx: Math.cos(angle) * speed,
-                    vy: Math.sin(angle) * speed - 0.5,
-                    life: 20 + Math.random() * 20,
-                    maxLife: 40,
-                    radius: 1 + Math.random() * 2,
-                    color: '#ccaa88',
-                });
-            }
-        }
-
         // ----- UI -----
         function updateUI() {
             scoreDisplay.textContent = score;
-            fuelDisplay.textContent = Math.floor(ship.fuel);
             livesDisplay.textContent = lives;
             levelDisplay.textContent = currentLevel + 1;
-        }
-
-        function updateDashboard() {
-            const vSpeed = ship.vy;
-            const hSpeed = ship.vx;
-            vSpeedDisplay.textContent = vSpeed.toFixed(2);
-            hSpeedDisplay.textContent = hSpeed.toFixed(2);
-
-            // Color coding
-            const vEl = vSpeedDisplay.parentElement;
-            const hEl = hSpeedDisplay.parentElement;
-            const fEl = fuelDisplay.parentElement;
-
-            // Vertical speed danger
-            if (Math.abs(vSpeed) > 1.5) {
-                vEl.className = 'dash-item danger';
-            } else if (Math.abs(vSpeed) > 0.8) {
-                vEl.className = 'dash-item warning';
-            } else {
-                vEl.className = 'dash-item safe';
-            }
-
-            // Horizontal speed danger
-            if (Math.abs(hSpeed) > 1.0) {
-                hEl.className = 'dash-item danger';
-            } else if (Math.abs(hSpeed) > 0.5) {
-                hEl.className = 'dash-item warning';
-            } else {
-                hEl.className = 'dash-item safe';
-            }
-
-            // Fuel danger
-            if (ship.fuel < 20) {
-                fEl.className = 'dash-item danger';
-            } else if (ship.fuel < 50) {
-                fEl.className = 'dash-item warning';
-            } else {
-                fEl.className = 'dash-item';
-            }
+            highScoreDisplay.textContent = highScore;
         }
 
         // ============================================================
         // UPDATE
         // ============================================================
         function update() {
-            if (gameOver) return;
-            if (levelComplete) return;
+            if (!gameStarted || gameOver || levelComplete) return;
 
             const level = LEVELS[currentLevel];
 
-            // ---- WIND ----
-            if (level.windChance > 0 && Math.random() < level.windChance * 0.02) {
-                wind.x = (Math.random() - 0.5) * 0.15;
+            if (level.windChance > 0 && Math.random() < level.windChance * 0.025) {
+                const maxWind = level.windMax || 0.18;
+                wind.x = (Math.random() - 0.5) * maxWind * 2;
             }
             wind.x *= 0.995;
 
-            // ---- ROTATION ----
             if (keys.left) ship.angle -= 0.035;
             if (keys.right) ship.angle += 0.035;
 
-            // ---- THRUST ----
             ship.thrusting = false;
             if ((keys.up || keys.space) && ship.fuel > 0) {
                 ship.thrusting = true;
-                ship.vx += Math.sin(ship.angle) * 0.065 + wind.x * 0.01;
-                ship.vy -= Math.cos(ship.angle) * 0.065;
-                ship.fuel -= 0.18;
+                const thrust = 0.07 / ship.mass;
+                ship.vx += Math.sin(ship.angle) * thrust + wind.x * 0.01;
+                ship.vy -= Math.cos(ship.angle) * thrust;
+                ship.fuel -= 0.2 / ship.mass;
                 if (ship.fuel < 0) ship.fuel = 0;
-                spawnThrustParticles();
+                updateEngineSound(true);
+            } else {
+                updateEngineSound(false);
             }
 
-            // ---- GRAVITY ----
-            ship.vy += level.gravity;
+            ship.mass = 0.6 + 0.4 * (ship.fuel / ship.maxFuel);
 
-            // ---- MAX SPEED ----
+            const alt = getTerrainHeight(ship.x) - ship.y;
+            const gravMult = 1 + Math.max(0, (1 - alt / 300) * 0.15);
+            ship.vy += level.gravity * gravMult;
+
             const spd = Math.hypot(ship.vx, ship.vy);
-            if (spd > 5.5) {
-                ship.vx = (ship.vx / spd) * 5.5;
-                ship.vy = (ship.vy / spd) * 5.5;
+            if (spd > 6.0) {
+                ship.vx = (ship.vx / spd) * 6.0;
+                ship.vy = (ship.vy / spd) * 6.0;
             }
 
-            // ---- MOVE ----
             ship.x += ship.vx;
             ship.y += ship.vy;
 
-            // ---- BOUNDARIES ----
             if (ship.x < 0) { ship.x = 0;
                 ship.vx = 0; }
             if (ship.x > W) { ship.x = W;
@@ -558,7 +661,6 @@
             if (ship.y < 0) { ship.y = 0;
                 ship.vy = 0; }
 
-            // ---- GROUND COLLISION ----
             const radius = 11;
             const groundY = getTerrainHeight(ship.x);
             const slope = getTerrainSlope(ship.x);
@@ -570,69 +672,49 @@
                 const pad = getNearestPad(ship.x);
                 const onPad = pad && Math.abs(ship.x - pad.x) < pad.halfW;
 
-                // ---- LANDING CHECK ----
                 const speedOk = speed < 1.8;
                 const angleOk = Math.abs(ship.angle) < 0.35;
 
                 if (onPad && speedOk && angleOk) {
-                    // SUCCESSFUL LANDING!
                     landed = true;
                     pad.used = true;
-                    const bonus = Math.floor(ship.fuel * 2);
+                    const bonus = Math.floor(ship.fuel * 2.5);
                     const padBonus = pad.points * pad.mult;
                     const totalScore = 100 + bonus + padBonus;
                     score += totalScore;
                     padFlash = 20;
-                    spawnLandingDust(ship.x, groundY);
+                    playLandingSound();
                     updateUI();
+                    updateHighScore();
 
-                    // Check if all pads used
                     const allUsed = pads.every(p => p.used);
                     if (allUsed) {
                         levelComplete = true;
-                        lives = 3;
+                        stopEngineSound();
                         updateUI();
                     }
                     ship.vx = 0;
                     ship.vy = 0;
-                    updateDashboard();
                     return;
                 }
 
-                // ---- SLIDING ----
                 if (Math.abs(slope) > 0.15 && speed < 0.5) {
                     ship.vx += slope * 0.02;
                     ship.angle += slope * 0.01;
-                    ship.sliding = true;
                 } else if (speed > 1.8 || Math.abs(ship.angle) > 0.35) {
-                    // ---- CRASH! ----
-                    spawnCrashParticles(ship.x, groundY);
                     crashAndRespawn();
-                    updateDashboard();
                     return;
                 } else {
                     ship.vx *= 0.9;
                     ship.vy = 0;
-                    ship.sliding = false;
                 }
             }
 
-            // ---- PARTICLES ----
-            for (let i = particles.length - 1; i >= 0; i--) {
-                const p = particles[i];
-                p.x += p.vx;
-                p.y += p.vy;
-                p.vy += 0.015;
-                p.vx *= 0.99;
-                p.life--;
-                if (p.life <= 0) particles.splice(i, 1);
+            if (ship.fuel < 20 && ship.fuel > 0 && Math.floor(Date.now() / 300) % 2 === 0) {
+                playWarningSound();
             }
 
-            if (deathFlash > 0) deathFlash--;
-            if (padFlash > 0) padFlash--;
-
             updateUI();
-            updateDashboard();
         }
 
         // ============================================================
@@ -641,253 +723,457 @@
         function draw() {
             ctx.clearRect(0, 0, W, H);
 
+            // ---- Grid ----
+            ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+            ctx.lineWidth = 0.5;
+            for (let x = 0; x <= W; x += 50) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, H);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= H; y += 50) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(W, y);
+                ctx.stroke();
+            }
+
             // ---- Stars ----
-            ctx.fillStyle = 'rgba(255,255,255,0.6)';
-            for (let i = 0; i < 80; i++) {
-                const sx = (i * 131 + 23) % W;
-                const sy = (i * 279 + 17) % H;
-                ctx.fillRect(sx, sy, 1 + (i % 2), 1 + (i % 2));
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            for (let i = 0; i < 60; i++) {
+                const sx = (i * 137 + 29) % W;
+                const sy = (i * 283 + 13) % H;
+                const size = 0.5 + (i % 2);
+                ctx.fillRect(sx, sy, size, size);
+            }
+
+            // ---- Splash Screen ----
+            if (splashScreen) {
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(0, 0, W, H);
+
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = '#66ff88';
+                ctx.shadowBlur = 40;
+                ctx.fillStyle = '#66ff88';
+                ctx.font = 'bold 56px monospace';
+                ctx.fillText('🌙 LUNAR LANDER', W / 2, H / 2 - 60);
+                ctx.shadowBlur = 0;
+
+                ctx.fillStyle = '#88ddff';
+                ctx.font = '24px monospace';
+                ctx.fillText('Press SPACE to start', W / 2, H / 2 + 30);
+
+                ctx.fillStyle = 'rgba(136, 221, 255, 0.3)';
+                ctx.font = '14px monospace';
+                ctx.fillText('← → rotate  •  ↑ thrust  •  R restart  •  M mute', W / 2, H / 2 + 80);
+
+                if (Math.floor(Date.now() / 500) % 2 === 0) {
+                    ctx.fillStyle = '#66ff88';
+                    ctx.font = '28px monospace';
+                    ctx.fillText('▶', W / 2, H / 2 + 130);
+                }
+                return;
             }
 
             // ---- Terrain ----
-            ctx.beginPath();
-            ctx.moveTo(0, GROUND_BASE);
-            for (const p of terrain) {
-                ctx.lineTo(p.x, p.y);
-            }
-            ctx.lineTo(W, GROUND_BASE);
-            ctx.closePath();
-
-            const grad = ctx.createLinearGradient(0, GROUND_BASE - 80, 0, GROUND_BASE);
-            grad.addColorStop(0, 'rgba(40,35,30,0)');
-            grad.addColorStop(0.2, 'rgba(50,45,40,0.4)');
-            grad.addColorStop(1, 'rgba(30,28,24,0.9)');
-            ctx.fillStyle = grad;
-            ctx.fill();
-
-            ctx.strokeStyle = '#55aa77';
-            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#44cc88';
+            ctx.lineWidth = 2.5;
+            ctx.shadowColor = 'rgba(68, 204, 136, 0.3)';
+            ctx.shadowBlur = 8;
             ctx.beginPath();
             for (let i = 0; i < terrain.length; i++) {
                 if (i === 0) ctx.moveTo(terrain[i].x, terrain[i].y);
                 else ctx.lineTo(terrain[i].x, terrain[i].y);
             }
             ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = 'rgba(68, 204, 136, 0.05)';
+            ctx.beginPath();
+            ctx.moveTo(0, GROUND_BASE);
+            for (let i = 0; i < terrain.length; i++) {
+                ctx.lineTo(terrain[i].x, terrain[i].y);
+            }
+            ctx.lineTo(W, GROUND_BASE);
+            ctx.closePath();
+            ctx.fill();
 
             // ---- Landing Pads ----
             for (const p of pads) {
                 const isUsed = p.used;
-                const isNear = !isUsed && Math.abs(ship.x - p.x) < p.halfW + 30;
+                const isNear = !isUsed && Math.abs(ship.x - p.x) < p.halfW + 60;
                 const flashing = padFlash > 0 && isNear;
 
-                // Glow
                 if (!isUsed) {
-                    const alpha = flashing ? 0.15 : (isNear ? 0.08 : 0.03);
-                    ctx.fillStyle = `rgba(255,221,68,${alpha})`;
-                    ctx.fillRect(p.x - p.halfW - 15, p.y - 30, p.halfW * 2 + 30, 40);
+                    const alpha = flashing ? 0.25 : (isNear ? 0.12 : 0.05);
+                    const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.halfW + 25);
+                    grad.addColorStop(0, `rgba(255, 221, 68, ${alpha})`);
+                    grad.addColorStop(1, 'rgba(255, 221, 68, 0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.halfW + 25, 0, Math.PI * 2);
+                    ctx.fill();
                 }
 
-                // Pad line
-                ctx.strokeStyle = isUsed ? 'rgba(255,221,68,0.2)' :
+                const alpha = isUsed ? 0.1 : (flashing ? 0.9 : (isNear ? 0.6 : 0.25));
+                ctx.strokeStyle = `rgba(255, 221, 68, ${alpha})`;
+                ctx.lineWidth = flashing ? 2.5 : 2;
+                ctx.setLineDash([4, 6]);
+                ctx.strokeRect(p.x - p.halfW - 8, p.y - 20, p.halfW * 2 + 16, 28);
+                ctx.setLineDash([]);
+
+                ctx.strokeStyle = isUsed ? 'rgba(255,221,68,0.15)' :
                     flashing ? '#ffdd44' :
-                    isNear ? 'rgba(255,221,68,0.7)' : 'rgba(255,221,68,0.4)';
-                ctx.lineWidth = flashing ? 3 : (isNear ? 2.5 : 2);
+                    isNear ? 'rgba(255,221,68,0.8)' : 'rgba(255,221,68,0.35)';
+                ctx.lineWidth = flashing ? 3 : 2.5;
                 ctx.beginPath();
                 ctx.moveTo(p.x - p.halfW, p.y);
                 ctx.lineTo(p.x + p.halfW, p.y);
                 ctx.stroke();
 
-                // Pad markers
+                ctx.strokeStyle = isUsed ? 'rgba(255,221,68,0.05)' :
+                    isNear ? 'rgba(255,221,68,0.35)' : 'rgba(255,221,68,0.12)';
+                ctx.lineWidth = 0.5;
+                for (let x = p.x - p.halfW + 4; x < p.x + p.halfW - 4; x += 5) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, p.y - 4);
+                    ctx.lineTo(x, p.y + 4);
+                    ctx.stroke();
+                }
+
                 if (!isUsed) {
-                    for (let x = p.x - p.halfW + 4; x < p.x + p.halfW - 4; x += 6) {
-                        ctx.fillStyle = flashing ? 'rgba(255,221,68,0.6)' :
-                            isNear ? 'rgba(255,221,68,0.3)' : 'rgba(255,221,68,0.12)';
-                        ctx.fillRect(x, p.y - 2, 2, 4);
+                    ctx.fillStyle = `rgba(255, 221, 68, ${isNear ? 0.5 : 0.2})`;
+                    for (let side of [-1, 1]) {
+                        const mx = p.x + side * p.halfW;
+                        ctx.beginPath();
+                        ctx.moveTo(mx, p.y - 8);
+                        ctx.lineTo(mx + side * 8, p.y);
+                        ctx.lineTo(mx, p.y + 8);
+                        ctx.closePath();
+                        ctx.fill();
                     }
                 }
 
-                // Label
-                if (!isUsed) {
-                    ctx.fillStyle = flashing ? '#ffdd44' :
-                        isNear ? 'rgba(255,221,68,0.6)' : 'rgba(255,221,68,0.3)';
-                    ctx.font = '8px monospace';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'bottom';
-                    const labelText = p.label + ' ' + (p.points * p.mult) + 'pts';
-                    ctx.fillText(labelText, p.x, p.y - 6);
-                }
-
-                // Checkmark when used
                 if (isUsed) {
-                    ctx.fillStyle = 'rgba(100,255,100,0.4)';
-                    ctx.font = '14px monospace';
+                    ctx.fillStyle = 'rgba(68, 204, 136, 0.5)';
+                    ctx.font = '16px monospace';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'bottom';
                     ctx.fillText('✓', p.x, p.y - 2);
                 }
             }
 
-            // ---- Wind ----
-            if (Math.abs(wind.x) > 0.005) {
-                ctx.fillStyle = 'rgba(255,200,100,0.3)';
-                ctx.font = '11px monospace';
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'bottom';
-                const dir = wind.x > 0 ? '→' : '←';
-                ctx.fillText('WIND ' + dir + ' ' + (Math.abs(wind.x) * 100).toFixed(0) + '%', 10, GROUND_BASE - 10);
-                ctx.strokeStyle = 'rgba(255,200,100,0.08)';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                const wStart = 110;
-                const wLen = Math.abs(wind.x) * 300;
-                ctx.moveTo(wStart, GROUND_BASE - 4);
-                ctx.lineTo(wStart + wLen * (wind.x > 0 ? 1 : -1), GROUND_BASE - 4);
-                ctx.stroke();
+            // ---- WINDSOCK ----
+            const windStrength = Math.abs(wind.x);
+            const windDir = wind.x > 0 ? 1 : -1;
+            const sockX = 80,
+                sockY = 100;
+            const sockScale = 1.8;
+
+            const kmh = Math.round(windStrength * 100);
+            const isActive = windStrength > 0.005;
+            ctx.fillStyle = isActive ?
+                (windDir > 0 ? '#ff8844' : '#44aaff') :
+                'rgba(136, 221, 255, 0.4)';
+            ctx.font = 'bold 18px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.shadowColor = isActive ? (windDir > 0 ? '#ff8844' : '#44aaff') : 'transparent';
+            ctx.shadowBlur = 10;
+            ctx.fillText(`${kmh} km/h`, sockX, sockY - 20);
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = 'rgba(136, 221, 255, 0.2)';
+            ctx.font = '8px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText('WIND', sockX, sockY - 30);
+
+            ctx.strokeStyle = 'rgba(136, 221, 255, 0.25)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(sockX, sockY + 40 * sockScale);
+            ctx.lineTo(sockX, sockY - 10 * sockScale);
+            ctx.stroke();
+
+            const baseLen = 25 * sockScale;
+            const maxLen = 70 * sockScale;
+            const sockLen = baseLen + windStrength * (maxLen - baseLen);
+            const baseWidth = 10 * sockScale;
+            const maxWidth = 22 * sockScale;
+            const sockWidth = baseWidth + windStrength * (maxWidth - baseWidth);
+
+            if (windStrength > 0.01) {
+                ctx.shadowColor = windDir > 0 ? '#ff8844' : '#44aaff';
+                ctx.shadowBlur = 15;
+            } else {
+                ctx.shadowBlur = 0;
             }
 
-            // ---- Ship Color Logic ----
-            const pad = getNearestPad(ship.x);
-            const onPad = pad && Math.abs(ship.x - pad.x) < pad.halfW;
-            const speed = Math.hypot(ship.vx, ship.vy);
-            const angleOk = Math.abs(ship.angle) < 0.35;
-            const speedOk = speed < 1.8;
+            ctx.strokeStyle = isActive ?
+                (windDir > 0 ? '#ff8844' : '#44aaff') :
+                'rgba(136, 221, 255, 0.3)';
+            ctx.lineWidth = 2.5;
+            ctx.fillStyle = isActive ?
+                (windDir > 0 ? 'rgba(255, 136, 68, 0.25)' : 'rgba(68, 170, 255, 0.25)') :
+                'rgba(136, 221, 255, 0.08)';
 
-            let shipColor = '#88ddff';
-            let glowColor = 'rgba(100, 200, 255, 0.15)';
+            ctx.beginPath();
+            ctx.moveTo(sockX, sockY);
+            ctx.quadraticCurveTo(
+                sockX + windDir * sockLen * 0.3,
+                sockY - sockWidth,
+                sockX + windDir * sockLen,
+                sockY - 3
+            );
+            ctx.quadraticCurveTo(
+                sockX + windDir * sockLen * 0.8,
+                sockY,
+                sockX + windDir * sockLen,
+                sockY + 3
+            );
+            ctx.quadraticCurveTo(
+                sockX + windDir * sockLen * 0.3,
+                sockY + sockWidth,
+                sockX,
+                sockY
+            );
+            ctx.fill();
+            ctx.stroke();
 
-            if (!landed && ship.fuel > 0) {
-                if (onPad && !pad.used) {
-                    if (speedOk && angleOk) {
-                        shipColor = '#66ff88';
-                        glowColor = 'rgba(100, 255, 150, 0.4)';
-                    } else {
-                        shipColor = '#ffaa44';
-                        glowColor = 'rgba(255, 170, 68, 0.4)';
-                    }
+            if (isActive) {
+                ctx.strokeStyle = isActive ?
+                    (windDir > 0 ? 'rgba(255, 136, 68, 0.4)' : 'rgba(68, 170, 255, 0.4)') :
+                    'rgba(136, 221, 255, 0.1)';
+                ctx.lineWidth = 1.5;
+                for (let i = 1; i <= 4; i++) {
+                    const t = i / 5;
+                    const x = sockX + windDir * sockLen * t;
+                    const w = sockWidth * (1 - t * 0.7);
+                    ctx.beginPath();
+                    ctx.moveTo(x, sockY - w + 3);
+                    ctx.lineTo(x, sockY + w - 3);
+                    ctx.stroke();
                 }
             }
 
-            if (landed) {
-                shipColor = '#66ff88';
-                glowColor = 'rgba(100, 255, 150, 0.4)';
+            ctx.shadowBlur = 0;
+
+            if (isActive) {
+                const arrowDir = windDir > 0 ? '→' : '←';
+                ctx.fillStyle = windDir > 0 ? '#ff8844' : '#44aaff';
+                ctx.font = '18px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const arrowOffset = windDir * (sockLen * 0.5);
+                ctx.fillText(arrowDir, sockX + arrowOffset, sockY + 2);
             }
 
-            // ---- Draw Ship ----
+            // ---- SHIP ----
             if (!gameOver) {
                 ctx.save();
                 ctx.translate(ship.x, ship.y);
                 ctx.rotate(ship.angle);
-                ctx.shadowColor = glowColor;
-                ctx.shadowBlur = 18;
 
-                // Hull
-                ctx.strokeStyle = shipColor;
-                ctx.lineWidth = 2.5;
-                ctx.beginPath();
-                ctx.moveTo(0, -11);
-                ctx.lineTo(-7, 7);
-                ctx.lineTo(7, 7);
-                ctx.closePath();
-                ctx.stroke();
-
-                // Inner glow
-                ctx.strokeStyle = shipColor;
-                ctx.globalAlpha = 0.3;
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(0, -9);
-                ctx.lineTo(-4, 5);
-                ctx.lineTo(4, 5);
-                ctx.closePath();
-                ctx.stroke();
-                ctx.globalAlpha = 1;
-
-                // Thruster flame
                 if (ship.thrusting && ship.fuel > 0) {
-                    ctx.shadowColor = 'rgba(255, 150, 50, 0.6)';
-                    ctx.shadowBlur = 22;
-                    const flicker = 3 + Math.random() * 6;
-                    ctx.strokeStyle = '#ff8800';
-                    ctx.lineWidth = 1.8;
+                    const flicker = 5 + Math.random() * 12;
+                    const alpha = 0.3 + Math.random() * 0.2;
+
+                    ctx.strokeStyle = `rgba(255, 150, 50, ${alpha * 0.3})`;
+                    ctx.lineWidth = 6 + Math.random() * 4;
+                    ctx.shadowColor = 'rgba(255, 150, 50, 0.3)';
+                    ctx.shadowBlur = 20;
                     ctx.beginPath();
-                    ctx.moveTo(-3, 7);
-                    ctx.lineTo(0, 7 + flicker);
-                    ctx.lineTo(3, 7);
+                    ctx.moveTo(-6, 8);
+                    ctx.lineTo(0, 8 + flicker * 1.15);
+                    ctx.lineTo(6, 8);
                     ctx.stroke();
-                    ctx.strokeStyle = '#ffcc44';
-                    ctx.lineWidth = 1;
+
+                    ctx.strokeStyle = `rgba(255, 220, 100, ${alpha})`;
+                    ctx.lineWidth = 3 + Math.random() * 2;
+                    ctx.shadowColor = 'rgba(255, 200, 80, 0.4)';
+                    ctx.shadowBlur = 25;
                     ctx.beginPath();
-                    ctx.moveTo(-1.5, 7);
-                    ctx.lineTo(0, 7 + flicker * 0.6);
-                    ctx.lineTo(1.5, 7);
+                    ctx.moveTo(-4, 8);
+                    ctx.lineTo(0, 8 + flicker * 0.9);
+                    ctx.lineTo(4, 8);
+                    ctx.stroke();
+
+                    ctx.strokeStyle = `rgba(255, 255, 200, ${alpha * 0.5})`;
+                    ctx.lineWidth = 1.5;
+                    ctx.shadowBlur = 30;
+                    ctx.beginPath();
+                    ctx.moveTo(-2, 8);
+                    ctx.lineTo(0, 8 + flicker * 0.6);
+                    ctx.lineTo(2, 8);
                     ctx.stroke();
                 }
+
+                ctx.shadowBlur = 0;
+                ctx.strokeStyle = '#88ddff';
+                ctx.lineWidth = 1.8;
+                ctx.shadowColor = 'rgba(136, 221, 255, 0.2)';
+                ctx.shadowBlur = 8;
+
+                ctx.beginPath();
+                ctx.moveTo(0, -12);
+                ctx.lineTo(-8, 8);
+                ctx.lineTo(8, 8);
+                ctx.closePath();
+                ctx.stroke();
+
+                ctx.strokeStyle = 'rgba(136, 221, 255, 0.3)';
+                ctx.lineWidth = 0.8;
+                ctx.beginPath();
+                ctx.moveTo(0, -9);
+                ctx.lineTo(-4, 6);
+                ctx.lineTo(4, 6);
+                ctx.closePath();
+                ctx.stroke();
+
+                ctx.strokeStyle = 'rgba(136, 221, 255, 0.25)';
+                ctx.lineWidth = 0.8;
+                ctx.beginPath();
+                ctx.moveTo(-7, 7);
+                ctx.lineTo(-10, 12);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(7, 7);
+                ctx.lineTo(10, 12);
+                ctx.stroke();
+
                 ctx.shadowBlur = 0;
                 ctx.restore();
             }
 
             // ---- Particles ----
             for (const p of particles) {
-                ctx.globalAlpha = p.life / p.maxLife;
+                ctx.globalAlpha = p.life / p.maxLife * 0.4;
                 ctx.fillStyle = p.color || '#ff8844';
-                ctx.shadowColor = p.color || '#ff8844';
-                ctx.shadowBlur = 4;
                 const size = p.radius * (p.life / p.maxLife);
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, Math.max(0.5, size), 0, Math.PI * 2);
                 ctx.fill();
             }
             ctx.globalAlpha = 1;
-            ctx.shadowBlur = 0;
 
             // ---- Red flash on death ----
             if (deathFlash > 0) {
-                ctx.fillStyle = `rgba(255, 0, 0, ${deathFlash / 30 * 0.25})`;
+                const alpha = deathFlash / 30 * 0.12;
+                ctx.fillStyle = `rgba(255, 0, 0, ${alpha})`;
                 ctx.fillRect(0, 0, W, H);
+                deathFlash--;
             }
 
-            // ---- HUD (bigger & brighter) ----
-ctx.fillStyle = 'rgba(255,255,255,0.85)';
-ctx.font = '13px monospace';
-ctx.textAlign = 'left';
-ctx.textBaseline = 'top';
-const spd = Math.hypot(ship.vx, ship.vy);
-ctx.fillText(`SPD ${spd.toFixed(2)}  ANG ${(ship.angle / Math.PI * 180).toFixed(1)}°`, 10, 8);
+            // ---- HUD: SPD, ALT, ANG ----
+            const spd = Math.hypot(ship.vx, ship.vy);
+            const alt = (getTerrainHeight(ship.x) - ship.y);
+            const angleDeg = (ship.angle / Math.PI * 180);
 
-// ---- Fuel Bar (brighter) ----
-const fuelPct = ship.fuel / ship.maxFuel;
-ctx.fillStyle = 'rgba(255,255,255,0.2)';
-ctx.fillRect(10, 30, 100, 8);
-const fuelColor = fuelPct > 0.3 ? 'rgba(100,255,200,0.85)' : 'rgba(255,80,80,0.85)';
-ctx.fillStyle = fuelColor;
-ctx.fillRect(12, 32, Math.max(0, fuelPct * 96), 4);
-ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-ctx.lineWidth = 0.5;
-ctx.strokeRect(10, 30, 100, 8);
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.roundRect(W / 2 - 210, 6, 420, 38, 12);
+            ctx.fill();
 
-// ---- Pads remaining (brighter) ----
-const remaining = pads.filter(p => !p.used).length;
-ctx.fillStyle = 'rgba(255,255,255,0.75)';
-ctx.font = '12px monospace';
-ctx.fillText('PADS: ' + remaining, 10, 46);
+            const speedColor = spd < 1.8 ? '#66ff88' :
+                spd < 2.5 ? '#ffaa44' : '#ff4477';
+            ctx.fillStyle = speedColor;
+            ctx.font = 'bold 22px monospace';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.shadowColor = speedColor;
+            ctx.shadowBlur = 8;
+            ctx.fillText(`SPD ${spd.toFixed(1)}`, W / 2 - 200, 10);
 
-// ---- Level name (brighter, right side) ----
-ctx.textAlign = 'right';
-ctx.textBaseline = 'top';
-ctx.fillStyle = 'rgba(255,255,255,0.7)';
-ctx.font = '13px monospace';
-ctx.fillText(LEVELS[currentLevel].name, W - 10, 8);
+            const altColor = alt < 50 ? '#66ff88' :
+                alt < 100 ? '#ffaa44' : '#88ddff';
+            ctx.fillStyle = altColor;
+            ctx.shadowColor = altColor;
+            ctx.shadowBlur = 8;
+            ctx.textAlign = 'center';
+            ctx.fillText(`ALT ${alt.toFixed(0)}`, W / 2, 10);
 
-            // ---- Landed message ----
-            if (landed && !levelComplete && !gameOver) {
-                ctx.fillStyle = 'rgba(0,0,0,0.25)';
-                ctx.fillRect(0, 0, W, 28);
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillStyle = '#88ff88';
-                ctx.font = '14px monospace';
-                ctx.fillText('🛸 LANDED! Find the next landing pad →', W / 2, 14);
+            const angleColor = Math.abs(angleDeg) < 20 ? '#66ff88' :
+                Math.abs(angleDeg) < 35 ? '#ffaa44' : '#ff4477';
+            ctx.fillStyle = angleColor;
+            ctx.shadowColor = angleColor;
+            ctx.shadowBlur = 8;
+            ctx.textAlign = 'right';
+            ctx.fillText(`ANG ${angleDeg.toFixed(1)}°`, W / 2 + 200, 10);
+            ctx.shadowBlur = 0;
+
+            // ---- PADS remaining (LARGER and more visible) ----
+            const remaining = pads.filter(p => !p.used).length;
+            ctx.fillStyle = 'rgba(255, 221, 68, 0.7)';
+            ctx.font = 'bold 16px monospace';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.shadowColor = 'rgba(255, 221, 68, 0.2)';
+            ctx.shadowBlur = 8;
+            ctx.fillText(`PADS: ${remaining}`, 10, 8);
+            ctx.shadowBlur = 0;
+
+            // ---- VERTICAL FUEL BAR ----
+            const fuelPct = ship.fuel / ship.maxFuel;
+            const barX = W - 28;
+            const barY = 50;
+            const barW = 18;
+            const barH = H - 90;
+
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.strokeStyle = 'rgba(136, 221, 255, 0.2)';
+            ctx.lineWidth = 1;
+            ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
+            ctx.strokeRect(barX - 2, barY - 2, barW + 4, barH + 4);
+
+            const fuelHeight = fuelPct * barH;
+            const fuelColor = fuelPct > 0.4 ? '#66ff88' :
+                fuelPct > 0.2 ? '#ffaa44' : '#ff4477';
+
+            const grad = ctx.createLinearGradient(barX, barY + barH, barX, barY);
+            if (fuelPct > 0.4) {
+                grad.addColorStop(0, '#44dd66');
+                grad.addColorStop(1, '#66ff88');
+            } else if (fuelPct > 0.2) {
+                grad.addColorStop(0, '#ff8822');
+                grad.addColorStop(1, '#ffaa44');
+            } else {
+                grad.addColorStop(0, '#ff2244');
+                grad.addColorStop(1, '#ff4477');
             }
+            ctx.fillStyle = grad;
+            ctx.shadowColor = fuelColor;
+            ctx.shadowBlur = 12;
+            ctx.fillRect(barX, barY + barH - fuelHeight, barW, fuelHeight);
+            ctx.shadowBlur = 0;
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(barX, barY + barH - fuelHeight, barW, fuelHeight);
+
+            ctx.fillStyle = fuelPct > 0.3 ? 'rgba(0,0,0,0.8)' : 'white';
+            ctx.font = 'bold 10px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const pctText = Math.floor(fuelPct * 100) + '%';
+            ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            ctx.shadowBlur = 4;
+            ctx.fillText(pctText, barX + barW / 2, barY + barH / 2);
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = 'rgba(136, 221, 255, 0.3)';
+            ctx.font = '8px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText('FUEL', barX + barW / 2, barY - 4);
+            ctx.textBaseline = 'top';
+            ctx.fillText('100%', barX + barW / 2, barY + 2);
+            ctx.textBaseline = 'bottom';
+            ctx.fillText('0%', barX + barW / 2, barY + barH - 2);
 
             // ---- GAME OVER ----
             if (gameOver) {
@@ -901,14 +1187,14 @@ ctx.fillText(LEVELS[currentLevel].name, W - 10, 8);
                 ctx.font = 'bold 40px monospace';
                 ctx.fillText('💀 GAME OVER', W / 2, H / 2 - 40);
                 ctx.shadowBlur = 0;
-                ctx.fillStyle = '#aaccee';
+                ctx.fillStyle = '#88ddff';
                 ctx.font = '18px monospace';
                 ctx.fillText(`Final Score: ${score}  |  Press R to restart`, W / 2, H / 2 + 30);
             }
 
             // ---- LEVEL COMPLETE ----
             if (levelComplete) {
-                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.fillStyle = 'rgba(0,0,0,0.4)';
                 ctx.fillRect(0, 0, W, H);
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
@@ -919,13 +1205,13 @@ ctx.fillText(LEVELS[currentLevel].name, W - 10, 8);
                 if (currentLevel + 1 < LEVELS.length) {
                     ctx.fillText('🌟 LEVEL COMPLETE!', W / 2, H / 2 - 50);
                     ctx.shadowBlur = 0;
-                    ctx.fillStyle = '#aaccee';
+                    ctx.fillStyle = '#88ddff';
                     ctx.font = '18px monospace';
                     ctx.fillText(`Score: ${score}  |  Press SPACE for next level`, W / 2, H / 2 + 20);
                 } else {
                     ctx.fillText('🏆 ALL LEVELS COMPLETE!', W / 2, H / 2 - 50);
                     ctx.shadowBlur = 0;
-                    ctx.fillStyle = '#aaccee';
+                    ctx.fillStyle = '#88ddff';
                     ctx.font = '18px monospace';
                     ctx.fillText(`Final Score: ${score}  |  Press R to restart`, W / 2, H / 2 + 20);
                 }
@@ -960,23 +1246,43 @@ ctx.fillText(LEVELS[currentLevel].name, W - 10, 8);
                 e.preventDefault(); }
             if (key === 'ArrowUp') { keys.up = true;
                 e.preventDefault(); }
+
             if (key === ' ') {
                 keys.space = true;
                 e.preventDefault();
+
+                if (splashScreen) {
+                    splashScreen = false;
+                    gameStarted = true;
+                    resetLevel();
+                    return;
+                }
+
                 if (levelComplete && currentLevel + 1 < LEVELS.length) {
                     currentLevel++;
                     lives = 3;
                     levelComplete = false;
                     resetLevel();
-                } else if (levelComplete && currentLevel + 1 >= LEVELS.length) {
-                    resetGame();
+                    return;
                 }
-                if (gameOver) resetGame();
+
+                if (gameOver) {
+                    resetGame();
+                    splashScreen = true;
+                    return;
+                }
             }
+
             if (key === 'r' || key === 'R') {
                 resetGame();
+                splashScreen = true;
                 e.preventDefault();
             }
+            if (key === 'm' || key === 'M') {
+                toggleSound();
+                e.preventDefault();
+            }
+            initAudio();
         });
 
         document.addEventListener('keyup', (e) => {
@@ -992,16 +1298,38 @@ ctx.fillText(LEVELS[currentLevel].name, W - 10, 8);
         });
 
         window.addEventListener('keydown', (e) => {
-            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'r', 'R', 'm', 'M'].includes(e.key)) {
                 e.preventDefault();
             }
         });
+
+        // Polyfill roundRect
+        if (!CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+                if (r > w / 2) r = w / 2;
+                if (r > h / 2) r = h / 2;
+                this.moveTo(x + r, y);
+                this.lineTo(x + w - r, y);
+                this.quadraticCurveTo(x + w, y, x + w, y + r);
+                this.lineTo(x + w, y + h - r);
+                this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+                this.lineTo(x + r, y + h);
+                this.quadraticCurveTo(x, y + h, x, y + h - r);
+                this.lineTo(x, y + r);
+                this.quadraticCurveTo(x, y, x + r, y);
+                this.closePath();
+                return this;
+            };
+        }
 
         // ============================================================
         // START
         // ============================================================
         resetGame();
         gameLoop();
+
+        console.log('🌙 Lunar Lander – Vector Edition v8 loaded!');
+        console.log('Larger PADS display, readable level name');
     </script>
 </body>
 </html>

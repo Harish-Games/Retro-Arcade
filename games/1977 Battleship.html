@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Battleship - Fixed</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0a0a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Arial, sans-serif;
+        }
+        .game-wrapper {
+            background: #1a1a2e;
+            padding: 25px 35px 30px;
+            border-radius: 16px;
+            border: 2px solid #3a3a6a;
+            box-shadow: 0 0 40px rgba(0, 100, 200, 0.1);
+            max-width: 920px;
+        }
+        .title {
+            color: #88ddff;
+            text-align: center;
+            font-size: 28px;
+            font-weight: bold;
+            letter-spacing: 4px;
+            margin-bottom: 8px;
+            text-shadow: 0 0 20px rgba(0, 150, 255, 0.2);
+        }
+        .board-container {
+            display: flex;
+            gap: 25px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .board-wrapper {
+            text-align: center;
+        }
+        .board-label {
+            color: #aac0ff;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 4px;
+            letter-spacing: 2px;
+        }
+        .board-label .you { color: #66dd88; }
+        .board-label .ai { color: #ff6666; }
+        canvas {
+            display: block;
+            border-radius: 8px;
+            background: #0d0d2a;
+            cursor: pointer;
+            image-rendering: pixelated;
+            border: 2px solid #2a2a5a;
+            transition: all 0.2s;
+        }
+        canvas:hover {
+            border-color: #4a4a8a;
+        }
+        .status {
+            color: #88ddff;
+            font-size: 18px;
+            text-align: center;
+            margin: 8px 0;
+            font-weight: bold;
+            min-height: 28px;
+        }
+        .phase-indicator {
+            color: #ffdd44;
+            font-size: 14px;
+            text-align: center;
+            margin: 2px 0 8px;
+            min-height: 22px;
+        }
+        .stats {
+            display: flex;
+            gap: 18px;
+            color: #aac0ff;
+            font-size: 13px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin: 6px 0;
+        }
+        .stats span { font-weight: bold; }
+        .stats .win { color: #66dd88; }
+        .stats .loss { color: #ff6666; }
+        .stats .streak { color: #66ddff; }
+        .stats .hits { color: #ffdd44; }
+        .stats .shots { color: #88aacc; }
+        .ship-status {
+            color: #8899aa;
+            font-size: 12px;
+            text-align: center;
+            margin: 4px 0;
+            min-height: 20px;
+        }
+        .ship-status .alive { color: #66dd88; }
+        .ship-status .sunk { color: #ff4444; font-weight: bold; }
+        .ship-status .placing { color: #667; }
+        .ship-status .hit { color: #ffdd44; }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+        button {
+            background: #2a2a5a;
+            color: #fff;
+            border: 1px solid #4a4a8a;
+            padding: 6px 18px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+        button:hover {
+            background: #3a3a7a;
+            border-color: #6a6aaa;
+            transform: scale(1.02);
+        }
+        button.primary {
+            background: #2a5a3a;
+            border-color: #4a8a5a;
+        }
+        button.primary:hover {
+            background: #3a7a4a;
+        }
+        .controls kbd {
+            background: #1a1a3a;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid #3a3a6a;
+            color: #cce;
+            font-size: 11px;
+        }
+        .game-over-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .game-over-overlay.show {
+            display: flex;
+        }
+        .game-over-box {
+            background: #1a1a2e;
+            padding: 40px 50px;
+            border-radius: 16px;
+            border: 3px solid #4a4a8a;
+            text-align: center;
+            max-width: 400px;
+        }
+        .game-over-box .result {
+            font-size: 42px;
+            margin-bottom: 10px;
+        }
+        .game-over-box .message {
+            color: #fff;
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        .game-over-box .sub {
+            color: #8899aa;
+            font-size: 16px;
+            margin-bottom: 16px;
+        }
+        .game-over-box .stats-line {
+            color: #aac0ff;
+            font-size: 14px;
+            margin: 4px 0;
+        }
+        .game-over-box .stats-line span {
+            color: #ffdd44;
+            font-weight: bold;
+        }
+        .game-over-box button {
+            margin-top: 16px;
+            font-size: 16px;
+            padding: 8px 30px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-wrapper">
+        <div class="title">⚓ BATTLESHIP</div>
+
+        <div class="status" id="statusDisplay">🛳️ Place your ships!</div>
+        <div class="phase-indicator" id="phaseDisplay">Click a ship to select, then click the grid to place</div>
+
+        <div class="board-container">
+            <div class="board-wrapper">
+                <div class="board-label"><span class="you">🟢 YOUR FLEET</span></div>
+                <canvas id="playerBoard" width="300" height="300"></canvas>
+            </div>
+            <div class="board-wrapper">
+                <div class="board-label"><span class="ai">🔴 AI FLEET</span></div>
+                <canvas id="aiBoard" width="300" height="300"></canvas>
+            </div>
+        </div>
+
+        <div class="ship-status" id="shipStatus"></div>
+
+        <div class="stats">
+            <div>🏆 W: <span class="win" id="wins">0</span></div>
+            <div>💀 L: <span class="loss" id="losses">0</span></div>
+            <div>🔥 Streak: <span class="streak" id="streak">0</span></div>
+            <div>🎯 Hits: <span class="hits" id="hits">0</span></div>
+            <div>💥 Shots: <span class="shots" id="shots">0</span></div>
+        </div>
+
+        <div class="controls">
+            <button id="resetBtn" class="primary">🔄 New Game</button>
+            <button id="randomBtn">🎲 Random</button>
+            <button id="soundBtn">🔊 Sound</button>
+            <span style="color:#556;font-size:11px;display:flex;align-items:center;gap:6px;">
+                <kbd>R</kbd> Rotate
+                <kbd>1-5</kbd> Select Ship
+            </span>
+        </div>
+    </div>
+
+    <!-- Game Over Overlay -->
+    <div class="game-over-overlay" id="gameOverOverlay">
+        <div class="game-over-box">
+            <div class="result" id="goResult">🏆</div>
+            <div class="message" id="goMessage">YOU WIN!</div>
+            <div class="sub" id="goSub">All enemy ships destroyed!</div>
+            <div class="stats-line">🎯 Hits: <span id="goHits">0</span></div>
+            <div class="stats-line">💥 Shots fired: <span id="goShots">0</span></div>
+            <div class="stats-line">🚢 Ships sunk: <span id="goShips">0</span></div>
+            <button class="primary" id="goBtn">🎉 Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        //  BATTLESHIP - FIXED
+        // ============================================================
+
+        // ===== CONSTANTS =====
+        const SIZE = 10;
+        const CELL_SIZE = 30;
+
+        const SHIPS = [
+            { name: 'Carrier', size: 5, symbol: '🛳️' },
+            { name: 'Battleship', size: 4, symbol: '🚢' },
+            { name: 'Cruiser', size: 3, symbol: '🚀' },
+            { name: 'Submarine', size: 3, symbol: '🔱' },
+            { name: 'Destroyer', size: 2, symbol: '⚡' },
+        ];
+
+        // ===== DOM REFS =====
+        const playerCanvas = document.getElementById('playerBoard');
+        const aiCanvas = document.getElementById('aiBoard');
+        const pCtx = playerCanvas.getContext('2d');
+        const aCtx = aiCanvas.getContext('2d');
+        const statusDisplay = document.getElementById('statusDisplay');
+        const phaseDisplay = document.getElementById('phaseDisplay');
+        const shipStatus = document.getElementById('shipStatus');
+        const winsSpan = document.getElementById('wins');
+        const lossesSpan = document.getElementById('losses');
+        const streakSpan = document.getElementById('streak');
+        const hitsSpan = document.getElementById('hits');
+        const shotsSpan = document.getElementById('shots');
+        const overlay = document.getElementById('gameOverOverlay');
+
+        // ===== GAME STATE =====
+        let playerBoard = [];
+        let aiBoard = [];
+        let playerShips = [];
+        let aiShips = [];
+        let playerShots = [];
+        let aiShots = [];
+        let isPlayerTurn = true;
+        let gameOver = false;
+        let gamePhase = 'placement';
+        let selectedShipIndex = 0;
+        let shipOrientation = 'horizontal';
+        let playerHits = 0;
+        let totalPlayerShots = 0;
+        let soundEnabled = true;
+        let previewRow = -1;
+        let previewCol = -1;
+
+        // ===== STATS =====
+        let stats = {
+            wins: parseInt(localStorage.getItem('bs_wins')) || 0,
+            losses: parseInt(localStorage.getItem('bs_losses')) || 0,
+            streak: parseInt(localStorage.getItem('bs_streak')) || 0,
+            totalHits: parseInt(localStorage.getItem('bs_hits')) || 0,
+        };
+        updateStatsDisplay();
+
+        // ===== AUDIO =====
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+        }
+
+        function playSound(type) {
+            if (!soundEnabled) return;
+            try {
+                initAudio();
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                switch (type) {
+                    case 'hit':
+                        const freqs = [200, 300, 150, 400, 250];
+                        for (let i = 0; i < freqs.length; i++) {
+                            const o = audioCtx.createOscillator();
+                            const g = audioCtx.createGain();
+                            o.connect(g);
+                            g.connect(audioCtx.destination);
+                            o.type = i % 2 === 0 ? 'sawtooth' : 'square';
+                            o.frequency.setValueAtTime(freqs[i], now + i * 0.04);
+                            o.frequency.exponentialRampToValueAtTime(freqs[i] * 0.3, now + i * 0.04 + 0.15);
+                            g.gain.setValueAtTime(0.06, now + i * 0.04);
+                            g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.04 + 0.15);
+                            o.start(now + i * 0.04);
+                            o.stop(now + i * 0.04 + 0.15);
+                        }
+                        break;
+                    case 'miss':
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(400, now);
+                        osc.frequency.exponentialRampToValueAtTime(200, now + 0.08);
+                        gain.gain.setValueAtTime(0.04, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                        osc.start(now);
+                        osc.stop(now + 0.08);
+                        break;
+                    case 'sink':
+                        for (let i = 0; i < 6; i++) {
+                            const o = audioCtx.createOscillator();
+                            const g = audioCtx.createGain();
+                            o.connect(g);
+                            g.connect(audioCtx.destination);
+                            o.type = i < 3 ? 'sawtooth' : 'square';
+                            const baseFreq = 400 - i * 40;
+                            o.frequency.setValueAtTime(baseFreq, now + i * 0.06);
+                            o.frequency.exponentialRampToValueAtTime(baseFreq * 0.2, now + i * 0.06 + 0.2);
+                            g.gain.setValueAtTime(0.06, now + i * 0.06);
+                            g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.2);
+                            o.start(now + i * 0.06);
+                            o.stop(now + i * 0.06 + 0.2);
+                        }
+                        break;
+                    case 'win':
+                        [523, 659, 784, 1047, 784, 659, 523, 784].forEach((f, i) => {
+                            const o = audioCtx.createOscillator();
+                            const g = audioCtx.createGain();
+                            o.connect(g);
+                            g.connect(audioCtx.destination);
+                            o.type = 'square';
+                            o.frequency.setValueAtTime(f, now + i * 0.06);
+                            g.gain.setValueAtTime(0.04, now + i * 0.06);
+                            g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.05);
+                            o.start(now + i * 0.06);
+                            o.stop(now + i * 0.06 + 0.05);
+                        });
+                        break;
+                    case 'place':
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(600, now);
+                        osc.frequency.exponentialRampToValueAtTime(800, now + 0.03);
+                        gain.gain.setValueAtTime(0.04, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+                        osc.start(now);
+                        osc.stop(now + 0.03);
+                        break;
+                }
+            } catch (e) {}
+        }
+
+        // ===== BOARD FUNCTIONS =====
+        function createEmptyBoard() {
+            return Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
+        }
+
+        function canPlaceShip(board, row, col, size, orientation) {
+            if (orientation === 'horizontal') {
+                if (col + size > SIZE) return false;
+                for (let c = col; c < col + size; c++) {
+                    if (board[row][c] !== 0) return false;
+                }
+            } else {
+                if (row + size > SIZE) return false;
+                for (let r = row; r < row + size; r++) {
+                    if (board[r][col] !== 0) return false;
+                }
+            }
+            return true;
+        }
+
+        function placeShip(board, row, col, size, orientation, shipId) {
+            if (orientation === 'horizontal') {
+                for (let c = col; c < col + size; c++) {
+                    board[row][c] = shipId;
+                }
+            } else {
+                for (let r = row; r < row + size; r++) {
+                    board[r][col] = shipId;
+                }
+            }
+        }
+
+        function getShipCells(board, shipId) {
+            const cells = [];
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    if (board[r][c] === shipId) {
+                        cells.push({ r, c });
+                    }
+                }
+            }
+            return cells;
+        }
+
+        function isShipSunk(board, shipId, shots) {
+            const cells = getShipCells(board, shipId);
+            for (const cell of cells) {
+                if (!shots.some(s => s.r === cell.r && s.c === cell.c)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // ===== AI FUNCTIONS =====
+        function generateAIBoard() {
+            const board = createEmptyBoard();
+            const ships = [];
+            let shipId = 1;
+
+            for (const ship of SHIPS) {
+                let placed = false;
+                let attempts = 0;
+                while (!placed && attempts < 1000) {
+                    attempts++;
+                    const row = Math.floor(Math.random() * SIZE);
+                    const col = Math.floor(Math.random() * SIZE);
+                    const orientation = Math.random() < 0.5 ? 'horizontal' : 'vertical';
+
+                    if (canPlaceShip(board, row, col, ship.size, orientation)) {
+                        placeShip(board, row, col, ship.size, orientation, shipId);
+                        ships.push({
+                            id: shipId,
+                            name: ship.name,
+                            size: ship.size,
+                            symbol: ship.symbol,
+                            row,
+                            col,
+                            orientation,
+                            cells: getShipCells(board, shipId),
+                            sunk: false,
+                            hitCells: [],
+                        });
+                        shipId++;
+                        placed = true;
+                    }
+                }
+                if (!placed) {
+                    for (let r = 0; r < SIZE; r++) {
+                        for (let c = 0; c < SIZE; c++) {
+                            if (canPlaceShip(board, r, c, ship.size, 'horizontal')) {
+                                placeShip(board, r, c, ship.size, 'horizontal', shipId);
+                                ships.push({
+                                    id: shipId,
+                                    name: ship.name,
+                                    size: ship.size,
+                                    symbol: ship.symbol,
+                                    row: r,
+                                    col: c,
+                                    orientation: 'horizontal',
+                                    cells: getShipCells(board, shipId),
+                                    sunk: false,
+                                    hitCells: [],
+                                });
+                                shipId++;
+                                placed = true;
+                                break;
+                            }
+                        }
+                        if (placed) break;
+                    }
+                }
+            }
+            return { board, ships };
+        }
+
+        // ===== AI =====
+        let aiTargetQueue = [];
+        let aiLastHit = null;
+        let aiSearchDirection = null;
+        let aiShipDirection = null;
+        let aiHitCountInDirection = 0;
+
+        function getAIMove() {
+            if (aiTargetQueue.length > 0) {
+                const target = aiTargetQueue.shift();
+                if (!aiShots.some(s => s.r === target.r && s.c === target.c)) {
+                    return target;
+                }
+                return getAIMove();
+            }
+
+            if (aiLastHit && aiShipDirection) {
+                const dir = aiShipDirection;
+                const r = aiLastHit.r + dir.dr;
+                const c = aiLastHit.c + dir.dc;
+                if (r >= 0 && r < SIZE && c >= 0 && c < SIZE &&
+                    !aiShots.some(s => s.r === r && s.c === c)) {
+                    return { r, c };
+                }
+                const oppositeDir = { dr: -dir.dr, dc: -dir.dc };
+                let firstHit = aiLastHit;
+                let searchR = aiLastHit.r + oppositeDir.dr;
+                let searchC = aiLastHit.c + oppositeDir.dc;
+                while (searchR >= 0 && searchR < SIZE && searchC >= 0 && searchC < SIZE) {
+                    if (aiShots.some(s => s.r === searchR && s.c === searchC)) {
+                        firstHit = { r: searchR, c: searchC };
+                        searchR += oppositeDir.dr;
+                        searchC += oppositeDir.dc;
+                    } else {
+                        break;
+                    }
+                }
+                const r2 = firstHit.r + oppositeDir.dr;
+                const c2 = firstHit.c + oppositeDir.dc;
+                if (r2 >= 0 && r2 < SIZE && c2 >= 0 && c2 < SIZE &&
+                    !aiShots.some(s => s.r === r2 && s.c === c2)) {
+                    aiLastHit = firstHit;
+                    return { r: r2, c: c2 };
+                }
+                aiShipDirection = null;
+                aiLastHit = null;
+                return getAIMove();
+            }
+
+            if (aiLastHit) {
+                const directions = [
+                    { dr: -1, dc: 0 }, { dr: 1, dc: 0 },
+                    { dr: 0, dc: -1 }, { dr: 0, dc: 1 }
+                ];
+                const shuffled = directions.sort(() => Math.random() - 0.5);
+                for (const dir of shuffled) {
+                    const r = aiLastHit.r + dir.dr;
+                    const c = aiLastHit.c + dir.dc;
+                    if (r >= 0 && r < SIZE && c >= 0 && c < SIZE &&
+                        !aiShots.some(s => s.r === r && s.c === c)) {
+                        aiSearchDirection = dir;
+                        const prevR = aiLastHit.r - dir.dr;
+                        const prevC = aiLastHit.c - dir.dc;
+                        if (prevR >= 0 && prevR < SIZE && prevC >= 0 && prevC < SIZE &&
+                            aiShots.some(s => s.r === prevR && s.c === prevC)) {
+                            aiShipDirection = dir;
+                            aiHitCountInDirection = 2;
+                        }
+                        return { r, c };
+                    }
+                }
+                aiLastHit = null;
+                aiSearchDirection = null;
+                aiShipDirection = null;
+                return getAIMove();
+            }
+
+            const untested = [];
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    if (!aiShots.some(s => s.r === r && s.c === c)) {
+                        untested.push({ r, c });
+                    }
+                }
+            }
+            if (untested.length === 0) return null;
+            const preferred = untested.filter(p => (p.r + p.c) % 2 === 0);
+            if (preferred.length > 0) {
+                return preferred[Math.floor(Math.random() * preferred.length)];
+            }
+            return untested[Math.floor(Math.random() * untested.length)];
+        }
+
+        function aiTurn() {
+            if (gameOver || isPlayerTurn) return;
+            const move = getAIMove();
+            if (!move) return;
+            const { r, c } = move;
+            aiShots.push({ r, c });
+
+            if (playerBoard[r][c] !== 0) {
+                playSound('hit');
+                const shipId = playerBoard[r][c];
+                const ship = playerShips.find(s => s.id === shipId);
+                if (ship) {
+                    const cells = getShipCells(playerBoard, shipId);
+                    const allHit = cells.every(cell =>
+                        aiShots.some(s => s.r === cell.r && s.c === cell.c)
+                    );
+                    if (allHit) {
+                        ship.sunk = true;
+                        playSound('sink');
+                        statusDisplay.innerHTML = `🔥💥 AI sank your ${ship.name}!`;
+                        aiTargetQueue = [];
+                        aiLastHit = null;
+                        aiSearchDirection = null;
+                        aiShipDirection = null;
+                        aiHitCountInDirection = 0;
+                        if (playerShips.every(s => s.sunk)) {
+                            gameOver = true;
+                            stats.losses++;
+                            stats.streak = stats.streak <= 0 ? stats.streak - 1 : -1;
+                            localStorage.setItem('bs_losses', stats.losses);
+                            localStorage.setItem('bs_streak', stats.streak);
+                            updateStatsDisplay();
+                            showGameOver(false);
+                            drawAll();
+                            return;
+                        }
+                    } else {
+                        statusDisplay.innerHTML = `💥 AI hit your ${ship.name}!`;
+                        const dirs = [
+                            { dr: -1, dc: 0 }, { dr: 1, dc: 0 },
+                            { dr: 0, dc: -1 }, { dr: 0, dc: 1 }
+                        ];
+                        if (aiShipDirection) {
+                            const dir = aiShipDirection;
+                            let nextR = r + dir.dr;
+                            let nextC = c + dir.dc;
+                            if (nextR >= 0 && nextR < SIZE && nextC >= 0 && nextC < SIZE &&
+                                !aiShots.some(s => s.r === nextR && s.c === nextC) &&
+                                !aiTargetQueue.some(s => s.r === nextR && s.c === nextC)) {
+                                aiTargetQueue.push({ r: nextR, c: nextC });
+                            }
+                            const firstHit = aiShots.find(s => s.r === r - dir.dr && s.c === c - dir.dc);
+                            if (firstHit) {
+                                const prevR = firstHit.r - dir.dr;
+                                const prevC = firstHit.c - dir.dc;
+                                if (prevR >= 0 && prevR < SIZE && prevC >= 0 && prevC < SIZE &&
+                                    !aiShots.some(s => s.r === prevR && s.c === prevC) &&
+                                    !aiTargetQueue.some(s => s.r === prevR && s.c === prevC)) {
+                                    aiTargetQueue.push({ r: prevR, c: prevC });
+                                }
+                            }
+                        } else {
+                            for (const dir of dirs) {
+                                const nr = r + dir.dr;
+                                const nc = c + dir.dc;
+                                if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE &&
+                                    !aiShots.some(s => s.r === nr && s.c === nc) &&
+                                    !aiTargetQueue.some(s => s.r === nr && s.c === nc)) {
+                                    aiTargetQueue.push({ r: nr, c: nc });
+                                }
+                            }
+                        }
+                        aiLastHit = { r, c };
+                        if (!aiShipDirection) {
+                            const dirs2 = [
+                                { dr: -1, dc: 0 }, { dr: 1, dc: 0 },
+                                { dr: 0, dc: -1 }, { dr: 0, dc: 1 }
+                            ];
+                            for (const dir of dirs2) {
+                                const checkR = r - dir.dr;
+                                const checkC = c - dir.dc;
+                                if (checkR >= 0 && checkR < SIZE && checkC >= 0 && checkC < SIZE &&
+                                    aiShots.some(s => s.r === checkR && s.c === checkC)) {
+                                    aiShipDirection = dir;
+                                    aiHitCountInDirection = 2;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                playSound('miss');
+                statusDisplay.innerHTML = '🌊 AI missed!';
+            }
+
+            if (playerShips.every(s => s.sunk)) {
+                gameOver = true;
+                stats.losses++;
+                stats.streak = stats.streak <= 0 ? stats.streak - 1 : -1;
+                localStorage.setItem('bs_losses', stats.losses);
+                localStorage.setItem('bs_streak', stats.streak);
+                updateStatsDisplay();
+                showGameOver(false);
+                drawAll();
+                return;
+            }
+
+            isPlayerTurn = true;
+            statusDisplay.innerHTML = '🎯 Your turn! Click on the AI board to attack.';
+            drawAll();
+        }
+
+        // ===== PLAYER ATTACK =====
+        function playerAttack(row, col) {
+            if (gameOver || !isPlayerTurn || gamePhase === 'placement') return;
+            if (playerShots.some(s => s.r === row && s.c === col)) return;
+
+            playerShots.push({ r: row, c: col });
+            totalPlayerShots++;
+
+            if (aiBoard[row][col] !== 0) {
+                playSound('hit');
+                const shipId = aiBoard[row][col];
+                const ship = aiShips.find(s => s.id === shipId);
+                if (ship) {
+                    const cells = getShipCells(aiBoard, shipId);
+                    const allHit = cells.every(cell =>
+                        playerShots.some(s => s.r === cell.r && s.c === cell.c)
+                    );
+                    if (allHit) {
+                        ship.sunk = true;
+                        playerHits++;
+                        stats.totalHits++;
+                        localStorage.setItem('bs_hits', stats.totalHits);
+                        playSound('sink');
+                        statusDisplay.innerHTML = `🎉💥 You sank the AI's ${ship.name}!`;
+                        if (aiShips.every(s => s.sunk)) {
+                            gameOver = true;
+                            stats.wins++;
+                            stats.streak = stats.streak >= 0 ? stats.streak + 1 : 1;
+                            localStorage.setItem('bs_wins', stats.wins);
+                            localStorage.setItem('bs_streak', stats.streak);
+                            updateStatsDisplay();
+                            showGameOver(true);
+                            drawAll();
+                            return;
+                        }
+                    } else {
+                        statusDisplay.innerHTML = `💥 You hit the AI's ${ship.name}!`;
+                    }
+                }
+            } else {
+                playSound('miss');
+                statusDisplay.innerHTML = '🌊 You missed!';
+            }
+
+            updateStatsDisplay();
+            drawAll();
+
+            if (aiShips.every(s => s.sunk)) {
+                gameOver = true;
+                stats.wins++;
+                stats.streak = stats.streak >= 0 ? stats.streak + 1 : 1;
+                localStorage.setItem('bs_wins', stats.wins);
+                localStorage.setItem('bs_streak', stats.streak);
+                updateStatsDisplay();
+                showGameOver(true);
+                drawAll();
+                return;
+            }
+
+            isPlayerTurn = false;
+            statusDisplay.innerHTML = '🤖 AI is thinking...';
+            drawAll();
+
+            setTimeout(() => {
+                aiTurn();
+            }, 600 + Math.random() * 400);
+        }
+
+        // ===== SHIP PLACEMENT =====
+        function placePlayerShip(row, col) {
+            if (gamePhase !== 'placement') return;
+            if (selectedShipIndex >= SHIPS.length) return;
+
+            const ship = SHIPS[selectedShipIndex];
+            const shipId = selectedShipIndex + 1;
+
+            if (canPlaceShip(playerBoard, row, col, ship.size, shipOrientation)) {
+                placeShip(playerBoard, row, col, ship.size, shipOrientation, shipId);
+                playerShips.push({
+                    id: shipId,
+                    name: ship.name,
+                    size: ship.size,
+                    symbol: ship.symbol,
+                    row,
+                    col,
+                    orientation: shipOrientation,
+                    cells: getShipCells(playerBoard, shipId),
+                    sunk: false,
+                    hitCells: [],
+                });
+                playSound('place');
+                selectedShipIndex++;
+                previewRow = -1;
+                previewCol = -1;
+
+                if (selectedShipIndex >= SHIPS.length) {
+                    gamePhase = 'battle';
+                    isPlayerTurn = true;
+                    statusDisplay.innerHTML = '⚔️ All ships placed! Attack the enemy!';
+                    phaseDisplay.innerHTML = '🎯 Click on the AI board to attack';
+                    drawAll();
+                } else {
+                    const nextShip = SHIPS[selectedShipIndex];
+                    statusDisplay.innerHTML =
+                        `🛳️ Place your ${nextShip.name} (${nextShip.symbol}) - Size: ${nextShip.size}`;
+                    phaseDisplay.innerHTML =
+                        `Click to place | ${shipOrientation === 'horizontal' ? '↔' : '↕'} Press R to rotate | Keys 1-5 select ship`;
+                    drawAll();
+                }
+                updateShipStatus();
+            } else {
+                playSound('miss');
+                statusDisplay.innerHTML = '❌ Cannot place ship there!';
+            }
+        }
+
+        function randomPlacement() {
+            const board = createEmptyBoard();
+            const ships = [];
+            let shipId = 1;
+
+            for (const ship of SHIPS) {
+                let placed = false;
+                let attempts = 0;
+                while (!placed && attempts < 500) {
+                    attempts++;
+                    const row = Math.floor(Math.random() * SIZE);
+                    const col = Math.floor(Math.random() * SIZE);
+                    const orientation = Math.random() < 0.5 ? 'horizontal' : 'vertical';
+
+                    if (canPlaceShip(board, row, col, ship.size, orientation)) {
+                        placeShip(board, row, col, ship.size, orientation, shipId);
+                        ships.push({
+                            id: shipId,
+                            name: ship.name,
+                            size: ship.size,
+                            symbol: ship.symbol,
+                            row,
+                            col,
+                            orientation,
+                            cells: getShipCells(board, shipId),
+                            sunk: false,
+                            hitCells: [],
+                        });
+                        shipId++;
+                        placed = true;
+                    }
+                }
+                if (!placed) {
+                    for (let r = 0; r < SIZE; r++) {
+                        for (let c = 0; c < SIZE; c++) {
+                            if (canPlaceShip(board, r, c, ship.size, 'horizontal')) {
+                                placeShip(board, r, c, ship.size, 'horizontal', shipId);
+                                ships.push({
+                                    id: shipId,
+                                    name: ship.name,
+                                    size: ship.size,
+                                    symbol: ship.symbol,
+                                    row: r,
+                                    col: c,
+                                    orientation: 'horizontal',
+                                    cells: getShipCells(board, shipId),
+                                    sunk: false,
+                                    hitCells: [],
+                                });
+                                shipId++;
+                                placed = true;
+                                break;
+                            }
+                        }
+                        if (placed) break;
+                    }
+                }
+            }
+
+            playerBoard = board;
+            playerShips = ships;
+            selectedShipIndex = SHIPS.length;
+            gamePhase = 'battle';
+            isPlayerTurn = true;
+            statusDisplay.innerHTML = '⚔️ All ships placed! Attack the enemy!';
+            phaseDisplay.innerHTML = '🎯 Click on the AI board to attack';
+            updateShipStatus();
+            drawAll();
+        }
+
+        // ===== GAME OVER =====
+        function showGameOver(playerWon) {
+            const result = document.getElementById('goResult');
+            const message = document.getElementById('goMessage');
+            const sub = document.getElementById('goSub');
+            const goHits = document.getElementById('goHits');
+            const goShots = document.getElementById('goShots');
+            const goShips = document.getElementById('goShips');
+
+            if (playerWon) {
+                result.textContent = '🏆';
+                message.textContent = 'YOU WIN!';
+                sub.textContent = 'All enemy ships destroyed!';
+                document.getElementById('goBtn').textContent = '🎉 Play Again';
+            } else {
+                result.textContent = '💀';
+                message.textContent = 'YOU LOSE!';
+                sub.textContent = 'All your ships were sunk!';
+                document.getElementById('goBtn').textContent = '🔄 Try Again';
+            }
+
+            goHits.textContent = playerHits;
+            goShots.textContent = totalPlayerShots;
+            goShips.textContent = aiShips.filter(s => s.sunk).length;
+
+            overlay.classList.add('show');
+        }
+
+        // ===== DRAW (FIXED) =====
+        function drawBoard(ctx, board, shots, ships, isPlayerBoard, showShips) {
+            const size = ctx.canvas.width / SIZE;
+
+            // First pass: draw the board
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    const x = c * size;
+                    const y = r * size;
+
+                    // Background
+                    ctx.fillStyle = (r + c) % 2 === 0 ? '#0a0a2a' : '#12123a';
+                    ctx.fillRect(x, y, size, size);
+
+                    // Grid lines
+                    ctx.strokeStyle = '#1a1a4a';
+                    ctx.lineWidth = 0.5;
+                    ctx.strokeRect(x, y, size, size);
+
+                    // Player Board: Show ships
+                    if (isPlayerBoard && showShips && board[r][c] !== 0) {
+                        const shipId = board[r][c];
+                        const ship = ships.find(s => s.id === shipId);
+                        if (ship) {
+                            if (ship.sunk) {
+                                // Sunk ship - RED background
+                                ctx.fillStyle = 'rgba(150,20,20,0.8)';
+                                ctx.fillRect(x + 1, y + 1, size - 2, size - 2);
+                            } else {
+                                // Alive ship - GREEN
+                                ctx.fillStyle = '#1a3a2a';
+                                ctx.fillRect(x + 2, y + 2, size - 4, size - 4);
+                                ctx.fillStyle = '#2a5a3a';
+                                ctx.fillRect(x + 4, y + 4, size - 8, size - 8);
+                            }
+                        }
+                    }
+
+                    // AI Board: Show SUNKEN ships only (when game over or when sunk)
+                    if (!isPlayerBoard && showShips) {
+                        for (const ship of ships) {
+                            if (ship.sunk && ship.cells.some(cell => cell.r === r && cell.c === c)) {
+                                // SUNK ship - RED background on AI board
+                                ctx.fillStyle = 'rgba(150,20,20,0.7)';
+                                ctx.fillRect(x, y, size, size);
+                            }
+                        }
+                    }
+
+                    // SHIP PREVIEW (shows the ENTIRE ship)
+                    if (isPlayerBoard && gamePhase === 'placement' && selectedShipIndex < SHIPS.length) {
+                        const ship = SHIPS[selectedShipIndex];
+                        if (previewRow >= 0 && previewCol >= 0) {
+                            const canPlace = canPlaceShip(board, previewRow, previewCol, ship.size, shipOrientation);
+                            const cells = [];
+                            if (shipOrientation === 'horizontal') {
+                                for (let i = 0; i < ship.size; i++) {
+                                    cells.push({ r: previewRow, c: previewCol + i });
+                                }
+                            } else {
+                                for (let i = 0; i < ship.size; i++) {
+                                    cells.push({ r: previewRow + i, c: previewCol });
+                                }
+                            }
+                            // Check if this cell is part of the preview ship
+                            const isPreview = cells.some(cell => cell.r === r && cell.c === c);
+                            if (isPreview) {
+                                if (canPlace) {
+                                    ctx.fillStyle = 'rgba(0,255,100,0.25)';
+                                    ctx.fillRect(x, y, size, size);
+                                    ctx.strokeStyle = 'rgba(0,255,100,0.5)';
+                                    ctx.lineWidth = 1.5;
+                                    ctx.strokeRect(x + 1, y + 1, size - 2, size - 2);
+                                } else {
+                                    ctx.fillStyle = 'rgba(255,0,0,0.25)';
+                                    ctx.fillRect(x, y, size, size);
+                                    ctx.strokeStyle = 'rgba(255,0,0,0.5)';
+                                    ctx.lineWidth = 1.5;
+                                    ctx.strokeRect(x + 1, y + 1, size - 2, size - 2);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Second pass: draw shots (on top of everything)
+            for (const shot of shots) {
+                const r = shot.r;
+                const c = shot.c;
+                const x = c * size;
+                const y = r * size;
+                const isHit = board[r][c] !== 0;
+
+                if (isHit) {
+                    // Check if this hit is on a SUNK ship (player board)
+                    let isSunk = false;
+                    if (isPlayerBoard) {
+                        const shipId = board[r][c];
+                        const ship = ships.find(s => s.id === shipId);
+                        if (ship && ship.sunk) isSunk = true;
+                    }
+                    // Check if this hit is on a SUNK ship (AI board)
+                    if (!isPlayerBoard) {
+                        for (const ship of ships) {
+                            if (ship.sunk && ship.cells.some(cell => cell.r === r && cell.c === c)) {
+                                isSunk = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (isSunk) {
+                        // SUNK ship hit - RED marker
+                        ctx.fillStyle = '#ff3333';
+                        ctx.shadowColor = '#ff3333';
+                        ctx.shadowBlur = 8;
+                        ctx.beginPath();
+                        ctx.arc(x + size / 2, y + size / 2, size * 0.35, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.shadowBlur = 0;
+                        // RED X
+                        ctx.strokeStyle = '#ff0000';
+                        ctx.lineWidth = 2.5;
+                        ctx.beginPath();
+                        ctx.moveTo(x + 6, y + 6);
+                        ctx.lineTo(x + size - 6, y + size - 6);
+                        ctx.moveTo(x + size - 6, y + 6);
+                        ctx.lineTo(x + 6, y + size - 6);
+                        ctx.stroke();
+                    } else {
+                        // NORMAL HIT - YELLOW marker
+                        ctx.fillStyle = '#ffdd44';
+                        ctx.shadowColor = '#ffdd44';
+                        ctx.shadowBlur = 12;
+                        ctx.beginPath();
+                        ctx.arc(x + size / 2, y + size / 2, size * 0.38, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.shadowBlur = 0;
+
+                        // Inner bright spot
+                        ctx.fillStyle = '#ffee88';
+                        ctx.beginPath();
+                        ctx.arc(x + size / 2 - 3, y + size / 2 - 4, size * 0.12, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        // Dark X
+                        ctx.strokeStyle = '#cc8800';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(x + 6, y + 6);
+                        ctx.lineTo(x + size - 6, y + size - 6);
+                        ctx.moveTo(x + size - 6, y + 6);
+                        ctx.lineTo(x + 6, y + size - 6);
+                        ctx.stroke();
+                    }
+                } else {
+                    // MISS - Blue dot
+                    ctx.fillStyle = '#334466';
+                    ctx.beginPath();
+                    ctx.arc(x + size / 2, y + size / 2, size * 0.2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+                    ctx.beginPath();
+                    ctx.arc(x + size / 2 - 2, y + size / 2 - 2, size * 0.06, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Border
+            ctx.strokeStyle = '#2a2a5a';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        }
+
+        function drawAll() {
+            drawBoard(pCtx, playerBoard, aiShots, playerShips, true, true);
+            drawBoard(aCtx, aiBoard, playerShots, aiShips, false, gameOver);
+        }
+
+        // ===== PREVIEW =====
+        function updatePreview(row, col) {
+            if (gamePhase !== 'placement') return;
+            if (selectedShipIndex >= SHIPS.length) {
+                previewRow = -1;
+                previewCol = -1;
+                drawAll();
+                return;
+            }
+            previewRow = row;
+            previewCol = col;
+            drawAll();
+        }
+
+        // ===== UI UPDATES =====
+        function updateShipStatus() {
+            let html = '';
+            for (const ship of playerShips) {
+                let status = '🟢';
+                let color = 'alive';
+                let text = `${ship.symbol} ${ship.name}`;
+                if (ship.sunk) {
+                    status = '💀';
+                    color = 'sunk';
+                    text = `${ship.symbol} ${ship.name} (SUNK!)`;
+                }
+                html += `<span class="${color}">${status} ${text}</span>`;
+            }
+            if (gamePhase === 'placement') {
+                for (let i = selectedShipIndex; i < SHIPS.length; i++) {
+                    const active = i === selectedShipIndex ? ' ⬅️' : '';
+                    html += `<span class="placing">⬜ ${SHIPS[i].symbol} ${SHIPS[i].name}${active}</span>`;
+                }
+            }
+            shipStatus.innerHTML = html || '⚓ All ships placed!';
+        }
+
+        function updateStatsDisplay() {
+            winsSpan.textContent = stats.wins;
+            lossesSpan.textContent = stats.losses;
+            streakSpan.textContent = stats.streak;
+            hitsSpan.textContent = stats.totalHits;
+            shotsSpan.textContent = totalPlayerShots;
+        }
+
+        // ===== RESET =====
+        function resetGame() {
+            playerBoard = createEmptyBoard();
+            playerShips = [];
+            playerShots = [];
+            aiShots = [];
+            isPlayerTurn = true;
+            gameOver = false;
+            gamePhase = 'placement';
+            selectedShipIndex = 0;
+            shipOrientation = 'horizontal';
+            playerHits = 0;
+            totalPlayerShots = 0;
+            aiTargetQueue = [];
+            aiLastHit = null;
+            aiSearchDirection = null;
+            aiShipDirection = null;
+            aiHitCountInDirection = 0;
+            previewRow = -1;
+            previewCol = -1;
+
+            hitsSpan.textContent = stats.totalHits || 0;
+            shotsSpan.textContent = '0';
+
+            const aiData = generateAIBoard();
+            aiBoard = aiData.board;
+            aiShips = aiData.ships;
+
+            overlay.classList.remove('show');
+
+            const firstShip = SHIPS[0];
+            statusDisplay.innerHTML = `🛳️ Place your ${firstShip.name} (${firstShip.symbol}) - Size: ${firstShip.size}`;
+            phaseDisplay.innerHTML = `Click to place | ${shipOrientation === 'horizontal' ? '↔' : '↕'} Press R to rotate | Keys 1-5 select ship`;
+            updateShipStatus();
+            updateStatsDisplay();
+            drawAll();
+        }
+
+        // ===== EVENTS =====
+        playerCanvas.addEventListener('mousemove', (e) => {
+            const rect = playerCanvas.getBoundingClientRect();
+            const scale = playerCanvas.width / rect.width;
+            const x = (e.clientX - rect.left) * scale;
+            const y = (e.clientY - rect.top) * scale;
+            const col = Math.floor(x / CELL_SIZE);
+            const row = Math.floor(y / CELL_SIZE);
+
+            if (row >= 0 && row < SIZE && col >= 0 && col < SIZE) {
+                updatePreview(row, col);
+            } else {
+                previewRow = -1;
+                previewCol = -1;
+                drawAll();
+            }
+        });
+
+        playerCanvas.addEventListener('mouseleave', () => {
+            previewRow = -1;
+            previewCol = -1;
+            drawAll();
+        });
+
+        playerCanvas.addEventListener('click', (e) => {
+            const rect = playerCanvas.getBoundingClientRect();
+            const scale = playerCanvas.width / rect.width;
+            const x = (e.clientX - rect.left) * scale;
+            const y = (e.clientY - rect.top) * scale;
+            const col = Math.floor(x / CELL_SIZE);
+            const row = Math.floor(y / CELL_SIZE);
+
+            if (row >= 0 && row < SIZE && col >= 0 && col < SIZE) {
+                if (gamePhase === 'placement') {
+                    placePlayerShip(row, col);
+                }
+            }
+        });
+
+        aiCanvas.addEventListener('click', (e) => {
+            const rect = aiCanvas.getBoundingClientRect();
+            const scale = aiCanvas.width / rect.width;
+            const x = (e.clientX - rect.left) * scale;
+            const y = (e.clientY - rect.top) * scale;
+            const col = Math.floor(x / CELL_SIZE);
+            const row = Math.floor(y / CELL_SIZE);
+
+            if (row >= 0 && row < SIZE && col >= 0 && col < SIZE) {
+                if (gamePhase === 'battle' && isPlayerTurn && !gameOver) {
+                    playerAttack(row, col);
+                }
+            }
+        });
+
+        // Keyboard controls
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'r' || e.key === 'R') {
+                if (gamePhase === 'placement') {
+                    shipOrientation = shipOrientation === 'horizontal' ? 'vertical' : 'horizontal';
+                    phaseDisplay.innerHTML =
+                        `Click to place | ${shipOrientation === 'horizontal' ? '↔' : '↕'} Press R to rotate | Keys 1-5 select ship`;
+                    drawAll();
+                }
+                e.preventDefault();
+            }
+
+            const num = parseInt(e.key);
+            if (num >= 1 && num <= 5 && gamePhase === 'placement') {
+                const idx = num - 1;
+                if (idx < SHIPS.length && idx >= selectedShipIndex) {
+                    selectedShipIndex = idx;
+                    const ship = SHIPS[idx];
+                    statusDisplay.innerHTML = `🛳️ Placing ${ship.name} (${ship.symbol}) - Size: ${ship.size}`;
+                    updateShipStatus();
+                    drawAll();
+                }
+                e.preventDefault();
+            }
+        });
+
+        // ===== BUTTONS =====
+        document.getElementById('resetBtn').addEventListener('click', resetGame);
+        document.getElementById('randomBtn').addEventListener('click', () => {
+            if (gamePhase === 'placement') {
+                randomPlacement();
+            }
+        });
+
+        document.getElementById('soundBtn').addEventListener('click', () => {
+            soundEnabled = !soundEnabled;
+            document.getElementById('soundBtn').textContent = soundEnabled ? '🔊 Sound' : '🔇 Muted';
+        });
+
+        document.getElementById('goBtn').addEventListener('click', resetGame);
+
+        // ===== START =====
+        const initialAi = generateAIBoard();
+        aiBoard = initialAi.board;
+        aiShips = initialAi.ships;
+        resetGame();
+
+        // Override audio errors
+        const origPlaySound = playSound;
+        playSound = function(type) {
+            try { origPlaySound(type); } catch (e) {}
+        };
+    </script>
+</body>
+</html>
