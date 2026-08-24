@@ -58,7 +58,6 @@
             margin-top: 8px;
         }
 
-        /* Sort Controls */
         .sort-controls {
             display: flex;
             justify-content: center;
@@ -170,7 +169,6 @@
             letter-spacing: 0.5px;
         }
 
-        /* 🏆 Hall of Fame Styles */
         .game-card.hall-of-fame {
             border-color: #c9a84c;
             background: #1e1a2a;
@@ -184,8 +182,6 @@
         .game-card.hall-of-fame .game-title {
             color: #f0d878;
         }
-
-        /* ⭐ Star Badge */
         .game-card.hall-of-fame::after {
             content: "⭐";
             position: absolute;
@@ -224,13 +220,6 @@
             margin-top: 4px;
         }
 
-        /* Year View */
-        .year-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-            gap: 12px;
-        }
-
         .year-section {
             margin-bottom: 28px;
         }
@@ -256,8 +245,12 @@
             border-radius: 12px;
             border: 1px solid #2a2a4a;
         }
+        .year-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 12px;
+        }
 
-        /* Score View */
         .score-section {
             margin-bottom: 28px;
         }
@@ -328,1183 +321,250 @@
         <div class="arcade-header">
             <h1>🕹️ RETRO ARCADE</h1>
             <div class="subtitle">The games that defined a generation.</div>
-            <div class="count">🏛️ 44 CLASSIC GAMES</div>
+            <div class="count">🏛️ 45 CLASSIC GAMES</div>
         </div>
 
-        <!-- Sort Controls -->
         <div class="sort-controls">
-            <button class="sort-btn active" data-sort="category">📂 Category</button>
+            <button class="sort-btn" data-sort="category">📂 Category</button>
             <button class="sort-btn" data-sort="year">📅 By Year</button>
             <button class="sort-btn" data-sort="score">⭐ By Score</button>
         </div>
 
-        <!-- ============================================================ -->
-        <!-- 1️⃣ CATEGORY VIEW (default) -->
-        <!-- ============================================================ -->
+        <!-- ====== CATEGORY VIEW ====== -->
         <div id="view-category">
-
             <!-- 🚀 Shooters (13) -->
             <div class="category-section">
-                <div class="category-header">
-                    <h2>🚀 Shooters</h2>
-                    <span class="badge">13</span>
-                </div>
+                <div class="category-header"><h2>🚀 Shooters</h2><span class="badge">13</span></div>
                 <div class="game-grid">
-                    <a href="games/1976 Sea Wolf.html" class="game-card">
-                        <span class="game-icon">🚢</span>
-                        <div class="game-title">Sea Wolf</div>
-                        <div class="game-year">1976</div>
-                        <div class="game-score">⭐ 5.0</div>
-                    </a>
-                    <a href="games/1978 Space Invaders.html" class="game-card hall-of-fame">
-                        <span class="game-icon">👾</span>
-                        <div class="game-title">Space Invaders</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 9.5</div>
-                    </a>
-                    <a href="games/1979 Asteroids.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🌠</span>
-                        <div class="game-title">Asteroids</div>
-                        <div class="game-year">1979</div>
-                        <div class="game-score">⭐ 10.0</div>
-                    </a>
-                    <a href="games/1980 Centipede.html" class="game-card">
-                        <span class="game-icon">🐛</span>
-                        <div class="game-title">Centipede</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 7.5</div>
-                    </a>
-                    <a href="games/1980 Missile Command.html" class="game-card">
-                        <span class="game-icon">🚀</span>
-                        <div class="game-title">Missile Command</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1980 Phoenix.html" class="game-card">
-                        <span class="game-icon">🛸</span>
-                        <div class="game-title">Phoenix</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1980 Star Castle.html" class="game-card">
-                        <span class="game-icon">⭕</span>
-                        <div class="game-title">Star Castle</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                    <a href="games/1980 Tempest.html" class="game-card">
-                        <span class="game-icon">⚡</span>
-                        <div class="game-title">Tempest</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1981 Defender.html" class="game-card">
-                        <span class="game-icon">🛡️</span>
-                        <div class="game-title">Defender</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                    <a href="games/1981 Galaga.html" class="game-card">
-                        <span class="game-icon">🐞</span>
-                        <div class="game-title">Galaga</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1981 Scramble.html" class="game-card">
-                        <span class="game-icon">✈️</span>
-                        <div class="game-title">Scramble</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1982 Robotron 2084.html" class="game-card">
-                        <span class="game-icon">🤖</span>
-                        <div class="game-title">Robotron: 2084</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 8.0</div>
-                    </a>
-                    <a href="games/1983 Gyruss.html" class="game-card">
-                        <span class="game-icon">🌀</span>
-                        <div class="game-title">Gyruss</div>
-                        <div class="game-year">1983</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
+                    <a href="games/1976 Sea Wolf.html" class="game-card"><span class="game-icon">🚢</span><div class="game-title">Sea Wolf</div><div class="game-year">1976</div><div class="game-score">⭐ 5.0</div></a>
+                    <a href="games/1978 Space Invaders.html" class="game-card hall-of-fame"><span class="game-icon">👾</span><div class="game-title">Space Invaders</div><div class="game-year">1978</div><div class="game-score">⭐ 9.5</div></a>
+                    <a href="games/1979 Asteroids.html" class="game-card hall-of-fame"><span class="game-icon">🌠</span><div class="game-title">Asteroids</div><div class="game-year">1979</div><div class="game-score">⭐ 10.0</div></a>
+                    <a href="games/1980 Centipede.html" class="game-card"><span class="game-icon">🐛</span><div class="game-title">Centipede</div><div class="game-year">1980</div><div class="game-score">⭐ 7.5</div></a>
+                    <a href="games/1980 Missile Command.html" class="game-card"><span class="game-icon">🚀</span><div class="game-title">Missile Command</div><div class="game-year">1980</div><div class="game-score">⭐ 6.5</div></a>
+                    <a href="games/1980 Phoenix.html" class="game-card"><span class="game-icon">🛸</span><div class="game-title">Phoenix</div><div class="game-year">1980</div><div class="game-score">⭐ 7.0</div></a>
+                    <a href="games/1980 Star Castle.html" class="game-card"><span class="game-icon">⭕</span><div class="game-title">Star Castle</div><div class="game-year">1980</div><div class="game-score">⭐ 6.0</div></a>
+                    <a href="games/1980 Tempest.html" class="game-card"><span class="game-icon">⚡</span><div class="game-title">Tempest</div><div class="game-year">1980</div><div class="game-score">⭐ 6.5</div></a>
+                    <a href="games/1981 Defender.html" class="game-card"><span class="game-icon">🛡️</span><div class="game-title">Defender</div><div class="game-year">1981</div><div class="game-score">⭐ 6.0</div></a>
+                    <a href="games/1981 Galaga.html" class="game-card"><span class="game-icon">🐞</span><div class="game-title">Galaga</div><div class="game-year">1981</div><div class="game-score">⭐ 6.5</div></a>
+                    <a href="games/1981 Scramble.html" class="game-card"><span class="game-icon">✈️</span><div class="game-title">Scramble</div><div class="game-year">1981</div><div class="game-score">⭐ 6.5</div></a>
+                    <a href="games/1982 Robotron 2084.html" class="game-card"><span class="game-icon">🤖</span><div class="game-title">Robotron: 2084</div><div class="game-year">1982</div><div class="game-score">⭐ 8.0</div></a>
+                    <a href="games/1983 Gyruss.html" class="game-card"><span class="game-icon">🌀</span><div class="game-title">Gyruss</div><div class="game-year">1983</div><div class="game-score">⭐ 6.5</div></a>
                 </div>
             </div>
 
             <!-- 🎮 Arcade Action (11) -->
             <div class="category-section">
-                <div class="category-header">
-                    <h2>🎮 Arcade Action</h2>
-                    <span class="badge">11</span>
-                </div>
+                <div class="category-header"><h2>🎮 Arcade Action</h2><span class="badge">11</span></div>
                 <div class="game-grid">
-                    <a href="games/1973 Space Race.html" class="game-card">
-                        <span class="game-icon">🛸</span>
-                        <div class="game-title">Space Race</div>
-                        <div class="game-year">1973</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1974 Speed Race.html" class="game-card">
-                        <span class="game-icon">🏎️</span>
-                        <div class="game-title">Speed Race</div>
-                        <div class="game-year">1974</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                    <a href="games/1976 Death Race.html" class="game-card">
-                        <span class="game-icon">💀</span>
-                        <div class="game-title">Death Race</div>
-                        <div class="game-year">1976</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1977 Clown.html" class="game-card">
-                        <span class="game-icon">🤡</span>
-                        <div class="game-title">Clown</div>
-                        <div class="game-year">1977</div>
-                        <div class="game-score">⭐ 5.0</div>
-                    </a>
-                    <a href="games/1978 Avalanche.html" class="game-card">
-                        <span class="game-icon">⛰️</span>
-                        <div class="game-title">Avalanche</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1978 Worm.html" class="game-card">
-                        <span class="game-icon">🪱</span>
-                        <div class="game-title">Worm</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 7.5</div>
-                    </a>
-                    <a href="games/1979 Lunar Landing.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🌙</span>
-                        <div class="game-title">Lunar Landing</div>
-                        <div class="game-year">1979</div>
-                        <div class="game-score">⭐ 9.0</div>
-                    </a>
-                    <a href="games/1981 Frogger.html" class="game-card">
-                        <span class="game-icon">🐸</span>
-                        <div class="game-title">Frogger</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1982 Artillery Duel.html" class="game-card">
-                        <span class="game-icon">🎯</span>
-                        <div class="game-title">Artillery Duel</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 4.0</div>
-                    </a>
-                    <a href="games/1982 Tron.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🏍️</span>
-                        <div class="game-title">Tron</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 9.0</div>
-                    </a>
-                    <a href="games/1982 Joust.html" class="game-card">
-                        <span class="game-icon">🦅</span>
-                        <div class="game-title">Joust</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 3.5</div>
-                    </a>
+                    <a href="games/1973 Space Race.html" class="game-card"><span class="game-icon">🛸</span><div class="game-title">Space Race</div><div class="game-year">1973</div><div class="game-score">⭐ 7.0</div></a>
+                    <a href="games/1974 Speed Race.html" class="game-card"><span class="game-icon">🏎️</span><div class="game-title">Speed Race</div><div class="game-year">1974</div><div class="game-score">⭐ 6.0</div></a>
+                    <a href="games/1976 Death Race.html" class="game-card"><span class="game-icon">💀</span><div class="game-title">Death Race</div><div class="game-year">1976</div><div class="game-score">⭐ 6.5</div></a>
+                    <a href="games/1977 Clown.html" class="game-card"><span class="game-icon">🤡</span><div class="game-title">Clown</div><div class="game-year">1977</div><div class="game-score">⭐ 5.0</div></a>
+                    <a href="games/1978 Avalanche.html" class="game-card"><span class="game-icon">⛰️</span><div class="game-title">Avalanche</div><div class="game-year">1978</div><div class="game-score">⭐ 7.0</div></a>
+                    <a href="games/1978 Worm.html" class="game-card"><span class="game-icon">🪱</span><div class="game-title">Worm</div><div class="game-year">1978</div><div class="game-score">⭐ 7.5</div></a>
+                    <a href="games/1979 Lunar Landing.html" class="game-card hall-of-fame"><span class="game-icon">🌙</span><div class="game-title">Lunar Landing</div><div class="game-year">1979</div><div class="game-score">⭐ 9.0</div></a>
+                    <a href="games/1981 Frogger.html" class="game-card"><span class="game-icon">🐸</span><div class="game-title">Frogger</div><div class="game-year">1981</div><div class="game-score">⭐ 7.0</div></a>
+                    <a href="games/1982 Artillery Duel.html" class="game-card"><span class="game-icon">🎯</span><div class="game-title">Artillery Duel</div><div class="game-year">1982</div><div class="game-score">⭐ 4.0</div></a>
+                    <a href="games/1982 Tron.html" class="game-card hall-of-fame"><span class="game-icon">🏍️</span><div class="game-title">Tron</div><div class="game-year">1982</div><div class="game-score">⭐ 9.0</div></a>
+                    <a href="games/1982 Joust.html" class="game-card"><span class="game-icon">🦅</span><div class="game-title">Joust</div><div class="game-year">1982</div><div class="game-score">⭐ 3.5</div></a>
                 </div>
             </div>
 
-            <!-- 🧠 Board & Card (7) -->
+            <!-- 🧠 Board & Card (8) — Yahtzee now 8.5 -->
             <div class="category-section">
-                <div class="category-header">
-                    <h2>🧠 Board &amp; Card</h2>
-                    <span class="badge">7</span>
-                </div>
+                <div class="category-header"><h2>🧠 Board &amp; Card</h2><span class="badge">8</span></div>
                 <div class="game-grid">
-                    <a href="games/1952 OXO.html" class="game-card">
-                        <span class="game-icon">❌</span>
-                        <div class="game-title">OXO</div>
-                        <div class="game-year">1952</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1968 Go.html" class="game-card">
-                        <span class="game-icon">⚫</span>
-                        <div class="game-title">Go</div>
-                        <div class="game-year">1968</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1974 Blackjack.html" class="game-card">
-                        <span class="game-icon">🃏</span>
-                        <div class="game-title">Blackjack</div>
-                        <div class="game-year">1974</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1977 Battleship.html" class="game-card">
-                        <span class="game-icon">🛳️</span>
-                        <div class="game-title">Battleship</div>
-                        <div class="game-year">1977</div>
-                        <div class="game-score">⭐ 7.5</div>
-                    </a>
-                    <a href="games/1977 Checkers.html" class="game-card hall-of-fame">
-                        <span class="game-icon">⚪</span>
-                        <div class="game-title">Checkers</div>
-                        <div class="game-year">1977</div>
-                        <div class="game-score">⭐ 9.0</div>
-                    </a>
-                    <a href="games/1978 Checkpoint Danger.html" class="game-card">
-                        <span class="game-icon">🕵️</span>
-                        <div class="game-title">Checkpoint: Danger!</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 7.5</div>
-                    </a>
-                    <a href="games/1980 Yahtzee.html" class="game-card">
-                        <span class="game-icon">🎲</span>
-                        <div class="game-title">Yahtzee</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
+                    <a href="games/1952 OXO.html" class="game-card"><span class="game-icon">❌</span><div class="game-title">OXO</div><div class="game-year">1952</div><div class="game-score">⭐ 7.0</div></a>
+                    <a href="games/1968 Go.html" class="game-card"><span class="game-icon">⚫</span><div class="game-title">Go</div><div class="game-year">1968</div><div class="game-score">⭐ 6.5</div></a>
+                    <a href="games/1970 Mastermind.html" class="game-card"><span class="game-icon">💡</span><div class="game-title">Mastermind</div><div class="game-year">1970</div><div class="game-score">⭐ 7.0</div></a>
+                    <a href="games/1974 Blackjack.html" class="game-card"><span class="game-icon">🃏</span><div class="game-title">Blackjack</div><div class="game-year">1974</div><div class="game-score">⭐ 7.0</div></a>
+                    <a href="games/1977 Battleship.html" class="game-card"><span class="game-icon">🛳️</span><div class="game-title">Battleship</div><div class="game-year">1977</div><div class="game-score">⭐ 7.5</div></a>
+                    <a href="games/1977 Checkers.html" class="game-card hall-of-fame"><span class="game-icon">⚪</span><div class="game-title">Checkers</div><div class="game-year">1977</div><div class="game-score">⭐ 9.0</div></a>
+                    <a href="games/1978 Checkpoint Danger.html" class="game-card"><span class="game-icon">🕵️</span><div class="game-title">Checkpoint: Danger!</div><div class="game-year">1978</div><div class="game-score">⭐ 7.5</div></a>
+                    <!-- Yahtzee now 8.5 -->
+                    <a href="games/1980 Yahtzee.html" class="game-card"><span class="game-icon">🎲</span><div class="game-title">Yahtzee</div><div class="game-year">1980</div><div class="game-score">⭐ 8.5</div></a>
                 </div>
             </div>
 
             <!-- 🏃 Platformers & Maze (5) -->
             <div class="category-section">
-                <div class="category-header">
-                    <h2>🏃 Platformers &amp; Maze</h2>
-                    <span class="badge">5</span>
-                </div>
+                <div class="category-header"><h2>🏃 Platformers &amp; Maze</h2><span class="badge">5</span></div>
                 <div class="game-grid">
-                    <a href="games/1980 Packman.html" class="game-card">
-                        <span class="game-icon">🟡</span>
-                        <div class="game-title">Pac-Man</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 4.5</div>
-                    </a>
-                    <a href="games/1980 Crazy Climber.html" class="game-card">
-                        <span class="game-icon">🧗</span>
-                        <div class="game-title">Crazy Climber</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 4.5</div>
-                    </a>
-                    <a href="games/1981 Donkey Kong.html" class="game-card">
-                        <span class="game-icon">🦍</span>
-                        <div class="game-title">Donkey Kong</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                    <a href="games/1982 Pengo.html" class="game-card">
-                        <span class="game-icon">🐧</span>
-                        <div class="game-title">Pengo</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 3.5</div>
-                    </a>
-                    <a href="games/1984 Fred.html" class="game-card">
-                        <span class="game-icon">🪨</span>
-                        <div class="game-title">Fred</div>
-                        <div class="game-year">1984</div>
-                        <div class="game-score">⭐ 5.5</div>
-                    </a>
+                    <a href="games/1980 Packman.html" class="game-card"><span class="game-icon">🟡</span><div class="game-title">Pac-Man</div><div class="game-year">1980</div><div class="game-score">⭐ 4.5</div></a>
+                    <a href="games/1980 Crazy Climber.html" class="game-card"><span class="game-icon">🧗</span><div class="game-title">Crazy Climber</div><div class="game-year">1980</div><div class="game-score">⭐ 4.5</div></a>
+                    <a href="games/1981 Donkey Kong.html" class="game-card"><span class="game-icon">🦍</span><div class="game-title">Donkey Kong</div><div class="game-year">1981</div><div class="game-score">⭐ 6.0</div></a>
+                    <a href="games/1982 Pengo.html" class="game-card"><span class="game-icon">🐧</span><div class="game-title">Pengo</div><div class="game-year">1982</div><div class="game-score">⭐ 3.5</div></a>
+                    <a href="games/1984 Fred.html" class="game-card"><span class="game-icon">🪨</span><div class="game-title">Fred</div><div class="game-year">1984</div><div class="game-score">⭐ 5.5</div></a>
                 </div>
             </div>
 
             <!-- 🧩 Puzzle (5) -->
             <div class="category-section">
-                <div class="category-header">
-                    <h2>🧩 Puzzle</h2>
-                    <span class="badge">5</span>
-                </div>
+                <div class="category-header"><h2>🧩 Puzzle</h2><span class="badge">5</span></div>
                 <div class="game-grid">
-                    <a href="games/1974 Connect 4.html" class="game-card">
-                        <span class="game-icon">🔴</span>
-                        <div class="game-title">Connect 4</div>
-                        <div class="game-year">1974</div>
-                        <div class="game-score">⭐ 8.5</div>
-                    </a>
-                    <a href="games/1975 The Lost Temple.html" class="game-card">
-                        <span class="game-icon">🏛️</span>
-                        <div class="game-title">The Lost Temple</div>
-                        <div class="game-year">1975</div>
-                        <div class="game-score">⭐ 5.5</div>
-                    </a>
-                    <a href="games/1976 Breakout.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🧱</span>
-                        <div class="game-title">Breakout</div>
-                        <div class="game-year">1976</div>
-                        <div class="game-score">⭐ 9.0</div>
-                    </a>
-                    <a href="games/1981 Qix.html" class="game-card">
-                        <span class="game-icon">🟦</span>
-                        <div class="game-title">Qix</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                    <a href="games/1984 Tetris.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🧩</span>
-                        <div class="game-title">Tetris</div>
-                        <div class="game-year">1984</div>
-                        <div class="game-score">⭐ 9.5</div>
-                    </a>
+                    <a href="games/1974 Connect 4.html" class="game-card"><span class="game-icon">🔴</span><div class="game-title">Connect 4</div><div class="game-year">1974</div><div class="game-score">⭐ 8.5</div></a>
+                    <a href="games/1975 The Lost Temple.html" class="game-card"><span class="game-icon">🏛️</span><div class="game-title">The Lost Temple</div><div class="game-year">1975</div><div class="game-score">⭐ 6.5</div></a>
+                    <a href="games/1976 Breakout.html" class="game-card hall-of-fame"><span class="game-icon">🧱</span><div class="game-title">Breakout</div><div class="game-year">1976</div><div class="game-score">⭐ 9.0</div></a>
+                    <a href="games/1981 Qix.html" class="game-card"><span class="game-icon">🟦</span><div class="game-title">Qix</div><div class="game-year">1981</div><div class="game-score">⭐ 6.0</div></a>
+                    <a href="games/1984 Tetris.html" class="game-card hall-of-fame"><span class="game-icon">🧩</span><div class="game-title">Tetris</div><div class="game-year">1984</div><div class="game-score">⭐ 9.5</div></a>
                 </div>
             </div>
 
             <!-- 🏓 Sports (3) -->
             <div class="category-section">
-                <div class="category-header">
-                    <h2>🏓 Sports</h2>
-                    <span class="badge">3</span>
-                </div>
+                <div class="category-header"><h2>🏓 Sports</h2><span class="badge">3</span></div>
                 <div class="game-grid">
-                    <a href="games/1958 Tennis for Two.html" class="game-card">
-                        <span class="game-icon">🎾</span>
-                        <div class="game-title">Tennis for Two</div>
-                        <div class="game-year">1958</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1972 Pong.html" class="game-card">
-                        <span class="game-icon">🏓</span>
-                        <div class="game-title">Pong</div>
-                        <div class="game-year">1972</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1978 Bowling.html" class="game-card">
-                        <span class="game-icon">🎳</span>
-                        <div class="game-title">Bowling</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 7.5</div>
-                    </a>
+                    <a href="games/1958 Tennis for Two.html" class="game-card"><span class="game-icon">🎾</span><div class="game-title">Tennis for Two</div><div class="game-year">1958</div><div class="game-score">⭐ 7.0</div></a>
+                    <a href="games/1972 Pong.html" class="game-card"><span class="game-icon">🏓</span><div class="game-title">Pong</div><div class="game-year">1972</div><div class="game-score">⭐ 6.5</div></a>
+                    <a href="games/1978 Bowling.html" class="game-card"><span class="game-icon">🎳</span><div class="game-title">Bowling</div><div class="game-year">1978</div><div class="game-score">⭐ 7.5</div></a>
                 </div>
             </div>
         </div>
 
-        <!-- ============================================================ -->
-        <!-- 2️⃣ YEAR VIEW (sorted by year, oldest to newest) -->
-        <!-- ============================================================ -->
+        <!-- ====== YEAR VIEW ====== -->
         <div id="view-year" class="hidden">
-
-            <!-- 1952 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1952</h2>
-                    <span class="badge">1</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1952 OXO.html" class="game-card">
-                        <span class="game-icon">❌</span>
-                        <div class="game-title">OXO</div>
-                        <div class="game-year">1952</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1958 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1958</h2>
-                    <span class="badge">1</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1958 Tennis for Two.html" class="game-card">
-                        <span class="game-icon">🎾</span>
-                        <div class="game-title">Tennis for Two</div>
-                        <div class="game-year">1958</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1968 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1968</h2>
-                    <span class="badge">1</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1968 Go.html" class="game-card">
-                        <span class="game-icon">⚫</span>
-                        <div class="game-title">Go</div>
-                        <div class="game-year">1968</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1972 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1972</h2>
-                    <span class="badge">1</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1972 Pong.html" class="game-card">
-                        <span class="game-icon">🏓</span>
-                        <div class="game-title">Pong</div>
-                        <div class="game-year">1972</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1973 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1973</h2>
-                    <span class="badge">1</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1973 Space Race.html" class="game-card">
-                        <span class="game-icon">🛸</span>
-                        <div class="game-title">Space Race</div>
-                        <div class="game-year">1973</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1974 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1974</h2>
-                    <span class="badge">3</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1974 Blackjack.html" class="game-card">
-                        <span class="game-icon">🃏</span>
-                        <div class="game-title">Blackjack</div>
-                        <div class="game-year">1974</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1974 Connect 4.html" class="game-card">
-                        <span class="game-icon">🔴</span>
-                        <div class="game-title">Connect 4</div>
-                        <div class="game-year">1974</div>
-                        <div class="game-score">⭐ 8.5</div>
-                    </a>
-                    <a href="games/1974 Speed Race.html" class="game-card">
-                        <span class="game-icon">🏎️</span>
-                        <div class="game-title">Speed Race</div>
-                        <div class="game-year">1974</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1975 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1975</h2>
-                    <span class="badge">1</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1975 The Lost Temple.html" class="game-card">
-                        <span class="game-icon">🏛️</span>
-                        <div class="game-title">The Lost Temple</div>
-                        <div class="game-year">1975</div>
-                        <div class="game-score">⭐ 5.5</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1976 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1976</h2>
-                    <span class="badge">3</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1976 Breakout.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🧱</span>
-                        <div class="game-title">Breakout</div>
-                        <div class="game-year">1976</div>
-                        <div class="game-score">⭐ 9.0</div>
-                    </a>
-                    <a href="games/1976 Death Race.html" class="game-card">
-                        <span class="game-icon">💀</span>
-                        <div class="game-title">Death Race</div>
-                        <div class="game-year">1976</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1976 Sea Wolf.html" class="game-card">
-                        <span class="game-icon">🚢</span>
-                        <div class="game-title">Sea Wolf</div>
-                        <div class="game-year">1976</div>
-                        <div class="game-score">⭐ 5.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1977 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1977</h2>
-                    <span class="badge">4</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1977 Battleship.html" class="game-card">
-                        <span class="game-icon">🛳️</span>
-                        <div class="game-title">Battleship</div>
-                        <div class="game-year">1977</div>
-                        <div class="game-score">⭐ 7.5</div>
-                    </a>
-                    <a href="games/1977 Checkers.html" class="game-card hall-of-fame">
-                        <span class="game-icon">⚪</span>
-                        <div class="game-title">Checkers</div>
-                        <div class="game-year">1977</div>
-                        <div class="game-score">⭐ 9.0</div>
-                    </a>
-                    <a href="games/1977 Clown.html" class="game-card">
-                        <span class="game-icon">🤡</span>
-                        <div class="game-title">Clown</div>
-                        <div class="game-year">1977</div>
-                        <div class="game-score">⭐ 5.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1978 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1978</h2>
-                    <span class="badge">6</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1978 Avalanche.html" class="game-card">
-                        <span class="game-icon">⛰️</span>
-                        <div class="game-title">Avalanche</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1978 Bowling.html" class="game-card">
-                        <span class="game-icon">🎳</span>
-                        <div class="game-title">Bowling</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 7.5</div>
-                    </a>
-                    <a href="games/1978 Checkpoint Danger.html" class="game-card">
-                        <span class="game-icon">🕵️</span>
-                        <div class="game-title">Checkpoint: Danger!</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 7.5</div>
-                    </a>
-                    <a href="games/1978 Space Invaders.html" class="game-card hall-of-fame">
-                        <span class="game-icon">👾</span>
-                        <div class="game-title">Space Invaders</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 9.5</div>
-                    </a>
-                    <a href="games/1978 Worm.html" class="game-card">
-                        <span class="game-icon">🪱</span>
-                        <div class="game-title">Worm</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 7.5</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1979 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1979</h2>
-                    <span class="badge">2</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1979 Asteroids.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🌠</span>
-                        <div class="game-title">Asteroids</div>
-                        <div class="game-year">1979</div>
-                        <div class="game-score">⭐ 10.0</div>
-                    </a>
-                    <a href="games/1979 Lunar Landing.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🌙</span>
-                        <div class="game-title">Lunar Landing</div>
-                        <div class="game-year">1979</div>
-                        <div class="game-score">⭐ 9.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1980 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1980</h2>
-                    <span class="badge">9</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1980 Centipede.html" class="game-card">
-                        <span class="game-icon">🐛</span>
-                        <div class="game-title">Centipede</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 7.5</div>
-                    </a>
-                    <a href="games/1980 Crazy Climber.html" class="game-card">
-                        <span class="game-icon">🧗</span>
-                        <div class="game-title">Crazy Climber</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 4.5</div>
-                    </a>
-                    <a href="games/1980 Missile Command.html" class="game-card">
-                        <span class="game-icon">🚀</span>
-                        <div class="game-title">Missile Command</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1980 Packman.html" class="game-card">
-                        <span class="game-icon">🟡</span>
-                        <div class="game-title">Pac-Man</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 4.5</div>
-                    </a>
-                    <a href="games/1980 Phoenix.html" class="game-card">
-                        <span class="game-icon">🛸</span>
-                        <div class="game-title">Phoenix</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1980 Star Castle.html" class="game-card">
-                        <span class="game-icon">⭕</span>
-                        <div class="game-title">Star Castle</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                    <a href="games/1980 Tempest.html" class="game-card">
-                        <span class="game-icon">⚡</span>
-                        <div class="game-title">Tempest</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1980 Yahtzee.html" class="game-card">
-                        <span class="game-icon">🎲</span>
-                        <div class="game-title">Yahtzee</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1981 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1981</h2>
-                    <span class="badge">7</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1981 Defender.html" class="game-card">
-                        <span class="game-icon">🛡️</span>
-                        <div class="game-title">Defender</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                    <a href="games/1981 Donkey Kong.html" class="game-card">
-                        <span class="game-icon">🦍</span>
-                        <div class="game-title">Donkey Kong</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                    <a href="games/1981 Frogger.html" class="game-card">
-                        <span class="game-icon">🐸</span>
-                        <div class="game-title">Frogger</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1981 Galaga.html" class="game-card">
-                        <span class="game-icon">🐞</span>
-                        <div class="game-title">Galaga</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1981 Qix.html" class="game-card">
-                        <span class="game-icon">🟦</span>
-                        <div class="game-title">Qix</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                    <a href="games/1981 Scramble.html" class="game-card">
-                        <span class="game-icon">✈️</span>
-                        <div class="game-title">Scramble</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1982 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1982</h2>
-                    <span class="badge">6</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1982 Artillery Duel.html" class="game-card">
-                        <span class="game-icon">🎯</span>
-                        <div class="game-title">Artillery Duel</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 4.0</div>
-                    </a>
-                    <a href="games/1982 Joust.html" class="game-card">
-                        <span class="game-icon">🦅</span>
-                        <div class="game-title">Joust</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 3.5</div>
-                    </a>
-                    <a href="games/1982 Pengo.html" class="game-card">
-                        <span class="game-icon">🐧</span>
-                        <div class="game-title">Pengo</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 3.5</div>
-                    </a>
-                    <a href="games/1982 Robotron 2084.html" class="game-card">
-                        <span class="game-icon">🤖</span>
-                        <div class="game-title">Robotron: 2084</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 8.0</div>
-                    </a>
-                    <a href="games/1982 Tron.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🏍️</span>
-                        <div class="game-title">Tron</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 9.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1983 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1983</h2>
-                    <span class="badge">1</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1983 Gyruss.html" class="game-card">
-                        <span class="game-icon">🌀</span>
-                        <div class="game-title">Gyruss</div>
-                        <div class="game-year">1983</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 1984 -->
-            <div class="year-section">
-                <div class="year-header">
-                    <h2>📅 1984</h2>
-                    <span class="badge">2</span>
-                </div>
-                <div class="year-grid">
-                    <a href="games/1984 Fred.html" class="game-card">
-                        <span class="game-icon">🪨</span>
-                        <div class="game-title">Fred</div>
-                        <div class="game-year">1984</div>
-                        <div class="game-score">⭐ 5.5</div>
-                    </a>
-                    <a href="games/1984 Tetris.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🧩</span>
-                        <div class="game-title">Tetris</div>
-                        <div class="game-year">1984</div>
-                        <div class="game-score">⭐ 9.5</div>
-                    </a>
-                </div>
-            </div>
+            <div class="year-section"><div class="year-header"><h2>📅 1952</h2><span class="badge">1</span></div><div class="year-grid"><a href="games/1952 OXO.html" class="game-card"><span class="game-icon">❌</span><div class="game-title">OXO</div><div class="game-year">1952</div><div class="game-score">⭐ 7.0</div></a></div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1958</h2><span class="badge">1</span></div><div class="year-grid"><a href="games/1958 Tennis for Two.html" class="game-card"><span class="game-icon">🎾</span><div class="game-title">Tennis for Two</div><div class="game-year">1958</div><div class="game-score">⭐ 7.0</div></a></div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1968</h2><span class="badge">1</span></div><div class="year-grid"><a href="games/1968 Go.html" class="game-card"><span class="game-icon">⚫</span><div class="game-title">Go</div><div class="game-year">1968</div><div class="game-score">⭐ 6.5</div></a></div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1970</h2><span class="badge">1</span></div><div class="year-grid"><a href="games/1970 Mastermind.html" class="game-card"><span class="game-icon">💡</span><div class="game-title">Mastermind</div><div class="game-year">1970</div><div class="game-score">⭐ 7.0</div></a></div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1972</h2><span class="badge">1</span></div><div class="year-grid"><a href="games/1972 Pong.html" class="game-card"><span class="game-icon">🏓</span><div class="game-title">Pong</div><div class="game-year">1972</div><div class="game-score">⭐ 6.5</div></a></div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1973</h2><span class="badge">1</span></div><div class="year-grid"><a href="games/1973 Space Race.html" class="game-card"><span class="game-icon">🛸</span><div class="game-title">Space Race</div><div class="game-year">1973</div><div class="game-score">⭐ 7.0</div></a></div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1974</h2><span class="badge">3</span></div><div class="year-grid">
+                <a href="games/1974 Blackjack.html" class="game-card"><span class="game-icon">🃏</span><div class="game-title">Blackjack</div><div class="game-year">1974</div><div class="game-score">⭐ 7.0</div></a>
+                <a href="games/1974 Connect 4.html" class="game-card"><span class="game-icon">🔴</span><div class="game-title">Connect 4</div><div class="game-year">1974</div><div class="game-score">⭐ 8.5</div></a>
+                <a href="games/1974 Speed Race.html" class="game-card"><span class="game-icon">🏎️</span><div class="game-title">Speed Race</div><div class="game-year">1974</div><div class="game-score">⭐ 6.0</div></a>
+            </div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1975</h2><span class="badge">1</span></div><div class="year-grid"><a href="games/1975 The Lost Temple.html" class="game-card"><span class="game-icon">🏛️</span><div class="game-title">The Lost Temple</div><div class="game-year">1975</div><div class="game-score">⭐ 6.5</div></a></div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1976</h2><span class="badge">3</span></div><div class="year-grid">
+                <a href="games/1976 Breakout.html" class="game-card hall-of-fame"><span class="game-icon">🧱</span><div class="game-title">Breakout</div><div class="game-year">1976</div><div class="game-score">⭐ 9.0</div></a>
+                <a href="games/1976 Death Race.html" class="game-card"><span class="game-icon">💀</span><div class="game-title">Death Race</div><div class="game-year">1976</div><div class="game-score">⭐ 6.5</div></a>
+                <a href="games/1976 Sea Wolf.html" class="game-card"><span class="game-icon">🚢</span><div class="game-title">Sea Wolf</div><div class="game-year">1976</div><div class="game-score">⭐ 5.0</div></a>
+            </div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1977</h2><span class="badge">3</span></div><div class="year-grid">
+                <a href="games/1977 Battleship.html" class="game-card"><span class="game-icon">🛳️</span><div class="game-title">Battleship</div><div class="game-year">1977</div><div class="game-score">⭐ 7.5</div></a>
+                <a href="games/1977 Checkers.html" class="game-card hall-of-fame"><span class="game-icon">⚪</span><div class="game-title">Checkers</div><div class="game-year">1977</div><div class="game-score">⭐ 9.0</div></a>
+                <a href="games/1977 Clown.html" class="game-card"><span class="game-icon">🤡</span><div class="game-title">Clown</div><div class="game-year">1977</div><div class="game-score">⭐ 5.0</div></a>
+            </div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1978</h2><span class="badge">5</span></div><div class="year-grid">
+                <a href="games/1978 Avalanche.html" class="game-card"><span class="game-icon">⛰️</span><div class="game-title">Avalanche</div><div class="game-year">1978</div><div class="game-score">⭐ 7.0</div></a>
+                <a href="games/1978 Bowling.html" class="game-card"><span class="game-icon">🎳</span><div class="game-title">Bowling</div><div class="game-year">1978</div><div class="game-score">⭐ 7.5</div></a>
+                <a href="games/1978 Checkpoint Danger.html" class="game-card"><span class="game-icon">🕵️</span><div class="game-title">Checkpoint: Danger!</div><div class="game-year">1978</div><div class="game-score">⭐ 7.5</div></a>
+                <a href="games/1978 Space Invaders.html" class="game-card hall-of-fame"><span class="game-icon">👾</span><div class="game-title">Space Invaders</div><div class="game-year">1978</div><div class="game-score">⭐ 9.5</div></a>
+                <a href="games/1978 Worm.html" class="game-card"><span class="game-icon">🪱</span><div class="game-title">Worm</div><div class="game-year">1978</div><div class="game-score">⭐ 7.5</div></a>
+            </div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1979</h2><span class="badge">2</span></div><div class="year-grid">
+                <a href="games/1979 Asteroids.html" class="game-card hall-of-fame"><span class="game-icon">🌠</span><div class="game-title">Asteroids</div><div class="game-year">1979</div><div class="game-score">⭐ 10.0</div></a>
+                <a href="games/1979 Lunar Landing.html" class="game-card hall-of-fame"><span class="game-icon">🌙</span><div class="game-title">Lunar Landing</div><div class="game-year">1979</div><div class="game-score">⭐ 9.0</div></a>
+            </div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1980</h2><span class="badge">9</span></div><div class="year-grid">
+                <a href="games/1980 Centipede.html" class="game-card"><span class="game-icon">🐛</span><div class="game-title">Centipede</div><div class="game-year">1980</div><div class="game-score">⭐ 7.5</div></a>
+                <a href="games/1980 Crazy Climber.html" class="game-card"><span class="game-icon">🧗</span><div class="game-title">Crazy Climber</div><div class="game-year">1980</div><div class="game-score">⭐ 4.5</div></a>
+                <a href="games/1980 Missile Command.html" class="game-card"><span class="game-icon">🚀</span><div class="game-title">Missile Command</div><div class="game-year">1980</div><div class="game-score">⭐ 6.5</div></a>
+                <a href="games/1980 Packman.html" class="game-card"><span class="game-icon">🟡</span><div class="game-title">Pac-Man</div><div class="game-year">1980</div><div class="game-score">⭐ 4.5</div></a>
+                <a href="games/1980 Phoenix.html" class="game-card"><span class="game-icon">🛸</span><div class="game-title">Phoenix</div><div class="game-year">1980</div><div class="game-score">⭐ 7.0</div></a>
+                <a href="games/1980 Star Castle.html" class="game-card"><span class="game-icon">⭕</span><div class="game-title">Star Castle</div><div class="game-year">1980</div><div class="game-score">⭐ 6.0</div></a>
+                <a href="games/1980 Tempest.html" class="game-card"><span class="game-icon">⚡</span><div class="game-title">Tempest</div><div class="game-year">1980</div><div class="game-score">⭐ 6.5</div></a>
+                <!-- Yahtzee now 8.5 -->
+                <a href="games/1980 Yahtzee.html" class="game-card"><span class="game-icon">🎲</span><div class="game-title">Yahtzee</div><div class="game-year">1980</div><div class="game-score">⭐ 8.5</div></a>
+            </div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1981</h2><span class="badge">6</span></div><div class="year-grid">
+                <a href="games/1981 Defender.html" class="game-card"><span class="game-icon">🛡️</span><div class="game-title">Defender</div><div class="game-year">1981</div><div class="game-score">⭐ 6.0</div></a>
+                <a href="games/1981 Donkey Kong.html" class="game-card"><span class="game-icon">🦍</span><div class="game-title">Donkey Kong</div><div class="game-year">1981</div><div class="game-score">⭐ 6.0</div></a>
+                <a href="games/1981 Frogger.html" class="game-card"><span class="game-icon">🐸</span><div class="game-title">Frogger</div><div class="game-year">1981</div><div class="game-score">⭐ 7.0</div></a>
+                <a href="games/1981 Galaga.html" class="game-card"><span class="game-icon">🐞</span><div class="game-title">Galaga</div><div class="game-year">1981</div><div class="game-score">⭐ 6.5</div></a>
+                <a href="games/1981 Qix.html" class="game-card"><span class="game-icon">🟦</span><div class="game-title">Qix</div><div class="game-year">1981</div><div class="game-score">⭐ 6.0</div></a>
+                <a href="games/1981 Scramble.html" class="game-card"><span class="game-icon">✈️</span><div class="game-title">Scramble</div><div class="game-year">1981</div><div class="game-score">⭐ 6.5</div></a>
+            </div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1982</h2><span class="badge">5</span></div><div class="year-grid">
+                <a href="games/1982 Artillery Duel.html" class="game-card"><span class="game-icon">🎯</span><div class="game-title">Artillery Duel</div><div class="game-year">1982</div><div class="game-score">⭐ 4.0</div></a>
+                <a href="games/1982 Joust.html" class="game-card"><span class="game-icon">🦅</span><div class="game-title">Joust</div><div class="game-year">1982</div><div class="game-score">⭐ 3.5</div></a>
+                <a href="games/1982 Pengo.html" class="game-card"><span class="game-icon">🐧</span><div class="game-title">Pengo</div><div class="game-year">1982</div><div class="game-score">⭐ 3.5</div></a>
+                <a href="games/1982 Robotron 2084.html" class="game-card"><span class="game-icon">🤖</span><div class="game-title">Robotron: 2084</div><div class="game-year">1982</div><div class="game-score">⭐ 8.0</div></a>
+                <a href="games/1982 Tron.html" class="game-card hall-of-fame"><span class="game-icon">🏍️</span><div class="game-title">Tron</div><div class="game-year">1982</div><div class="game-score">⭐ 9.0</div></a>
+            </div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1983</h2><span class="badge">1</span></div><div class="year-grid"><a href="games/1983 Gyruss.html" class="game-card"><span class="game-icon">🌀</span><div class="game-title">Gyruss</div><div class="game-year">1983</div><div class="game-score">⭐ 6.5</div></a></div></div>
+            <div class="year-section"><div class="year-header"><h2>📅 1984</h2><span class="badge">2</span></div><div class="year-grid">
+                <a href="games/1984 Fred.html" class="game-card"><span class="game-icon">🪨</span><div class="game-title">Fred</div><div class="game-year">1984</div><div class="game-score">⭐ 5.5</div></a>
+                <a href="games/1984 Tetris.html" class="game-card hall-of-fame"><span class="game-icon">🧩</span><div class="game-title">Tetris</div><div class="game-year">1984</div><div class="game-score">⭐ 9.5</div></a>
+            </div></div>
         </div>
 
-        <!-- ============================================================ -->
-        <!-- 3️⃣ SCORE VIEW (sorted by score, highest first) -->
-        <!-- ============================================================ -->
+        <!-- ====== SCORE VIEW ====== -->
         <div id="view-score" class="hidden">
-
-            <!-- 10.0 -->
-            <div class="score-section">
-                <div class="score-header">
-                    <h2>⭐ 10.0</h2>
-                    <span class="badge">1</span>
-                </div>
-                <div class="game-grid">
-                    <a href="games/1979 Asteroids.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🌠</span>
-                        <div class="game-title">Asteroids</div>
-                        <div class="game-year">1979</div>
-                        <div class="game-score">⭐ 10.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 9.5 -->
-            <div class="score-section">
-                <div class="score-header">
-                    <h2>⭐ 9.5</h2>
-                    <span class="badge">2</span>
-                </div>
-                <div class="game-grid">
-                    <a href="games/1978 Space Invaders.html" class="game-card hall-of-fame">
-                        <span class="game-icon">👾</span>
-                        <div class="game-title">Space Invaders</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 9.5</div>
-                    </a>
-                    <a href="games/1984 Tetris.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🧩</span>
-                        <div class="game-title">Tetris</div>
-                        <div class="game-year">1984</div>
-                        <div class="game-score">⭐ 9.5</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 9.0 -->
-            <div class="score-section">
-                <div class="score-header">
-                    <h2>⭐ 9.0</h2>
-                    <span class="badge">4</span>
-                </div>
-                <div class="game-grid">
-                    <a href="games/1976 Breakout.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🧱</span>
-                        <div class="game-title">Breakout</div>
-                        <div class="game-year">1976</div>
-                        <div class="game-score">⭐ 9.0</div>
-                    </a>
-                    <a href="games/1977 Checkers.html" class="game-card hall-of-fame">
-                        <span class="game-icon">⚪</span>
-                        <div class="game-title">Checkers</div>
-                        <div class="game-year">1977</div>
-                        <div class="game-score">⭐ 9.0</div>
-                    </a>
-                    <a href="games/1979 Lunar Landing.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🌙</span>
-                        <div class="game-title">Lunar Landing</div>
-                        <div class="game-year">1979</div>
-                        <div class="game-score">⭐ 9.0</div>
-                    </a>
-                    <a href="games/1982 Tron.html" class="game-card hall-of-fame">
-                        <span class="game-icon">🏍️</span>
-                        <div class="game-title">Tron</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 9.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 8.5 -->
-            <div class="score-section">
-                <div class="score-header">
-                    <h2>⭐ 8.5</h2>
-                    <span class="badge">1</span>
-                </div>
-                <div class="game-grid">
-                    <a href="games/1974 Connect 4.html" class="game-card">
-                        <span class="game-icon">🔴</span>
-                        <div class="game-title">Connect 4</div>
-                        <div class="game-year">1974</div>
-                        <div class="game-score">⭐ 8.5</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 8.0 -->
-            <div class="score-section">
-                <div class="score-header">
-                    <h2>⭐ 8.0</h2>
-                    <span class="badge">1</span>
-                </div>
-                <div class="game-grid">
-                    <a href="games/1982 Robotron 2084.html" class="game-card">
-                        <span class="game-icon">🤖</span>
-                        <div class="game-title">Robotron: 2084</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 8.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 7.5 -->
-            <div class="score-section">
-                <div class="score-header">
-                    <h2>⭐ 7.5</h2>
-                    <span class="badge">4</span>
-                </div>
-                <div class="game-grid">
-                    <a href="games/1977 Battleship.html" class="game-card">
-                        <span class="game-icon">🛳️</span>
-                        <div class="game-title">Battleship</div>
-                        <div class="game-year">1977</div>
-                        <div class="game-score">⭐ 7.5</div>
-                    </a>
-                    <a href="games/1978 Bowling.html" class="game-card">
-                        <span class="game-icon">🎳</span>
-                        <div class="game-title">Bowling</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 7.5</div>
-                    </a>
-                    <a href="games/1978 Checkpoint Danger.html" class="game-card">
-                        <span class="game-icon">🕵️</span>
-                        <div class="game-title">Checkpoint: Danger!</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 7.5</div>
-                    </a>
-                    <a href="games/1978 Worm.html" class="game-card">
-                        <span class="game-icon">🪱</span>
-                        <div class="game-title">Worm</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 7.5</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 7.0 -->
-            <div class="score-section">
-                <div class="score-header">
-                    <h2>⭐ 7.0</h2>
-                    <span class="badge">6</span>
-                </div>
-                <div class="game-grid">
-                    <a href="games/1978 Avalanche.html" class="game-card">
-                        <span class="game-icon">⛰️</span>
-                        <div class="game-title">Avalanche</div>
-                        <div class="game-year">1978</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1974 Blackjack.html" class="game-card">
-                        <span class="game-icon">🃏</span>
-                        <div class="game-title">Blackjack</div>
-                        <div class="game-year">1974</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1981 Frogger.html" class="game-card">
-                        <span class="game-icon">🐸</span>
-                        <div class="game-title">Frogger</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1952 OXO.html" class="game-card">
-                        <span class="game-icon">❌</span>
-                        <div class="game-title">OXO</div>
-                        <div class="game-year">1952</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1980 Phoenix.html" class="game-card">
-                        <span class="game-icon">🛸</span>
-                        <div class="game-title">Phoenix</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1973 Space Race.html" class="game-card">
-                        <span class="game-icon">🛸</span>
-                        <div class="game-title">Space Race</div>
-                        <div class="game-year">1973</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                    <a href="games/1958 Tennis for Two.html" class="game-card">
-                        <span class="game-icon">🎾</span>
-                        <div class="game-title">Tennis for Two</div>
-                        <div class="game-year">1958</div>
-                        <div class="game-score">⭐ 7.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 6.5 -->
-            <div class="score-section">
-                <div class="score-header">
-                    <h2>⭐ 6.5</h2>
-                    <span class="badge">8</span>
-                </div>
-                <div class="game-grid">
-                    <a href="games/1976 Death Race.html" class="game-card">
-                        <span class="game-icon">💀</span>
-                        <div class="game-title">Death Race</div>
-                        <div class="game-year">1976</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1981 Galaga.html" class="game-card">
-                        <span class="game-icon">🐞</span>
-                        <div class="game-title">Galaga</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1968 Go.html" class="game-card">
-                        <span class="game-icon">⚫</span>
-                        <div class="game-title">Go</div>
-                        <div class="game-year">1968</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1983 Gyruss.html" class="game-card">
-                        <span class="game-icon">🌀</span>
-                        <div class="game-title">Gyruss</div>
-                        <div class="game-year">1983</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1980 Missile Command.html" class="game-card">
-                        <span class="game-icon">🚀</span>
-                        <div class="game-title">Missile Command</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1972 Pong.html" class="game-card">
-                        <span class="game-icon">🏓</span>
-                        <div class="game-title">Pong</div>
-                        <div class="game-year">1972</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1981 Scramble.html" class="game-card">
-                        <span class="game-icon">✈️</span>
-                        <div class="game-title">Scramble</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1980 Tempest.html" class="game-card">
-                        <span class="game-icon">⚡</span>
-                        <div class="game-title">Tempest</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                    <a href="games/1980 Yahtzee.html" class="game-card">
-                        <span class="game-icon">🎲</span>
-                        <div class="game-title">Yahtzee</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 6.5</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 6.0 -->
-            <div class="score-section">
-                <div class="score-header">
-                    <h2>⭐ 6.0</h2>
-                    <span class="badge">5</span>
-                </div>
-                <div class="game-grid">
-                    <a href="games/1981 Defender.html" class="game-card">
-                        <span class="game-icon">🛡️</span>
-                        <div class="game-title">Defender</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                    <a href="games/1981 Donkey Kong.html" class="game-card">
-                        <span class="game-icon">🦍</span>
-                        <div class="game-title">Donkey Kong</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                    <a href="games/1981 Qix.html" class="game-card">
-                        <span class="game-icon">🟦</span>
-                        <div class="game-title">Qix</div>
-                        <div class="game-year">1981</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                    <a href="games/1974 Speed Race.html" class="game-card">
-                        <span class="game-icon">🏎️</span>
-                        <div class="game-title">Speed Race</div>
-                        <div class="game-year">1974</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                    <a href="games/1980 Star Castle.html" class="game-card">
-                        <span class="game-icon">⭕</span>
-                        <div class="game-title">Star Castle</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 6.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 5.5 -->
-            <div class="score-section">
-                <div class="score-header">
-                    <h2>⭐ 5.5</h2>
-                    <span class="badge">2</span>
-                </div>
-                <div class="game-grid">
-                    <a href="games/1984 Fred.html" class="game-card">
-                        <span class="game-icon">🪨</span>
-                        <div class="game-title">Fred</div>
-                        <div class="game-year">1984</div>
-                        <div class="game-score">⭐ 5.5</div>
-                    </a>
-                    <a href="games/1975 The Lost Temple.html" class="game-card">
-                        <span class="game-icon">🏛️</span>
-                        <div class="game-title">The Lost Temple</div>
-                        <div class="game-year">1975</div>
-                        <div class="game-score">⭐ 5.5</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 5.0 -->
-            <div class="score-section">
-                <div class="score-header">
-                    <h2>⭐ 5.0</h2>
-                    <span class="badge">2</span>
-                </div>
-                <div class="game-grid">
-                    <a href="games/1977 Clown.html" class="game-card">
-                        <span class="game-icon">🤡</span>
-                        <div class="game-title">Clown</div>
-                        <div class="game-year">1977</div>
-                        <div class="game-score">⭐ 5.0</div>
-                    </a>
-                    <a href="games/1976 Sea Wolf.html" class="game-card">
-                        <span class="game-icon">🚢</span>
-                        <div class="game-title">Sea Wolf</div>
-                        <div class="game-year">1976</div>
-                        <div class="game-score">⭐ 5.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 4.5 -->
-            <div class="score-section">
-                <div class="score-header">
-                    <h2>⭐ 4.5</h2>
-                    <span class="badge">2</span>
-                </div>
-                <div class="game-grid">
-                    <a href="games/1980 Crazy Climber.html" class="game-card">
-                        <span class="game-icon">🧗</span>
-                        <div class="game-title">Crazy Climber</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 4.5</div>
-                    </a>
-                    <a href="games/1980 Packman.html" class="game-card">
-                        <span class="game-icon">🟡</span>
-                        <div class="game-title">Pac-Man</div>
-                        <div class="game-year">1980</div>
-                        <div class="game-score">⭐ 4.5</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 4.0 -->
-            <div class="score-section">
-                <div class="score-header">
-                    <h2>⭐ 4.0</h2>
-                    <span class="badge">1</span>
-                </div>
-                <div class="game-grid">
-                    <a href="games/1982 Artillery Duel.html" class="game-card">
-                        <span class="game-icon">🎯</span>
-                        <div class="game-title">Artillery Duel</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 4.0</div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 3.5 -->
-            <div class="score-section">
-                <div class="score-header">
-                    <h2>⭐ 3.5</h2>
-                    <span class="badge">2</span>
-                </div>
-                <div class="game-grid">
-                    <a href="games/1982 Joust.html" class="game-card">
-                        <span class="game-icon">🦅</span>
-                        <div class="game-title">Joust</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 3.5</div>
-                    </a>
-                    <a href="games/1982 Pengo.html" class="game-card">
-                        <span class="game-icon">🐧</span>
-                        <div class="game-title">Pengo</div>
-                        <div class="game-year">1982</div>
-                        <div class="game-score">⭐ 3.5</div>
-                    </a>
-                </div>
-            </div>
+            <div class="score-section"><div class="score-header"><h2>⭐ 10.0</h2><span class="badge">1</span></div><div class="game-grid"><a href="games/1979 Asteroids.html" class="game-card hall-of-fame"><span class="game-icon">🌠</span><div class="game-title">Asteroids</div><div class="game-year">1979</div><div class="game-score">⭐ 10.0</div></a></div></div>
+            <div class="score-section"><div class="score-header"><h2>⭐ 9.5</h2><span class="badge">2</span></div><div class="game-grid">
+                <a href="games/1978 Space Invaders.html" class="game-card hall-of-fame"><span class="game-icon">👾</span><div class="game-title">Space Invaders</div><div class="game-year">1978</div><div class="game-score">⭐ 9.5</div></a>
+                <a href="games/1984 Tetris.html" class="game-card hall-of-fame"><span class="game-icon">🧩</span><div class="game-title">Tetris</div><div class="game-year">1984</div><div class="game-score">⭐ 9.5</div></a>
+            </div></div>
+            <!-- ⭐ 9.0 — Yahtzee removed from here -->
+            <div class="score-section"><div class="score-header"><h2>⭐ 9.0</h2><span class="badge">4</span></div><div class="game-grid">
+                <a href="games/1976 Breakout.html" class="game-card hall-of-fame"><span class="game-icon">🧱</span><div class="game-title">Breakout</div><div class="game-year">1976</div><div class="game-score">⭐ 9.0</div></a>
+                <a href="games/1977 Checkers.html" class="game-card hall-of-fame"><span class="game-icon">⚪</span><div class="game-title">Checkers</div><div class="game-year">1977</div><div class="game-score">⭐ 9.0</div></a>
+                <a href="games/1979 Lunar Landing.html" class="game-card hall-of-fame"><span class="game-icon">🌙</span><div class="game-title">Lunar Landing</div><div class="game-year">1979</div><div class="game-score">⭐ 9.0</div></a>
+                <a href="games/1982 Tron.html" class="game-card hall-of-fame"><span class="game-icon">🏍️</span><div class="game-title">Tron</div><div class="game-year">1982</div><div class="game-score">⭐ 9.0</div></a>
+            </div></div>
+            <!-- ⭐ 8.5 — Yahtzee added here -->
+            <div class="score-section"><div class="score-header"><h2>⭐ 8.5</h2><span class="badge">2</span></div><div class="game-grid">
+                <a href="games/1974 Connect 4.html" class="game-card"><span class="game-icon">🔴</span><div class="game-title">Connect 4</div><div class="game-year">1974</div><div class="game-score">⭐ 8.5</div></a>
+                <a href="games/1980 Yahtzee.html" class="game-card"><span class="game-icon">🎲</span><div class="game-title">Yahtzee</div><div class="game-year">1980</div><div class="game-score">⭐ 8.5</div></a>
+            </div></div>
+            <div class="score-section"><div class="score-header"><h2>⭐ 8.0</h2><span class="badge">1</span></div><div class="game-grid"><a href="games/1982 Robotron 2084.html" class="game-card"><span class="game-icon">🤖</span><div class="game-title">Robotron: 2084</div><div class="game-year">1982</div><div class="game-score">⭐ 8.0</div></a></div></div>
+            <div class="score-section"><div class="score-header"><h2>⭐ 7.5</h2><span class="badge">4</span></div><div class="game-grid">
+                <a href="games/1977 Battleship.html" class="game-card"><span class="game-icon">🛳️</span><div class="game-title">Battleship</div><div class="game-year">1977</div><div class="game-score">⭐ 7.5</div></a>
+                <a href="games/1978 Bowling.html" class="game-card"><span class="game-icon">🎳</span><div class="game-title">Bowling</div><div class="game-year">1978</div><div class="game-score">⭐ 7.5</div></a>
+                <a href="games/1978 Checkpoint Danger.html" class="game-card"><span class="game-icon">🕵️</span><div class="game-title">Checkpoint: Danger!</div><div class="game-year">1978</div><div class="game-score">⭐ 7.5</div></a>
+                <a href="games/1978 Worm.html" class="game-card"><span class="game-icon">🪱</span><div class="game-title">Worm</div><div class="game-year">1978</div><div class="game-score">⭐ 7.5</div></a>
+            </div></div>
+            <div class="score-section"><div class="score-header"><h2>⭐ 7.0</h2><span class="badge">8</span></div><div class="game-grid">
+                <a href="games/1978 Avalanche.html" class="game-card"><span class="game-icon">⛰️</span><div class="game-title">Avalanche</div><div class="game-year">1978</div><div class="game-score">⭐ 7.0</div></a>
+                <a href="games/1974 Blackjack.html" class="game-card"><span class="game-icon">🃏</span><div class="game-title">Blackjack</div><div class="game-year">1974</div><div class="game-score">⭐ 7.0</div></a>
+                <a href="games/1981 Frogger.html" class="game-card"><span class="game-icon">🐸</span><div class="game-title">Frogger</div><div class="game-year">1981</div><div class="game-score">⭐ 7.0</div></a>
+                <a href="games/1970 Mastermind.html" class="game-card"><span class="game-icon">💡</span><div class="game-title">Mastermind</div><div class="game-year">1970</div><div class="game-score">⭐ 7.0</div></a>
+                <a href="games/1952 OXO.html" class="game-card"><span class="game-icon">❌</span><div class="game-title">OXO</div><div class="game-year">1952</div><div class="game-score">⭐ 7.0</div></a>
+                <a href="games/1980 Phoenix.html" class="game-card"><span class="game-icon">🛸</span><div class="game-title">Phoenix</div><div class="game-year">1980</div><div class="game-score">⭐ 7.0</div></a>
+                <a href="games/1973 Space Race.html" class="game-card"><span class="game-icon">🛸</span><div class="game-title">Space Race</div><div class="game-year">1973</div><div class="game-score">⭐ 7.0</div></a>
+                <a href="games/1958 Tennis for Two.html" class="game-card"><span class="game-icon">🎾</span><div class="game-title">Tennis for Two</div><div class="game-year">1958</div><div class="game-score">⭐ 7.0</div></a>
+            </div></div>
+            <div class="score-section"><div class="score-header"><h2>⭐ 6.5</h2><span class="badge">9</span></div><div class="game-grid">
+                <a href="games/1976 Death Race.html" class="game-card"><span class="game-icon">💀</span><div class="game-title">Death Race</div><div class="game-year">1976</div><div class="game-score">⭐ 6.5</div></a>
+                <a href="games/1981 Galaga.html" class="game-card"><span class="game-icon">🐞</span><div class="game-title">Galaga</div><div class="game-year">1981</div><div class="game-score">⭐ 6.5</div></a>
+                <a href="games/1968 Go.html" class="game-card"><span class="game-icon">⚫</span><div class="game-title">Go</div><div class="game-year">1968</div><div class="game-score">⭐ 6.5</div></a>
+                <a href="games/1983 Gyruss.html" class="game-card"><span class="game-icon">🌀</span><div class="game-title">Gyruss</div><div class="game-year">1983</div><div class="game-score">⭐ 6.5</div></a>
+                <a href="games/1975 The Lost Temple.html" class="game-card"><span class="game-icon">🏛️</span><div class="game-title">The Lost Temple</div><div class="game-year">1975</div><div class="game-score">⭐ 6.5</div></a>
+                <a href="games/1980 Missile Command.html" class="game-card"><span class="game-icon">🚀</span><div class="game-title">Missile Command</div><div class="game-year">1980</div><div class="game-score">⭐ 6.5</div></a>
+                <a href="games/1972 Pong.html" class="game-card"><span class="game-icon">🏓</span><div class="game-title">Pong</div><div class="game-year">1972</div><div class="game-score">⭐ 6.5</div></a>
+                <a href="games/1981 Scramble.html" class="game-card"><span class="game-icon">✈️</span><div class="game-title">Scramble</div><div class="game-year">1981</div><div class="game-score">⭐ 6.5</div></a>
+                <a href="games/1980 Tempest.html" class="game-card"><span class="game-icon">⚡</span><div class="game-title">Tempest</div><div class="game-year">1980</div><div class="game-score">⭐ 6.5</div></a>
+            </div></div>
+            <div class="score-section"><div class="score-header"><h2>⭐ 6.0</h2><span class="badge">5</span></div><div class="game-grid">
+                <a href="games/1981 Defender.html" class="game-card"><span class="game-icon">🛡️</span><div class="game-title">Defender</div><div class="game-year">1981</div><div class="game-score">⭐ 6.0</div></a>
+                <a href="games/1981 Donkey Kong.html" class="game-card"><span class="game-icon">🦍</span><div class="game-title">Donkey Kong</div><div class="game-year">1981</div><div class="game-score">⭐ 6.0</div></a>
+                <a href="games/1981 Qix.html" class="game-card"><span class="game-icon">🟦</span><div class="game-title">Qix</div><div class="game-year">1981</div><div class="game-score">⭐ 6.0</div></a>
+                <a href="games/1974 Speed Race.html" class="game-card"><span class="game-icon">🏎️</span><div class="game-title">Speed Race</div><div class="game-year">1974</div><div class="game-score">⭐ 6.0</div></a>
+                <a href="games/1980 Star Castle.html" class="game-card"><span class="game-icon">⭕</span><div class="game-title">Star Castle</div><div class="game-year">1980</div><div class="game-score">⭐ 6.0</div></a>
+            </div></div>
+            <div class="score-section"><div class="score-header"><h2>⭐ 5.5</h2><span class="badge">1</span></div><div class="game-grid">
+                <a href="games/1984 Fred.html" class="game-card"><span class="game-icon">🪨</span><div class="game-title">Fred</div><div class="game-year">1984</div><div class="game-score">⭐ 5.5</div></a>
+            </div></div>
+            <div class="score-section"><div class="score-header"><h2>⭐ 5.0</h2><span class="badge">2</span></div><div class="game-grid">
+                <a href="games/1977 Clown.html" class="game-card"><span class="game-icon">🤡</span><div class="game-title">Clown</div><div class="game-year">1977</div><div class="game-score">⭐ 5.0</div></a>
+                <a href="games/1976 Sea Wolf.html" class="game-card"><span class="game-icon">🚢</span><div class="game-title">Sea Wolf</div><div class="game-year">1976</div><div class="game-score">⭐ 5.0</div></a>
+            </div></div>
+            <div class="score-section"><div class="score-header"><h2>⭐ 4.5</h2><span class="badge">2</span></div><div class="game-grid">
+                <a href="games/1980 Crazy Climber.html" class="game-card"><span class="game-icon">🧗</span><div class="game-title">Crazy Climber</div><div class="game-year">1980</div><div class="game-score">⭐ 4.5</div></a>
+                <a href="games/1980 Packman.html" class="game-card"><span class="game-icon">🟡</span><div class="game-title">Pac-Man</div><div class="game-year">1980</div><div class="game-score">⭐ 4.5</div></a>
+            </div></div>
+            <div class="score-section"><div class="score-header"><h2>⭐ 4.0</h2><span class="badge">1</span></div><div class="game-grid"><a href="games/1982 Artillery Duel.html" class="game-card"><span class="game-icon">🎯</span><div class="game-title">Artillery Duel</div><div class="game-year">1982</div><div class="game-score">⭐ 4.0</div></a></div></div>
+            <div class="score-section"><div class="score-header"><h2>⭐ 3.5</h2><span class="badge">2</span></div><div class="game-grid">
+                <a href="games/1982 Joust.html" class="game-card"><span class="game-icon">🦅</span><div class="game-title">Joust</div><div class="game-year">1982</div><div class="game-score">⭐ 3.5</div></a>
+                <a href="games/1982 Pengo.html" class="game-card"><span class="game-icon">🐧</span><div class="game-title">Pengo</div><div class="game-year">1982</div><div class="game-score">⭐ 3.5</div></a>
+            </div></div>
         </div>
 
         <div class="footer">
-            <span>🏛️</span> 44 Classic Games · ⭐ Hall of Fame: <span class="hof-list">Asteroids · Breakout · Checkers · Lunar Landing · Space Invaders · Tetris · Tron</span>
+            <span>🏛️</span> 45 Classic Games · ⭐ Hall of Fame: <span class="hof-list">Asteroids · Breakout · Checkers · Lunar Landing · Space Invaders · Tetris · Tron</span>
             <span class="note">🕵️ Checkpoint: Danger! was never converted to a computer game... but it should have been!</span>
+            <span class="note">🏛️ The Lost Temple is based on the original 1976 Colossal Cave Adventure!</span>
         </div>
     </div>
 
@@ -1516,23 +576,28 @@
                 year: document.getElementById('view-year'),
                 score: document.getElementById('view-score')
             };
+            const STORAGE_KEY = 'retro-arcade-sort';
+
+            const savedSort = localStorage.getItem(STORAGE_KEY) || 'category';
+
+            function setActiveView(sortType) {
+                sortButtons.forEach(b => b.classList.remove('active'));
+                document.querySelector(`.sort-btn[data-sort="${sortType}"]`).classList.add('active');
+
+                Object.keys(views).forEach(key => {
+                    views[key].classList.toggle('hidden', key !== sortType);
+                });
+
+                localStorage.setItem(STORAGE_KEY, sortType);
+            }
 
             sortButtons.forEach(btn => {
                 btn.addEventListener('click', function() {
-                    // Update active button
-                    sortButtons.forEach(b => b.classList.remove('active'));
-                    this.classList.add('active');
-
-                    // Hide all views
-                    Object.values(views).forEach(v => v.classList.add('hidden'));
-
-                    // Show selected view
-                    const sortType = this.dataset.sort;
-                    if (views[sortType]) {
-                        views[sortType].classList.remove('hidden');
-                    }
+                    setActiveView(this.dataset.sort);
                 });
             });
+
+            setActiveView(savedSort);
         });
     </script>
 </body>

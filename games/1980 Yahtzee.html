@@ -1,1307 +1,1126 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Yahtzee - Smart AI</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yahtzee vs AI - Career Stats Edition</title>
     <style>
+        :root {
+            --bg-color: #121218;
+            --card-bg: #1e1e2a;
+            --accent-color: #6366f1;
+            --accent-hover: #4f46e5;
+            --ai-accent: #ec4899;
+            --text-color: #f3f4f6;
+            --text-muted: #9ca3af;
+            --border-color: #2d3748;
+            --die-bg: #ffffff;
+            --die-dot: #111827;
+        }
+
         * {
+            box-sizing: border-box;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
         }
+
         body {
-            background: #0a0a1a;
+            background-color: var(--bg-color);
+            color: var(--text-color);
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
             min-height: 100vh;
-            font-family: 'Segoe UI', Arial, sans-serif;
             padding: 20px;
         }
 
-        .game-wrapper {
-            background: #14142a;
-            padding: 30px 40px 35px;
-            border-radius: 20px;
-            border: 2px solid #3a3a6a;
-            box-shadow: 0 0 60px rgba(0, 100, 200, 0.1);
-            max-width: 960px;
+        .game-container {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 24px;
+            max-width: 1100px;
             width: 100%;
         }
 
-        .title {
-            color: #88ddff;
+        @media (max-width: 880px) {
+            .game-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .play-area {
+            background: var(--card-bg);
+            padding: 28px;
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* --- Running Total Bar --- */
+        .running-total-bar {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.25);
+            padding: 12px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .total-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .total-box .label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            letter-spacing: 0.05em;
+            font-weight: 600;
+        }
+
+        .total-box .val {
+            font-size: 1.5rem;
+            font-weight: 800;
+        }
+
+        .total-box.user .val { color: var(--accent-color); }
+        .total-box.ai .val { color: var(--ai-accent); }
+
+        .status-bar {
+            width: 100%;
             text-align: center;
-            font-size: 38px;
-            font-weight: bold;
-            letter-spacing: 6px;
+            font-size: 1.25rem;
+            font-weight: 700;
             margin-bottom: 12px;
-            text-shadow: 0 0 30px rgba(0, 150, 255, 0.2);
+            min-height: 2rem;
+            color: #e0e7ff;
+        }
+
+        .ai-intent-box {
+            width: 100%;
+            min-height: 48px;
+            background: rgba(236, 72, 153, 0.08);
+            border: 1px solid rgba(236, 72, 153, 0.25);
+            border-radius: 10px;
+            padding: 10px 16px;
+            margin-bottom: 24px;
+            text-align: center;
+            font-size: 0.92rem;
+            color: #f472b6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .ai-intent-box.active {
+            box-shadow: 0 0 16px rgba(236, 72, 153, 0.25);
+            background: rgba(236, 72, 153, 0.15);
         }
 
         .dice-container {
             display: flex;
-            justify-content: center;
-            gap: 20px;
-            margin: 20px 0;
+            gap: 16px;
+            margin-bottom: 28px;
             flex-wrap: wrap;
-        }
-        .die {
-            width: 80px;
-            height: 80px;
-            background: #ffffff;
-            border-radius: 14px;
-            display: flex;
             justify-content: center;
-            align-items: center;
-            font-size: 42px;
-            font-weight: bold;
-            cursor: pointer;
-            border: 4px solid #2a2a5a;
-            transition: all 0.2s;
-            user-select: none;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-        }
-        .die:hover {
-            transform: scale(1.06);
-            border-color: #4a4a8a;
-        }
-        .die.held {
-            border-color: #ffdd44;
-            box-shadow: 0 0 35px rgba(255, 221, 68, 0.35);
-            transform: scale(1.04);
-        }
-        .die.rolling {
-            animation: dieRoll 0.35s ease;
-        }
-        .die.ai-final {
-            border-color: #ff8844;
-            box-shadow: 0 0 40px rgba(255, 136, 68, 0.5);
-            transform: scale(1.04);
-        }
-        .die.disabled {
-            cursor: default;
-            opacity: 0.5;
-        }
-        .die.disabled:hover {
-            transform: none;
         }
 
-        @keyframes dieRoll {
-            0% { transform: rotate(0deg) scale(1); }
-            40% { transform: rotate(200deg) scale(1.25); }
-            100% { transform: rotate(360deg) scale(1); }
+        /* --- Dice Styling --- */
+        .die {
+            width: 68px;
+            height: 68px;
+            background-color: var(--die-bg);
+            border-radius: 12px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            padding: 8px;
+            cursor: pointer;
+            user-select: none;
+            box-shadow: 0 6px 12px -2px rgba(0, 0, 0, 0.3);
+            transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+            border: 4px solid transparent;
+            outline: none;
+        }
+
+        .die:focus-visible {
+            outline: 2px solid var(--accent-color);
+            outline-offset: 2px;
+        }
+
+        .die .pip {
+            background-color: var(--die-dot);
+            border-radius: 50%;
+            align-self: center;
+            justify-self: center;
+            width: 10px;
+            height: 10px;
+            visibility: hidden;
+        }
+
+        .die:hover:not(.disabled) {
+            transform: translateY(-3px);
+        }
+
+        .die.held {
+            border-color: var(--accent-color);
+            background-color: #e0e7ff;
+            transform: translateY(-5px);
+            box-shadow: 0 10px 16px -2px rgba(99, 102, 241, 0.45);
+        }
+
+        .die.ai-held {
+            border-color: var(--ai-accent);
+            background-color: #fce7f3;
+            transform: translateY(-5px);
+            box-shadow: 0 10px 16px -2px rgba(236, 72, 153, 0.45);
+        }
+
+        .die.disabled {
+            cursor: not-allowed;
+            opacity: 0.85;
+        }
+
+        .die.rolling {
+            animation: shake 0.22s ease-in-out infinite;
+        }
+
+        @keyframes shake {
+            0% { transform: rotate(0deg) scale(0.98); }
+            25% { transform: rotate(6deg) scale(1.02); }
+            75% { transform: rotate(-6deg) scale(0.98); }
+            100% { transform: rotate(0deg) scale(1); }
         }
 
         .controls {
             display: flex;
-            justify-content: center;
-            gap: 16px;
-            flex-wrap: wrap;
-            margin: 16px 0;
+            gap: 14px;
+            margin-bottom: 24px;
         }
+
         button {
-            background: #2a2a5a;
-            color: #fff;
-            border: 2px solid #4a4a8a;
-            padding: 10px 28px;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            font-family: inherit;
-            transition: all 0.2s;
-        }
-        button:hover {
-            background: #3a3a7a;
-            border-color: #6a6aaa;
-            transform: scale(1.03);
-        }
-        button.primary {
-            background: #2a6a3a;
-            border-color: #4a9a5a;
-        }
-        button.primary:hover {
-            background: #3a8a4a;
-        }
-        button:disabled {
-            opacity: 0.35;
-            cursor: not-allowed;
-            transform: none !important;
-        }
-
-        .status {
-            color: #88ddff;
-            font-size: 22px;
-            text-align: center;
-            margin: 12px 0 8px;
-            font-weight: bold;
-            min-height: 36px;
-            padding: 4px 10px;
-            background: rgba(0,0,0,0.25);
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 0.95rem;
+            font-weight: 600;
             border-radius: 8px;
-        }
-        .status .highlight {
-            color: #ff8844;
-        }
-
-        .roll-info {
-            color: #6688aa;
-            font-size: 16px;
-            text-align: center;
-            margin: 6px 0 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
         }
 
-        .scoreboards {
-            display: flex;
-            gap: 30px;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin: 16px 0 10px;
+        button:hover:not(:disabled) {
+            background-color: var(--accent-hover);
+            transform: translateY(-1px);
         }
-        .score-board {
-            background: #0d0d22;
-            padding: 16px 22px;
+
+        button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background-color: var(--border-color);
+            cursor: not-allowed;
+            opacity: 0.5;
+            box-shadow: none;
+        }
+
+        /* --- Career Stats Panel --- */
+        .stats-panel {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
             border-radius: 12px;
-            border: 2px solid #2a2a5a;
-            flex: 1;
-            min-width: 260px;
-            max-width: 440px;
-        }
-        .score-board h3 {
-            color: #aac0ff;
-            font-size: 18px;
-            text-align: center;
-            margin-bottom: 8px;
-            letter-spacing: 3px;
-        }
-        .score-board .total {
-            color: #ffdd44;
-            font-size: 32px;
-            text-align: center;
-            font-weight: bold;
-            padding: 4px 0 10px;
-            border-bottom: 2px solid #1a1a3a;
-            margin-bottom: 8px;
-        }
-        .score-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 4px 16px;
-            max-height: 380px;
-            overflow-y: auto;
-            padding-right: 4px;
-        }
-        .score-grid::-webkit-scrollbar {
-            width: 5px;
-        }
-        .score-grid::-webkit-scrollbar-track {
-            background: #0a0a1a;
-            border-radius: 3px;
-        }
-        .score-grid::-webkit-scrollbar-thumb {
-            background: #3a3a6a;
-            border-radius: 3px;
+            padding: 16px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
 
-        .score-item {
+        .stats-header {
             display: flex;
             justify-content: space-between;
-            padding: 4px 8px;
-            border-radius: 5px;
-            font-size: 14px;
-            color: #8899aa;
-            cursor: default;
-            transition: all 0.15s;
+            align-items: center;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            font-weight: 700;
         }
-        .score-item.available {
-            color: #c8d8ff;
+
+        .reset-stats-btn {
+            background: transparent;
+            border: none;
+            color: #ef4444;
+            font-size: 0.75rem;
+            padding: 0;
+            cursor: pointer;
+            box-shadow: none;
+            text-decoration: underline;
+        }
+        .reset-stats-btn:hover { background: transparent; transform: none; color: #f87171; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            text-align: center;
+        }
+
+        .stat-item .s-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .stat-item .s-val {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        /* --- Scorecard --- */
+        .score-card {
+            background: var(--card-bg);
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .score-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .score-table th, .score-table td {
+            padding: 9px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.9rem;
+        }
+
+        .score-table th {
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+        }
+
+        .score-table td.num {
+            text-align: right;
+            font-weight: 600;
+            width: 55px;
+        }
+
+        .score-row.selectable {
             cursor: pointer;
         }
-        .score-item.available:hover {
-            background: #2a2a5a;
-            color: #fff;
-            transform: scale(1.02);
-        }
-        .score-item.used {
-            color: #445566;
-        }
-        .score-item.used .score-value {
-            color: #445566;
-        }
-        .score-item .score-name {
-            flex: 1;
-        }
-        .score-item .score-value {
-            font-weight: bold;
-            margin-left: 12px;
-        }
-        .score-item.available .score-value {
-            color: #ffdd44;
+
+        .score-row.selectable:hover td {
+            background-color: rgba(99, 102, 241, 0.18);
         }
 
-        .score-item.upper-total {
-            border-top: 2px solid #2a2a5a;
-            padding-top: 8px;
-            margin-top: 4px;
-            color: #ffdd44;
-            font-weight: bold;
-        }
-        .score-item.upper-total .score-value {
-            color: #ffdd44;
+        .score-row.filled td.num {
+            color: var(--text-color);
         }
 
-        .score-item.bonus {
-            border-top: 2px solid #2a2a5a;
-            padding-top: 8px;
-            margin-top: 4px;
-            color: #88ddff;
-            font-weight: bold;
-        }
-        .score-item.bonus .score-value {
-            color: #88ddff;
+        .score-row.potential td.num {
+            color: #a5b4fc;
+            opacity: 0.85;
         }
 
-        .score-item.ai-selected {
-            background: rgba(255, 102, 68, 0.2);
-            border-left: 4px solid #ff6644;
-            padding-left: 12px;
-            border-radius: 0 5px 5px 0;
-        }
-        .score-item .score-extra {
-            color: #ff8844;
-            font-size: 11px;
-            margin-left: 4px;
+        .section-header td {
+            background-color: rgba(255, 255, 255, 0.03);
+            font-weight: 700;
+            color: var(--accent-color);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
-        .stats-bar {
-            display: flex;
-            gap: 24px;
-            color: #aac0ff;
-            font-size: 15px;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin: 12px 0 4px;
-            padding: 8px 10px;
-            background: rgba(0,0,0,0.2);
-            border-radius: 8px;
-        }
-        .stats-bar span {
-            font-weight: bold;
-        }
-        .stats-bar .win { color: #66dd88; }
-        .stats-bar .loss { color: #ff6666; }
-        .stats-bar .streak { color: #66ddff; }
-
-        .keyboard-hint {
-            color: #556;
-            font-size: 12px;
-            text-align: center;
-            margin-top: 10px;
-            letter-spacing: 0.5px;
-        }
-        .keyboard-hint kbd {
-            background: #1a1a3a;
-            padding: 2px 10px;
-            border-radius: 4px;
-            border: 1px solid #3a3a6a;
-            color: #aac0ff;
-            font-size: 11px;
-        }
-
-        @media (max-width: 750px) {
-            .game-wrapper { padding: 18px; }
-            .die { width: 62px; height: 62px; font-size: 32px; }
-            .title { font-size: 28px; }
-            .score-item { font-size: 12px; }
-        }
-        @media (max-width: 550px) {
-            .die { width: 50px; height: 50px; font-size: 26px; gap: 10px; }
-            .scoreboards { flex-direction: column; align-items: center; }
-            .score-board { max-width: 100%; }
-            button { padding: 8px 16px; font-size: 14px; }
+        .total-row td {
+            font-weight: 700;
+            border-top: 2px solid var(--border-color);
+            color: #ffffff;
+            font-size: 1rem;
         }
     </style>
 </head>
 <body>
 
-    <div class="game-wrapper">
-        <div class="title">🎲 YAHTZEE</div>
-
-        <div class="status" id="statusDisplay">🎯 Roll the dice!</div>
-
-        <div class="dice-container" id="diceContainer">
-            <div class="die" data-index="0">⚀</div>
-            <div class="die" data-index="1">⚀</div>
-            <div class="die" data-index="2">⚀</div>
-            <div class="die" data-index="3">⚀</div>
-            <div class="die" data-index="4">⚀</div>
+<div class="game-container">
+    <div class="play-area">
+        <!-- Running Total Bar -->
+        <div class="running-total-bar">
+            <div class="total-box user">
+                <span class="label">Your Score</span>
+                <span class="val" id="user-running-total">0</span>
+            </div>
+            <div class="total-box ai">
+                <span class="label">AI Score</span>
+                <span class="val" id="ai-running-total">0</span>
+            </div>
         </div>
 
-        <div class="roll-info" id="rollInfo">Roll 0 of 3</div>
+        <div class="status-bar" id="status-text" aria-live="polite">Your turn! Roll the dice.</div>
+        
+        <div class="ai-intent-box" id="ai-intent" aria-live="polite">AI will display tactical decisions here.</div>
+
+        <div class="dice-container" id="dice-container">
+            <div class="die" data-index="0" tabindex="0" role="button" aria-label="Die 1">
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+            </div>
+            <div class="die" data-index="1" tabindex="0" role="button" aria-label="Die 2">
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+            </div>
+            <div class="die" data-index="2" tabindex="0" role="button" aria-label="Die 3">
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+            </div>
+            <div class="die" data-index="3" tabindex="0" role="button" aria-label="Die 4">
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+            </div>
+            <div class="die" data-index="4" tabindex="0" role="button" aria-label="Die 5">
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+                <div class="pip"></div><div class="pip"></div><div class="pip"></div>
+            </div>
+        </div>
 
         <div class="controls">
-            <button id="rollBtn" class="primary">🎲 Roll</button>
-            <button id="resetBtn">🔄 New Game</button>
-            <button id="soundBtn">🔊 Sound</button>
-            <button id="aiFirstBtn">🤖 AI First</button>
+            <button id="roll-btn">Roll Dice (3 left)</button>
+            <button id="restart-btn" style="background-color: #2d3748;">New Game</button>
         </div>
 
-        <div class="scoreboards">
-            <div class="score-board">
-                <h3>🟢 YOU</h3>
-                <div class="total" id="playerTotal">0</div>
-                <div class="score-grid" id="playerScores"></div>
+        <!-- Career Statistics Panel -->
+        <div class="stats-panel">
+            <div class="stats-header">
+                <span>Career Statistics</span>
+                <button class="reset-stats-btn" id="reset-stats-btn">Reset</button>
             </div>
-            <div class="score-board">
-                <h3>🔴 AI</h3>
-                <div class="total" id="aiTotal">0</div>
-                <div class="score-grid" id="aiScores"></div>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="s-label">Played</div>
+                    <div class="s-val" id="stat-played">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="s-label">Record (W-L)</div>
+                    <div class="s-val" id="stat-record">0-0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="s-label">High Score</div>
+                    <div class="s-val" id="stat-highscore">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="s-label">Yahtzees</div>
+                    <div class="s-val" id="stat-yahtzees">0</div>
+                </div>
             </div>
-        </div>
-
-        <div class="stats-bar">
-            <div>🏆 Wins: <span class="win" id="wins">0</span></div>
-            <div>💀 Losses: <span class="loss" id="losses">0</span></div>
-            <div>🔥 Streak: <span class="streak" id="streak">0</span></div>
-        </div>
-
-        <div class="keyboard-hint">
-            <kbd>R</kbd> Roll &nbsp;|&nbsp; <kbd>1</kbd>-<kbd>5</kbd> Hold dice &nbsp;|&nbsp; <kbd>Space</kbd> New Game
         </div>
     </div>
 
-    <script>
-        // ============================================================
-        //  YAHTZEE - FULLY CATEGORY-AWARE AI
-        //  AI NEVER chases categories that are already used
-        // ============================================================
+    <div class="score-card">
+        <table class="score-table">
+            <thead>
+                <tr>
+                    <th>Categories</th>
+                    <th style="text-align:right">You</th>
+                    <th style="text-align:right">AI</th>
+                </tr>
+            </thead>
+            <tbody id="score-body">
+                <!-- Dynamic Content -->
+            </tbody>
+        </table>
+    </div>
+</div>
 
-        const DICE_COUNT = 5;
-        const MAX_ROLLS = 3;
+<script>
+    // --- Sound Synthesis Engine ---
+    class SoundEffects {
+        constructor() { this.ctx = null; }
 
-        const CATEGORIES = [
-            { id: 'ones', name: 'Ones', upper: true },
-            { id: 'twos', name: 'Twos', upper: true },
-            { id: 'threes', name: 'Threes', upper: true },
-            { id: 'fours', name: 'Fours', upper: true },
-            { id: 'fives', name: 'Fives', upper: true },
-            { id: 'sixes', name: 'Sixes', upper: true },
-            { id: 'threeOfAKind', name: '3 of a Kind', upper: false },
-            { id: 'fourOfAKind', name: '4 of a Kind', upper: false },
-            { id: 'fullHouse', name: 'Full House', upper: false },
-            { id: 'smallStraight', name: 'Small Straight', upper: false },
-            { id: 'largeStraight', name: 'Large Straight', upper: false },
-            { id: 'yahtzee', name: 'Yahtzee!', upper: false },
-            { id: 'chance', name: 'Chance', upper: false },
-        ];
-
-        const DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
-        const UPPER_IDS = ['ones', 'twos', 'threes', 'fours', 'fives', 'sixes'];
-        const LOWER_IDS = ['threeOfAKind', 'fourOfAKind', 'fullHouse', 'smallStraight', 'largeStraight', 'yahtzee', 'chance'];
-
-        // ===== DOM REFS =====
-        const diceContainer = document.getElementById('diceContainer');
-        const statusDisplay = document.getElementById('statusDisplay');
-        const rollInfo = document.getElementById('rollInfo');
-        const playerScoresEl = document.getElementById('playerScores');
-        const aiScoresEl = document.getElementById('aiScores');
-        const playerTotalEl = document.getElementById('playerTotal');
-        const aiTotalEl = document.getElementById('aiTotal');
-        const rollBtn = document.getElementById('rollBtn');
-        const resetBtn = document.getElementById('resetBtn');
-        const soundBtn = document.getElementById('soundBtn');
-        const aiFirstBtn = document.getElementById('aiFirstBtn');
-        const winsSpan = document.getElementById('wins');
-        const lossesSpan = document.getElementById('losses');
-        const streakSpan = document.getElementById('streak');
-
-        // ===== GAME STATE =====
-        let game = {
-            pDice: [1, 1, 1, 1, 1],
-            pHeld: [false, false, false, false, false],
-            pRolls: 0,
-            pScores: {},
-            pTotal: 0,
-            pBonus: false,
-
-            aDice: [1, 1, 1, 1, 1],
-            aHeld: [false, false, false, false, false],
-            aRolls: 0,
-            aScores: {},
-            aTotal: 0,
-            aBonus: false,
-
-            turn: 'player',
-            gameOver: false,
-            rolling: false,
-            aiThinking: false,
-            waitingScore: false,
-
-            aiLastCat: null,
-            aiLastScore: null,
-            aiFinalDice: null,
-            showAiFinal: false,
-
-            playerTurnsRemaining: 13,
-            aiTurnsRemaining: 13,
-        };
-
-        // ===== STATS =====
-        let stats = {
-            wins: parseInt(localStorage.getItem('yahtzee_wins')) || 0,
-            losses: parseInt(localStorage.getItem('yahtzee_losses')) || 0,
-            streak: parseInt(localStorage.getItem('yahtzee_streak')) || 0,
-        };
-        updateStats();
-
-        // ===== AUDIO =====
-        let audioCtx = null;
-        let soundOn = true;
-
-        function initAudio() {
-            if (!audioCtx) audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+        init() {
+            if (!this.ctx) {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (this.ctx.state === 'suspended') {
+                this.ctx.resume();
+            }
         }
 
-        function playSound(type) {
-            if (!soundOn) return;
-            try {
-                initAudio();
-                const now = audioCtx.currentTime;
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
+        playRoll() {
+            this.init();
+            const now = this.ctx.currentTime;
+            for (let i = 0; i < 4; i++) {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(120 + Math.random() * 200, now + i * 0.04);
+                gain.gain.setValueAtTime(0.06, now + i * 0.04);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.04 + 0.03);
                 osc.connect(gain);
-                gain.connect(audioCtx.destination);
-
-                switch (type) {
-                    case 'roll':
-                        osc.type = 'sine';
-                        osc.frequency.setValueAtTime(300 + Math.random() * 400, now);
-                        osc.frequency.exponentialRampToValueAtTime(200, now + 0.08);
-                        gain.gain.setValueAtTime(0.05, now);
-                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-                        osc.start(now);
-                        osc.stop(now + 0.08);
-                        break;
-                    case 'yahtzee':
-                        [523, 659, 784, 1047, 784, 659].forEach((f, i) => {
-                            const o = audioCtx.createOscillator();
-                            const g = audioCtx.createGain();
-                            o.connect(g);
-                            g.connect(audioCtx.destination);
-                            o.type = 'square';
-                            o.frequency.setValueAtTime(f, now + i * 0.08);
-                            g.gain.setValueAtTime(0.05, now + i * 0.08);
-                            g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.06);
-                            o.start(now + i * 0.08);
-                            o.stop(now + i * 0.08 + 0.06);
-                        });
-                        break;
-                    case 'win':
-                        [523, 659, 784, 1047, 784, 659, 523, 784].forEach((f, i) => {
-                            const o = audioCtx.createOscillator();
-                            const g = audioCtx.createGain();
-                            o.connect(g);
-                            g.connect(audioCtx.destination);
-                            o.type = 'square';
-                            o.frequency.setValueAtTime(f, now + i * 0.06);
-                            g.gain.setValueAtTime(0.04, now + i * 0.06);
-                            g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.05);
-                            o.start(now + i * 0.06);
-                            o.stop(now + i * 0.06 + 0.05);
-                        });
-                        break;
-                    case 'score':
-                        osc.type = 'sine';
-                        osc.frequency.setValueAtTime(600, now);
-                        osc.frequency.exponentialRampToValueAtTime(800, now + 0.05);
-                        gain.gain.setValueAtTime(0.05, now);
-                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-                        osc.start(now);
-                        osc.stop(now + 0.05);
-                        break;
-                }
-            } catch (e) {}
-        }
-
-        // ===== SCORING HELPERS =====
-        function counts(dice) {
-            const c = [0, 0, 0, 0, 0, 0];
-            for (const d of dice) c[d - 1]++;
-            return c;
-        }
-
-        function scoreCat(dice, cat) {
-            const c = counts(dice);
-            const s = [...dice].sort((a, b) => a - b);
-
-            switch (cat) {
-                case 'ones': return c[0] * 1;
-                case 'twos': return c[1] * 2;
-                case 'threes': return c[2] * 3;
-                case 'fours': return c[3] * 4;
-                case 'fives': return c[4] * 5;
-                case 'sixes': return c[5] * 6;
-                case 'threeOfAKind':
-                    for (let i = 0; i < 6; i++) if (c[i] >= 3) return dice.reduce((a, b) => a + b, 0);
-                    return 0;
-                case 'fourOfAKind':
-                    for (let i = 0; i < 6; i++) if (c[i] >= 4) return dice.reduce((a, b) => a + b, 0);
-                    return 0;
-                case 'fullHouse': {
-                    let h3 = false,
-                        h2 = false;
-                    for (let i = 0; i < 6; i++) { if (c[i] === 3) h3 = true; if (c[i] === 2) h2 = true; }
-                    return (h3 && h2) ? 25 : 0;
-                }
-                case 'smallStraight': {
-                    const u = [...new Set(s)];
-                    for (let i = 0; i <= u.length - 4; i++) {
-                        if (u[i + 3] - u[i] === 3) return 30;
-                    }
-                    return 0;
-                }
-                case 'largeStraight':
-                    if (s[0] === 1 && s[1] === 2 && s[2] === 3 && s[3] === 4 && s[4] === 5) return 40;
-                    if (s[0] === 2 && s[1] === 3 && s[2] === 4 && s[3] === 5 && s[4] === 6) return 40;
-                    return 0;
-                case 'yahtzee':
-                    for (let i = 0; i < 6; i++) if (c[i] === 5) return 50;
-                    return 0;
-                case 'chance':
-                    return dice.reduce((a, b) => a + b, 0);
-                default:
-                    return 0;
+                gain.connect(this.ctx.destination);
+                osc.start(now + i * 0.04);
+                osc.stop(now + i * 0.04 + 0.03);
             }
         }
 
-        function upperTotal(scores) {
-            let t = 0;
-            for (const id of UPPER_IDS) {
-                t += scores[id] || 0;
-            }
-            return t;
+        playHold(isHeld) {
+            this.init();
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(isHeld ? 440 : 330, now);
+            osc.frequency.exponentialRampToValueAtTime(isHeld ? 660 : 220, now + 0.08);
+            gain.gain.setValueAtTime(0.08, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.08);
         }
 
-        function bonus(scores) {
-            return upperTotal(scores) >= 63 ? 35 : 0;
-        }
-
-        function totalScore(scores) {
-            let t = 0;
-            for (const cat of CATEGORIES) t += scores[cat.id] || 0;
-            t += bonus(scores);
-            return t;
-        }
-
-        function usedCats(scores) {
-            const used = [];
-            for (const cat of CATEGORIES) {
-                if (scores[cat.id] !== undefined && scores[cat.id] !== null) used.push(cat.id);
-            }
-            return used;
-        }
-
-        function availCats(scores) {
-            const u = usedCats(scores);
-            return CATEGORIES.filter(c => !u.includes(c.id));
-        }
-
-        function isComplete(scores) {
-            return usedCats(scores).length === CATEGORIES.length;
-        }
-
-        // ===== FULLY CATEGORY-AWARE AI =====
-
-        function aiPickCategory(dice, scores) {
-            const avail = availCats(scores);
-            let best = avail[0];
-            let bestScore = -Infinity;
-
-            for (const cat of avail) {
-                const raw = scoreCat(dice, cat.id);
-                let weighted = raw;
-
-                // Upper section: bonus potential
-                if (cat.upper) {
-                    const ut = upperTotal(scores);
-                    if (ut + raw >= 63) weighted += 60;
-                    else if (ut + raw >= 55) weighted += 20;
-                    weighted += 5;
-                }
-
-                // Special bonuses for high-value categories
-                if (cat.id === 'yahtzee' && raw === 50) weighted += 70;
-                else if (cat.id === 'largeStraight' && raw === 40) weighted += 40;
-                else if (cat.id === 'smallStraight' && raw === 30) weighted += 25;
-                else if (cat.id === 'fullHouse' && raw === 25) weighted += 15;
-
-                // Penalize zero scores (except Chance)
-                if (raw === 0 && cat.id !== 'chance') weighted -= 15;
-                // If Chance is available and nothing else is good, it's a fallback
-                if (cat.id === 'chance') weighted += 2;
-
-                if (weighted > bestScore) {
-                    bestScore = weighted;
-                    best = cat;
-                }
-            }
-
-            return best;
-        }
-
-        function aiDecideHold(dice, scores, rollNum) {
-            const c = counts(dice);
-            const avail = availCats(scores);
-            const availIds = avail.map(a => a.id);
-
-            // ===== IF YAHTZEE AVAILABLE =====
-            if (availIds.includes('yahtzee')) {
-                // Keep 3+ of a kind
-                for (let i = 0; i < 6; i++) {
-                    if (c[i] >= 3) return dice.map(d => d === i + 1);
-                }
-                // Keep pairs
-                for (let i = 0; i < 6; i++) {
-                    if (c[i] === 2) return dice.map(d => d === i + 1);
-                }
-            }
-
-            // ===== IF STRAIGHTS AVAILABLE =====
-            const hasSmall = availIds.includes('smallStraight');
-            const hasLarge = availIds.includes('largeStraight');
-
-            if (hasSmall || hasLarge) {
-                const s = [...dice].sort((a, b) => a - b);
-                const u = [...new Set(s)];
-
-                // Large straight: need 4+ unique consecutive
-                if (hasLarge && u.length >= 4) {
-                    for (let i = 0; i <= u.length - 4; i++) {
-                        if (u[i + 3] - u[i] === 3) {
-                            const keep = u.slice(i, i + 4);
-                            return dice.map(d => keep.includes(d));
-                        }
-                    }
-                }
-
-                // Small straight: need 3+ unique consecutive
-                if (hasSmall && u.length >= 3) {
-                    // First try to find 4 consecutive
-                    for (let i = 0; i <= u.length - 4; i++) {
-                        if (u[i + 3] - u[i] === 3) {
-                            const keep = u.slice(i, i + 4);
-                            return dice.map(d => keep.includes(d));
-                        }
-                    }
-                    // Try 3 consecutive
-                    for (let i = 0; i <= u.length - 3; i++) {
-                        if (u[i + 2] - u[i] === 2) {
-                            const keep = u.slice(i, i + 3);
-                            // Add the next if it would make 4
-                            if (i + 3 < u.length && u[i + 3] - u[i] === 3) {
-                                keep.push(u[i + 3]);
-                            }
-                            return dice.map(d => keep.includes(d));
-                        }
-                    }
-                }
-            }
-
-            // ===== IF FULL HOUSE AVAILABLE =====
-            if (availIds.includes('fullHouse')) {
-                let threeVal = -1,
-                    twoVal = -1;
-                for (let i = 0; i < 6; i++) {
-                    if (c[i] >= 3) threeVal = i + 1;
-                    else if (c[i] >= 2) twoVal = i + 1;
-                }
-                if (threeVal > 0 && twoVal > 0) {
-                    return dice.map(d => d === threeVal || d === twoVal);
-                }
-                if (threeVal > 0) {
-                    return dice.map(d => d === threeVal);
-                }
-                // Keep any pairs
-                let pairs = [];
-                for (let i = 0; i < 6; i++) {
-                    if (c[i] === 2) pairs.push(i + 1);
-                }
-                if (pairs.length >= 1) {
-                    return dice.map(d => pairs.includes(d));
-                }
-            }
-
-            // ===== IF 4 OF A KIND OR 3 OF A KIND AVAILABLE =====
-            const hasFour = availIds.includes('fourOfAKind');
-            const hasThree = availIds.includes('threeOfAKind');
-
-            if (hasFour || hasThree) {
-                // Keep 3+ of a kind
-                for (let i = 0; i < 6; i++) {
-                    if (c[i] >= 3) return dice.map(d => d === i + 1);
-                }
-                // Keep pairs
-                for (let i = 0; i < 6; i++) {
-                    if (c[i] === 2) return dice.map(d => d === i + 1);
-                }
-            }
-
-            // ===== UPPER SECTION =====
-            // Find upper categories that are available
-            const availUpper = avail.filter(c => c.upper).map(c => c.id);
-
-            if (availUpper.length > 0) {
-                // Find which number has the highest count among available upper categories
-                let bestVal = -1,
-                    bestCount = 0;
-                for (let i = 0; i < 6; i++) {
-                    const val = i + 1;
-                    const id = UPPER_IDS[i];
-                    if (availUpper.includes(id) && c[i] > bestCount) {
-                        bestCount = c[i];
-                        bestVal = val;
-                    }
-                }
-                if (bestVal > 0 && bestCount >= 2) {
-                    return dice.map(d => d === bestVal);
-                }
-            }
-
-            // ===== CHANCE (fallback) =====
-            // Keep the highest dice for Chance
-            return dice.map(d => d >= 4);
-        }
-
-        // ===== AI TURN =====
-        function aiTurn() {
-            if (game.gameOver || game.aiThinking) return;
-            if (game.aiTurnsRemaining <= 0) {
-                if (game.playerTurnsRemaining <= 0) {
-                    game.gameOver = true;
-                    determineWinner();
-                } else {
-                    game.turn = 'player';
-                    statusDisplay.innerHTML = '🎯 Your turn! Roll the dice!';
-                    renderAll();
-                }
-                return;
-            }
-
-            game.aiThinking = true;
-            game.turn = 'ai';
-            game.waitingScore = false;
-            game.aRolls = 0;
-            game.aDice = [1, 1, 1, 1, 1];
-            game.aHeld = [false, false, false, false, false];
-            game.aiLastCat = null;
-            game.aiLastScore = null;
-            game.aiFinalDice = null;
-            game.showAiFinal = false;
-
-            statusDisplay.innerHTML = '🤖 AI is thinking…';
-            renderAll();
-
-            setTimeout(() => {
-                aiRollDice();
-                game.aRolls = 1;
-                animateDice('ai');
-                renderAll();
-                statusDisplay.innerHTML = '🤖 AI Roll 1…';
-
-                setTimeout(() => {
-                    const hold1 = aiDecideHold(game.aDice, game.aScores, 1);
-                    game.aHeld = hold1;
-                    renderAll();
-
-                    aiRollDice();
-                    game.aRolls = 2;
-                    animateDice('ai');
-                    renderAll();
-                    statusDisplay.innerHTML = '🤖 AI Roll 2…';
-
-                    setTimeout(() => {
-                        const hold2 = aiDecideHold(game.aDice, game.aScores, 2);
-                        game.aHeld = hold2;
-                        renderAll();
-
-                        aiRollDice();
-                        game.aRolls = 3;
-                        animateDice('ai');
-                        renderAll();
-                        statusDisplay.innerHTML = '🤖 AI Roll 3…';
-
-                        setTimeout(() => {
-                            game.aiFinalDice = [...game.aDice];
-                            game.showAiFinal = true;
-
-                            const cat = aiPickCategory(game.aDice, game.aScores);
-                            const pts = scoreCat(game.aDice, cat.id);
-                            game.aScores[cat.id] = pts;
-                            game.aiLastCat = cat;
-                            game.aiLastScore = pts;
-                            game.aTotal = totalScore(game.aScores);
-                            game.aBonus = bonus(game.aScores) > 0;
-                            game.aiTurnsRemaining--;
-
-                            statusDisplay.innerHTML =
-                                `🤖 AI scored <span class="highlight">${pts}</span> in <span class="highlight">${cat.name}</span>`;
-                            playSound('score');
-
-                            renderAll();
-                            updateScores();
-
-                            if (game.aiTurnsRemaining <= 0) {
-                                if (game.playerTurnsRemaining <= 0) {
-                                    game.gameOver = true;
-                                    determineWinner();
-                                } else {
-                                    game.turn = 'player';
-                                    game.pRolls = 0;
-                                    game.pDice = [1, 1, 1, 1, 1];
-                                    game.pHeld = [false, false, false, false, false];
-                                    game.waitingScore = false;
-                                    game.aiThinking = false;
-                                    statusDisplay.innerHTML = '🎯 Your turn! Roll the dice!';
-                                    renderAll();
-                                    updateScores();
-                                }
-                                return;
-                            }
-
-                            game.turn = 'player';
-                            game.pRolls = 0;
-                            game.pDice = [1, 1, 1, 1, 1];
-                            game.pHeld = [false, false, false, false, false];
-                            game.waitingScore = false;
-                            game.aiThinking = false;
-                            game.showAiFinal = true;
-
-                            statusDisplay.innerHTML = '🎯 Your turn! Roll the dice!';
-                            renderAll();
-                            updateScores();
-
-                        }, 1400);
-                    }, 1500);
-                }, 1500);
-            }, 1200);
-        }
-
-        function aiRollDice() {
-            for (let i = 0; i < DICE_COUNT; i++) {
-                if (!game.aHeld[i]) {
-                    game.aDice[i] = Math.floor(Math.random() * 6) + 1;
-                }
-            }
-        }
-
-        function animateDice(player) {
-            const els = diceContainer.querySelectorAll('.die');
-            const held = player === 'player' ? game.pHeld : game.aHeld;
-            els.forEach((el, i) => {
-                if (!held[i]) {
-                    el.classList.add('rolling');
-                    setTimeout(() => el.classList.remove('rolling'), 400);
-                }
+        playScore() {
+            this.init();
+            const now = this.ctx.currentTime;
+            const notes = [523.25, 659.25, 783.99];
+            notes.forEach((freq, idx) => {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, now + idx * 0.06);
+                gain.gain.setValueAtTime(0.1, now + idx * 0.06);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.06 + 0.12);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now + idx * 0.06);
+                osc.stop(now + idx * 0.06 + 0.12);
             });
         }
 
-        // ===== PLAYER FUNCTIONS =====
-        function playerRoll() {
-            if (game.gameOver) return;
-            if (game.turn !== 'player') return;
-            if (game.rolling) return;
-            if (game.pRolls >= MAX_ROLLS) return;
-            if (game.waitingScore) return;
+        playGameOver() {
+            this.init();
+            const now = this.ctx.currentTime;
+            const notes = [440, 554.37, 659.25, 880];
+            notes.forEach((freq, idx) => {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, now + idx * 0.1);
+                gain.gain.setValueAtTime(0.12, now + idx * 0.1);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.1 + 0.25);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now + idx * 0.1);
+                osc.stop(now + idx * 0.1 + 0.25);
+            });
+        }
+    }
 
-            game.showAiFinal = false;
+    const sound = new SoundEffects();
 
-            game.rolling = true;
-            playSound('roll');
+    // --- Categories ---
+    const CATEGORIES = [
+        { id: 'ones', name: 'Ones', section: 'upper' },
+        { id: 'twos', name: 'Twos', section: 'upper' },
+        { id: 'threes', name: 'Threes', section: 'upper' },
+        { id: 'fours', name: 'Fours', section: 'upper' },
+        { id: 'fives', name: 'Fives', section: 'upper' },
+        { id: 'sixes', name: 'Sixes', section: 'upper' },
+        { id: 'threeKind', name: '3 of a Kind', section: 'lower' },
+        { id: 'fourKind', name: '4 of a Kind', section: 'lower' },
+        { id: 'fullHouse', name: 'Full House', section: 'lower' },
+        { id: 'smallStr', name: 'Sm. Straight', section: 'lower' },
+        { id: 'largeStr', name: 'Lg. Straight', section: 'lower' },
+        { id: 'yahtzee', name: 'Yahtzee', section: 'lower' },
+        { id: 'chance', name: 'Chance', section: 'lower' }
+    ];
 
-            for (let i = 0; i < DICE_COUNT; i++) {
-                if (!game.pHeld[i]) {
-                    game.pDice[i] = Math.floor(Math.random() * 6) + 1;
-                }
+    const PIP_MAPS = {
+        0: [], 1: [4], 2: [0, 8], 3: [0, 4, 8],
+        4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8]
+    };
+
+    let dice = [1, 1, 1, 1, 1];
+    let held = [false, false, false, false, false];
+    let rollsLeft = 3;
+    let currentPlayer = 'user';
+    let isGameOver = false;
+
+    let scores = { user: {}, ai: {} };
+
+    // --- LocalStorage Career Stats ---
+    let stats = {
+        played: 0,
+        wins: 0,
+        losses: 0,
+        highScore: 0,
+        yahtzees: 0
+    };
+
+    const diceElements = document.querySelectorAll('.die');
+    const rollBtn = document.getElementById('roll-btn');
+    const restartBtn = document.getElementById('restart-btn');
+    const resetStatsBtn = document.getElementById('reset-stats-btn');
+    const statusText = document.getElementById('status-text');
+    const aiIntentBox = document.getElementById('ai-intent');
+    const scoreBody = document.getElementById('score-body');
+    const userRunningTotalEl = document.getElementById('user-running-total');
+    const aiRunningTotalEl = document.getElementById('ai-running-total');
+
+    function loadStats() {
+        const saved = localStorage.getItem('yahtzee_career_stats');
+        if (saved) {
+            try { stats = JSON.parse(saved); } catch(e) {}
+        }
+        renderStats();
+    }
+
+    function saveStats() {
+        localStorage.setItem('yahtzee_career_stats', JSON.stringify(stats));
+        renderStats();
+    }
+
+    function renderStats() {
+        document.getElementById('stat-played').textContent = stats.played;
+        document.getElementById('stat-record').textContent = `${stats.wins}-${stats.losses}`;
+        document.getElementById('stat-highscore').textContent = stats.highScore;
+        document.getElementById('stat-yahtzees').textContent = stats.yahtzees;
+    }
+
+    function initGame() {
+        scores = { user: {}, ai: {} };
+        currentPlayer = 'user';
+        isGameOver = false;
+        resetTurn();
+        renderScoreboard();
+        updateStatus("Your turn! Roll the dice.");
+        setAiIntent("AI will display tactical decisions here.", false);
+    }
+
+    function renderDieFace(el, val) {
+        const pips = el.querySelectorAll('.pip');
+        const activeIndices = PIP_MAPS[val] || [];
+        pips.forEach((pip, idx) => {
+            pip.style.visibility = activeIndices.includes(idx) ? 'visible' : 'hidden';
+        });
+    }
+
+    function resetTurn() {
+        dice = [0, 0, 0, 0, 0];
+        held = [false, false, false, false, false];
+        rollsLeft = 3;
+        
+        diceElements.forEach((el) => {
+            renderDieFace(el, 0);
+            el.classList.remove('held', 'ai-held', 'disabled', 'rolling');
+            el.setAttribute('aria-label', 'Unrolled die');
+        });
+
+        rollBtn.disabled = (currentPlayer === 'ai');
+        rollBtn.textContent = `Roll Dice (${rollsLeft} left)`;
+    }
+
+    function calculateScore(catId, currentDice) {
+        const counts = [0, 0, 0, 0, 0, 0, 0];
+        let sum = 0;
+        currentDice.forEach(val => {
+            if (val > 0) counts[val]++;
+            sum += val;
+        });
+
+        switch (catId) {
+            case 'ones': return counts[1] * 1;
+            case 'twos': return counts[2] * 2;
+            case 'threes': return counts[3] * 3;
+            case 'fours': return counts[4] * 4;
+            case 'fives': return counts[5] * 5;
+            case 'sixes': return counts[6] * 6;
+            case 'threeKind': return Math.max(...counts) >= 3 ? sum : 0;
+            case 'fourKind': return Math.max(...counts) >= 4 ? sum : 0;
+            case 'fullHouse': 
+                const hasThree = counts.includes(3);
+                const hasTwo = counts.includes(2);
+                const hasFive = counts.includes(5);
+                return (hasThree && hasTwo) || hasFive ? 25 : 0;
+            case 'smallStr':
+                if ((counts[1]&&counts[2]&&counts[3]&&counts[4]) ||
+                    (counts[2]&&counts[3]&&counts[4]&&counts[5]) ||
+                    (counts[3]&&counts[4]&&counts[5]&&counts[6])) return 30;
+                return 0;
+            case 'largeStr':
+                if ((counts[1]&&counts[2]&&counts[3]&&counts[4]&&counts[5]) ||
+                    (counts[2]&&counts[3]&&counts[4]&&counts[5]&&counts[6])) return 40;
+                return 0;
+            case 'yahtzee': return Math.max(...counts) === 5 ? 50 : 0;
+            case 'chance': return sum;
+            default: return 0;
+        }
+    }
+
+    function getSubtotal(player, section) {
+        return CATEGORIES
+            .filter(c => c.section === section)
+            .reduce((sum, c) => sum + (scores[player][c.id] ?? 0), 0);
+    }
+
+    function getBonus(player) {
+        return getSubtotal(player, 'upper') >= 63 ? 35 : 0;
+    }
+
+    function getTotalScore(player) {
+        return getSubtotal(player, 'upper') + getBonus(player) + getSubtotal(player, 'lower');
+    }
+
+    function renderScoreboard() {
+        scoreBody.innerHTML = '';
+        appendSectionHeader('Upper Section');
+        CATEGORIES.filter(c => c.section === 'upper').forEach(c => appendCategoryRow(c));
+        appendSummaryRow('Subtotal', getSubtotal('user', 'upper'), getSubtotal('ai', 'upper'));
+        appendSummaryRow('Bonus (63+ pts = 35)', getBonus('user'), getBonus('ai'));
+        appendSectionHeader('Lower Section');
+        CATEGORIES.filter(c => c.section === 'lower').forEach(c => appendCategoryRow(c));
+        appendSummaryRow('GRAND TOTAL', getTotalScore('user'), getTotalScore('ai'), true);
+
+        // Update Running Totals
+        userRunningTotalEl.textContent = getTotalScore('user');
+        aiRunningTotalEl.textContent = getTotalScore('ai');
+    }
+
+    function appendSectionHeader(text) {
+        const tr = document.createElement('tr');
+        tr.className = 'section-header';
+        tr.innerHTML = `<td colspan="3">${text}</td>`;
+        scoreBody.appendChild(tr);
+    }
+
+    function appendSummaryRow(label, userVal, aiVal, isTotal = false) {
+        const tr = document.createElement('tr');
+        if (isTotal) tr.className = 'total-row';
+        tr.innerHTML = `
+            <td><strong>${label}</strong></td>
+            <td class="num">${userVal}</td>
+            <td class="num">${aiVal}</td>
+        `;
+        scoreBody.appendChild(tr);
+    }
+
+    function appendCategoryRow(cat) {
+        const tr = document.createElement('tr');
+        tr.className = 'score-row';
+
+        const userFilled = scores.user[cat.id] !== undefined;
+        const userVal = userFilled ? scores.user[cat.id] : '';
+        const aiVal = scores.ai[cat.id] !== undefined ? scores.ai[cat.id] : '';
+
+        let potentialText = '';
+        if (currentPlayer === 'user' && !userFilled && rollsLeft < 3) {
+            tr.classList.add('selectable', 'potential');
+            potentialText = calculateScore(cat.id, dice);
+            tr.onclick = () => selectCategory(cat.id);
+        } else if (userFilled) {
+            tr.classList.add('filled');
+        }
+
+        tr.innerHTML = `
+            <td>${cat.name}</td>
+            <td class="num">${userFilled ? userVal : potentialText}</td>
+            <td class="num">${aiVal}</td>
+        `;
+        scoreBody.appendChild(tr);
+    }
+
+    function updateStatus(msg) { statusText.textContent = msg; }
+
+    function setAiIntent(msg, isActive = true) {
+        aiIntentBox.textContent = msg;
+        aiIntentBox.classList.toggle('active', isActive);
+    }
+
+    function roll() {
+        if (rollsLeft <= 0 || currentPlayer !== 'user') return;
+
+        sound.playRoll();
+        diceElements.forEach((el, i) => {
+            if (!held[i]) el.classList.add('rolling');
+        });
+
+        setTimeout(() => {
+            for (let i = 0; i < 5; i++) {
+                if (!held[i]) dice[i] = Math.floor(Math.random() * 6) + 1;
             }
-            game.pRolls++;
 
-            const els = diceContainer.querySelectorAll('.die');
-            els.forEach((el, i) => {
-                if (!game.pHeld[i]) {
-                    el.classList.add('rolling');
-                    setTimeout(() => el.classList.remove('rolling'), 400);
-                }
-                el.textContent = DICE_FACES[game.pDice[i] - 1];
+            rollsLeft--;
+            rollBtn.textContent = `Roll Dice (${rollsLeft} left)`;
+
+            diceElements.forEach((el, i) => {
+                el.classList.remove('rolling');
+                renderDieFace(el, dice[i]);
+                el.setAttribute('aria-label', `Die ${i + 1}: ${dice[i]}${held[i] ? ' (Held)' : ''}`);
             });
 
-            renderAll();
-            updateRollInfo();
+            renderScoreboard();
 
-            const c = counts(game.pDice);
-            let y = false;
-            for (let i = 0; i < 6; i++) { if (c[i] === 5) y = true; }
-            if (y) {
-                playSound('yahtzee');
-                statusDisplay.innerHTML = '🎉 YAHTZEE! 🎉';
-            } else {
-                statusDisplay.innerHTML = `🎲 Roll ${game.pRolls} of ${MAX_ROLLS}`;
-            }
-
-            game.rolling = false;
-
-            if (game.pRolls === MAX_ROLLS) {
-                game.waitingScore = true;
-                statusDisplay.innerHTML = '📝 Click a category to score!';
+            if (rollsLeft === 0) {
                 rollBtn.disabled = true;
+                updateStatus("Select a category to score your roll.");
             } else {
-                rollBtn.disabled = false;
+                updateStatus("Keep dice or roll again.");
             }
+        }, 250);
+    }
 
-            renderAll();
+    function toggleHold(index) {
+        if (rollsLeft === 3 || currentPlayer !== 'user') return;
+        held[index] = !held[index];
+        sound.playHold(held[index]);
+        diceElements[index].classList.toggle('held', held[index]);
+        diceElements[index].setAttribute('aria-label', `Die ${index + 1}: ${dice[index]}${held[index] ? ' (Held)' : ''}`);
+    }
+
+    function selectCategory(catId) {
+        if (currentPlayer !== 'user' || scores.user[catId] !== undefined || rollsLeft === 3) return;
+
+        sound.playScore();
+        const score = calculateScore(catId, dice);
+        scores.user[catId] = score;
+
+        // Check Yahtzee stat
+        if (catId === 'yahtzee' && score === 50) {
+            stats.yahtzees++;
         }
 
-        function playerScore(catId) {
-            if (game.gameOver) return;
-            if (game.turn !== 'player') return;
-            if (game.pRolls === 0) return;
-            if (game.pScores[catId] !== undefined) return;
-            if (!game.waitingScore && game.pRolls < MAX_ROLLS) return;
+        checkGameOver();
 
-            const pts = scoreCat(game.pDice, catId);
-            game.pScores[catId] = pts;
-            game.pTotal = totalScore(game.pScores);
-            game.pBonus = bonus(game.pScores) > 0;
-            game.waitingScore = false;
-            game.playerTurnsRemaining--;
-            playSound('score');
+        if (!isGameOver) {
+            currentPlayer = 'ai';
+            renderScoreboard();
+            executeAITurn();
+        }
+    }
 
-            statusDisplay.innerHTML = `✅ You scored <span class="highlight">${pts}</span>`;
+    function checkGameOver() {
+        const userComplete = Object.keys(scores.user).length === CATEGORIES.length;
+        const aiComplete = Object.keys(scores.ai).length === CATEGORIES.length;
 
-            if (game.playerTurnsRemaining <= 0) {
-                if (game.aiTurnsRemaining <= 0) {
-                    game.gameOver = true;
-                    determineWinner();
-                } else {
-                    game.turn = 'ai';
-                    game.pRolls = 0;
-                    game.pDice = [1, 1, 1, 1, 1];
-                    game.pHeld = [false, false, false, false, false];
-                    game.waitingScore = false;
-                    renderAll();
-                    updateScores();
-                    setTimeout(aiTurn, 600);
-                }
-                return;
+        if (userComplete && aiComplete) {
+            isGameOver = true;
+            sound.playGameOver();
+            const userTotal = getTotalScore('user');
+            const aiTotal = getTotalScore('ai');
+
+            // Update Career Stats
+            stats.played++;
+            if (userTotal > stats.highScore) {
+                stats.highScore = userTotal;
             }
 
-            game.turn = 'ai';
-            game.pRolls = 0;
-            game.pDice = [1, 1, 1, 1, 1];
-            game.pHeld = [false, false, false, false, false];
-            game.waitingScore = false;
-            renderAll();
-            updateScores();
-
-            setTimeout(aiTurn, 600);
-        }
-
-        function toggleHold(idx) {
-            if (game.gameOver) return;
-            if (game.turn !== 'player') return;
-            if (game.pRolls === 0) return;
-            if (game.rolling) return;
-            if (game.waitingScore) {
-                statusDisplay.innerHTML = '📝 Score first! Click a category above.';
-                return;
-            }
-            game.pHeld[idx] = !game.pHeld[idx];
-            renderDice();
-        }
-
-        // ===== WINNER =====
-        function determineWinner() {
-            const p = totalScore(game.pScores);
-            const a = totalScore(game.aScores);
-            let msg = '';
-            if (p > a) {
-                msg = `🏆 YOU WIN! ${p} – ${a}`;
+            if (userTotal > aiTotal) {
                 stats.wins++;
-                stats.streak = stats.streak >= 0 ? stats.streak + 1 : 1;
-                playSound('win');
-            } else if (a > p) {
-                msg = `💀 AI WINS! ${a} – ${p}`;
+                updateStatus(`🎉 You win! ${userTotal} to ${aiTotal}`);
+                setAiIntent("Game Over: Good game! You outscored me.", false);
+            } else if (aiTotal > userTotal) {
                 stats.losses++;
-                stats.streak = stats.streak <= 0 ? stats.streak - 1 : -1;
+                updateStatus(`🤖 AI wins! ${aiTotal} to ${userTotal}`);
+                setAiIntent("Game Over: Victory for the machine!", true);
             } else {
-                msg = `🤝 DRAW! ${p} – ${a}`;
-                stats.streak = 0;
+                updateStatus(`🤝 It's a tie! ${userTotal} to ${aiTotal}`);
+                setAiIntent("Game Over: Perfectly matched!", false);
             }
-            localStorage.setItem('yahtzee_wins', stats.wins);
-            localStorage.setItem('yahtzee_losses', stats.losses);
-            localStorage.setItem('yahtzee_streak', stats.streak);
-            updateStats();
-            statusDisplay.innerHTML = msg;
-            renderAll();
-            updateScores();
+
+            saveStats();
+            renderScoreboard();
+            rollBtn.disabled = true;
         }
+    }
 
-        // ===== RENDER =====
-        function renderDice() {
-            const els = diceContainer.querySelectorAll('.die');
+    async function executeAITurn() {
+        resetTurn();
+        diceElements.forEach(el => el.classList.add('disabled'));
+        updateStatus("AI is playing...");
+        setAiIntent("AI is evaluating options...");
 
-            if (game.showAiFinal && game.aiFinalDice) {
-                els.forEach((el, i) => {
-                    el.textContent = DICE_FACES[game.aiFinalDice[i] - 1];
-                    el.classList.add('ai-final', 'disabled');
-                    el.classList.remove('held', 'rolling');
-                });
-                return;
-            }
+        let aiRolls = 3;
+        let aiDice = [0, 0, 0, 0, 0];
+        let aiHeld = [false, false, false, false, false];
 
-            if (game.turn === 'player' || game.gameOver) {
-                els.forEach((el, i) => {
-                    el.textContent = DICE_FACES[game.pDice[i] - 1];
-                    el.classList.toggle('held', game.pHeld[i]);
-                    el.classList.remove('ai-final');
-                    const interact = game.turn === 'player' &&
-                        game.pRolls > 0 &&
-                        !game.waitingScore &&
-                        !game.gameOver;
-                    el.classList.toggle('disabled', !interact);
-                });
-                return;
-            }
-
-            if (game.turn === 'ai') {
-                els.forEach((el, i) => {
-                    el.textContent = DICE_FACES[game.aDice[i] - 1];
-                    el.classList.add('disabled');
-                    el.classList.remove('held', 'ai-final');
-                });
-            }
-        }
-
-        function renderScoreboard(player, container, totalEl) {
-            const scores = player === 'player' ? game.pScores : game.aScores;
-            const total = player === 'player' ? game.pTotal : game.aTotal;
-
-            let html = '';
-            let ut = 0;
-
-            for (const id of UPPER_IDS) {
-                const cat = CATEGORIES.find(c => c.id === id);
-                const val = scores[id];
-                const used = val !== undefined && val !== null;
-                ut += val || 0;
-
-                let cls = 'score-item';
-                if (used) cls += ' used';
-                else {
-                    const canScore = player === 'player' &&
-                        game.turn === 'player' &&
-                        game.pRolls > 0 &&
-                        game.waitingScore &&
-                        !game.gameOver;
-                    if (canScore) cls += ' available';
-                }
-
-                let extra = '';
-                if (player === 'ai' && game.aiLastCat && game.aiLastCat.id === id && used && game.aiLastScore !== null) {
-                    cls += ' ai-selected';
-                    extra = `<span class="score-extra">${game.aiLastScore}</span>`;
-                }
-
-                html += `
-                    <div class="${cls}" data-cat="${id}" data-player="${player}">
-                        <span class="score-name">${cat.name}</span>
-                        <span class="score-value">${used ? val : '-'} ${extra}</span>
-                    </div>
-                `;
-            }
-
-            html += `
-                <div class="score-item upper-total">
-                    <span class="score-name">Upper Total</span>
-                    <span class="score-value">${ut}</span>
-                </div>
-            `;
-
-            const b = bonus(scores);
-            const ok = ut >= 63 ? '✅' : '❌';
-            html += `
-                <div class="score-item bonus">
-                    <span class="score-name">Bonus (63+) ${ok}</span>
-                    <span class="score-value">${b}</span>
-                </div>
-            `;
-
-            for (const id of LOWER_IDS) {
-                const cat = CATEGORIES.find(c => c.id === id);
-                const val = scores[id];
-                const used = val !== undefined && val !== null;
-
-                let cls = 'score-item';
-                if (used) cls += ' used';
-                else {
-                    const canScore = player === 'player' &&
-                        game.turn === 'player' &&
-                        game.pRolls > 0 &&
-                        game.waitingScore &&
-                        !game.gameOver;
-                    if (canScore) cls += ' available';
-                }
-
-                let extra = '';
-                if (player === 'ai' && game.aiLastCat && game.aiLastCat.id === id && used && game.aiLastScore !== null) {
-                    cls += ' ai-selected';
-                    extra = `<span class="score-extra">${game.aiLastScore}</span>`;
-                }
-
-                html += `
-                    <div class="${cls}" data-cat="${id}" data-player="${player}">
-                        <span class="score-name">${cat.name}</span>
-                        <span class="score-value">${used ? val : '-'} ${extra}</span>
-                    </div>
-                `;
-            }
-
-            container.innerHTML = html;
-            totalEl.textContent = total;
-
-            container.querySelectorAll('.score-item.available').forEach(el => {
-                el.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    const cat = this.dataset.cat;
-                    const p = this.dataset.player;
-                    if (p === 'player') playerScore(cat);
-                });
+        while (aiRolls > 0) {
+            await new Promise(r => setTimeout(r, 650));
+            sound.playRoll();
+            diceElements.forEach((el, i) => {
+                if (!aiHeld[i]) el.classList.add('rolling');
             });
+
+            await new Promise(r => setTimeout(r, 300));
+
+            for (let i = 0; i < 5; i++) {
+                if (!aiHeld[i]) aiDice[i] = Math.floor(Math.random() * 6) + 1;
+            }
+            aiRolls--;
+
+            diceElements.forEach((el, i) => {
+                el.classList.remove('rolling');
+                renderDieFace(el, aiDice[i]);
+            });
+
+            if (aiRolls > 0) {
+                const evaluation = evaluateAIStrategy(aiDice, scores.ai);
+                aiHeld = evaluation.holds;
+
+                let holdsChanged = false;
+                diceElements.forEach((el, i) => {
+                    const wasHeld = el.classList.contains('ai-held');
+                    if (wasHeld !== aiHeld[i]) holdsChanged = true;
+                    el.classList.toggle('ai-held', aiHeld[i]);
+                });
+
+                if (holdsChanged) sound.playHold(true);
+                setAiIntent(`Roll ${3 - aiRolls}/3: ${evaluation.explanation}`);
+                await new Promise(r => setTimeout(r, 1100));
+            }
         }
 
-        function updateRollInfo() {
-            if (game.waitingScore) {
-                rollInfo.textContent = '📝 Select a category!';
-                return;
+        await new Promise(r => setTimeout(r, 700));
+        const finalChoice = chooseBestCategory(aiDice, scores.ai);
+        
+        sound.playScore();
+        scores.ai[finalChoice.catId] = finalChoice.score;
+
+        setAiIntent(`AI scored ${finalChoice.score} pts in ${finalChoice.catName}.`);
+        updateStatus(`AI chose ${finalChoice.catName} (${finalChoice.score} pts).`);
+
+        checkGameOver();
+
+        if (!isGameOver) {
+            currentPlayer = 'user';
+            await new Promise(r => setTimeout(r, 1400));
+            resetTurn();
+            renderScoreboard();
+            updateStatus("Your turn! Roll the dice.");
+        }
+    }
+
+function evaluateAIStrategy(currentDice, currentScores) {
+        const counts = [0, 0, 0, 0, 0, 0, 0];
+        currentDice.forEach(d => counts[d]++);
+        const uniqueDice = [...new Set(currentDice)].sort((a,b) => a - b);
+        
+        // Open categories list
+        const openCats = CATEGORIES.filter(c => currentScores[c.id] === undefined).map(c => c.id);
+
+        // Quick helper checks
+        const openUpperValues = [1, 2, 3, 4, 5, 6].filter(v => openCats.includes(getUpperCatId(v)));
+        const needSets = openCats.includes('threeKind') || openCats.includes('fourKind') || openCats.includes('chance');
+        const needFullHouse = openCats.includes('fullHouse');
+        const needLargeStr = openCats.includes('largeStr');
+        const needSmallStr = openCats.includes('smallStr');
+
+        // 1. YAHTZEE Check
+        if (Math.max(...counts) === 5) {
+            return { holds: [true, true, true, true, true], explanation: "YAHTZEE! Keeping all dice!" };
+        }
+
+        // 2. FULL HOUSE Check (If Full House is open)
+        if (counts.includes(3) && counts.includes(2) && needFullHouse) {
+            return { holds: [true, true, true, true, true], explanation: "Holding Full House!" };
+        }
+
+        // 3. STRAIGHT CHECK (If Straights are open, prioritize sequences over random pairs)
+        if (needLargeStr || needSmallStr) {
+            const fiveCardStraights = [[1,2,3,4,5], [2,3,4,5,6]];
+            const fourCardStraights = [[1,2,3,4], [2,3,4,5], [3,4,5,6]];
+
+            for (const pat of fiveCardStraights) {
+                if (pat.every(v => uniqueDice.includes(v))) {
+                    const holds = currentDice.map(d => pat.includes(d));
+                    return { holds, explanation: "Complete Straight hit! Holding sequence." };
+                }
             }
-            if (game.turn === 'player') {
-                rollInfo.textContent = `Roll ${game.pRolls} of ${MAX_ROLLS}`;
-                rollBtn.disabled = game.pRolls >= MAX_ROLLS || game.gameOver || game.waitingScore;
+
+            for (const pat of fourCardStraights) {
+                if (pat.every(v => uniqueDice.includes(v))) {
+                    const used = {};
+                    const holds = currentDice.map(d => {
+                        if (pat.includes(d) && !used[d]) {
+                            used[d] = true;
+                            return true;
+                        }
+                        return false;
+                    });
+                    return { holds, explanation: `Holding 4-card straight sequence (${pat.join('-')}).` };
+                }
+            }
+        }
+
+        // 4. EVALUATE PAIRS / SETS WITH STRICT CATEGORY RELEVANCE
+        let bestTargetVal = 0;
+        let bestReason = "";
+
+        // Scan from 6 down to 1
+        for (let v = 6; v >= 1; v--) {
+            if (counts[v] >= 2) {
+                const upperIsOpen = openUpperValues.includes(v);
+                
+                if (upperIsOpen) {
+                    bestTargetVal = v;
+                    bestReason = `Keeping ${counts[v]} ${v}'s — Open Upper ${v}'s slot.`;
+                    break; // Upper match is high priority
+                } else if (needSets) {
+                    bestTargetVal = v;
+                    bestReason = `Keeping ${counts[v]} ${v}'s — Targeting 3/4 of a Kind / Chance.`;
+                    break;
+                }
+            }
+        }
+
+        if (bestTargetVal > 0) {
+            const holds = currentDice.map(d => d === bestTargetVal);
+            return { holds, explanation: bestReason };
+        }
+
+        // 5. TARGETED SINGLE DIE (If no valid pairs match open categories)
+        // Look specifically for dice that match open Upper slots (e.g. holding a 6 because only 6s is open)
+        for (let v = 6; v >= 1; v--) {
+            if (counts[v] > 0 && openUpperValues.includes(v)) {
+                const holds = currentDice.map(d => d === v);
+                return { holds, explanation: `Chasing open Upper slot — Holding ${v}.` };
+            }
+        }
+
+        // 6. ULTIMATE FALLBACK: Hold highest die for Chance/Sacrifice
+        const maxVal = Math.max(...currentDice);
+        const holds = currentDice.map(d => d === maxVal);
+        return { holds, explanation: `No open slot matches — Holding highest die (${maxVal}).` };
+    }
+
+    function chooseBestCategory(currentDice, currentScores) {
+        const openCats = CATEGORIES.filter(c => currentScores[c.id] === undefined);
+        let best = { catId: null, score: -1, weight: -999, catName: '' };
+
+        const counts = [0, 0, 0, 0, 0, 0, 0];
+        currentDice.forEach(d => counts[d]++);
+
+        for (const cat of openCats) {
+            const score = calculateScore(cat.id, currentDice);
+            let weight = score;
+
+            if (cat.section === 'upper') {
+                const faceVal = getUpperFaceValue(cat.id);
+                const diceCount = counts[faceVal];
+
+                if (diceCount > 0) {
+                    // Weight based on number of dice relative to the 3-dice benchmark
+                    // 3+ dice gets a big boost, 2 dice is solid, 1 die gets heavily penalized for high numbers
+                    const benchmarkDelta = diceCount - 3; // e.g., 2 dice = -1, 1 die = -2
+                    weight = (benchmarkDelta * 20) + score;
+
+                    // Extra protection: heavily discourage placing a single 4, 5, or 6 in the upper section
+                    if (diceCount === 1 && faceVal >= 4) {
+                        weight -= 25; 
+                    }
+                } else {
+                    weight = -50; // Zero score in upper is a last resort sacrifice
+                }
+
             } else {
-                rollInfo.textContent = `AI Roll ${game.aRolls} of ${MAX_ROLLS}`;
-                rollBtn.disabled = true;
-            }
-        }
-
-        function renderAll() {
-            renderDice();
-            renderScoreboard('player', playerScoresEl, playerTotalEl);
-            renderScoreboard('ai', aiScoresEl, aiTotalEl);
-            updateRollInfo();
-        }
-
-        function updateScores() {
-            game.pTotal = totalScore(game.pScores);
-            game.aTotal = totalScore(game.aScores);
-            playerTotalEl.textContent = game.pTotal;
-            aiTotalEl.textContent = game.aTotal;
-        }
-
-        function updateStats() {
-            winsSpan.textContent = stats.wins;
-            lossesSpan.textContent = stats.losses;
-            streakSpan.textContent = stats.streak;
-        }
-
-        // ===== RESET =====
-        function resetGame() {
-            game = {
-                pDice: [1, 1, 1, 1, 1],
-                pHeld: [false, false, false, false, false],
-                pRolls: 0,
-                pScores: {},
-                pTotal: 0,
-                pBonus: false,
-                aDice: [1, 1, 1, 1, 1],
-                aHeld: [false, false, false, false, false],
-                aRolls: 0,
-                aScores: {},
-                aTotal: 0,
-                aBonus: false,
-                turn: 'player',
-                gameOver: false,
-                rolling: false,
-                aiThinking: false,
-                waitingScore: false,
-                aiLastCat: null,
-                aiLastScore: null,
-                aiFinalDice: null,
-                showAiFinal: false,
-                playerTurnsRemaining: 13,
-                aiTurnsRemaining: 13,
-            };
-            statusDisplay.innerHTML = '🎯 Your turn! Roll the dice!';
-            rollBtn.disabled = false;
-            renderAll();
-            updateScores();
-        }
-
-        function aiFirst() {
-            resetGame();
-            game.turn = 'ai';
-            statusDisplay.innerHTML = '🤖 AI goes first…';
-            renderAll();
-            setTimeout(aiTurn, 600);
-        }
-
-        // ===== EVENTS =====
-        diceContainer.addEventListener('click', (e) => {
-            const die = e.target.closest('.die');
-            if (!die) return;
-            const idx = parseInt(die.dataset.index);
-            if (game.turn === 'player' && !game.waitingScore) {
-                toggleHold(idx);
-            } else if (game.waitingScore) {
-                statusDisplay.innerHTML = '📝 Score first! Click a category above.';
-            }
-        });
-
-        rollBtn.addEventListener('click', playerRoll);
-        resetBtn.addEventListener('click', resetGame);
-        aiFirstBtn.addEventListener('click', aiFirst);
-
-        soundBtn.addEventListener('click', () => {
-            soundOn = !soundOn;
-            soundBtn.textContent = soundOn ? '🔊 Sound' : '🔇 Muted';
-        });
-
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'r' || e.key === 'R') {
-                if (!game.gameOver && game.turn === 'player' && !game.waitingScore) {
-                    playerRoll();
+                // Lower Section Strategic Weights
+                if (cat.id === 'yahtzee' && score === 50) weight += 100;
+                if (cat.id === 'largeStr' && score === 40) weight += 40;
+                if (cat.id === 'smallStr' && score === 30) weight += 25;
+                if (cat.id === 'fullHouse' && score === 25) weight += 20;
+                if ((cat.id === 'threeKind' || cat.id === 'fourKind') && score > 0) {
+                    weight += 10;
                 }
-                e.preventDefault();
             }
+
+            if (weight > best.weight) {
+                best = { catId: cat.id, score, weight, catName: cat.name };
+            }
+        }
+
+        // If no smart pick works, sacrifice a category intelligently
+        if (best.score === 0 || best.catId === null) {
+            const sacrificePriority = [
+                'ones', 'twos', 'yahtzee', 'fourKind', 'threeKind', 
+                'smallStr', 'largeStr', 'fullHouse', 'threes', 'fours', 'fives', 'sixes'
+            ];
+
+            for (const catId of sacrificePriority) {
+                if (openCats.some(c => c.id === catId)) {
+                    const catObj = CATEGORIES.find(c => c.id === catId);
+                    return { catId, score: 0, catName: catObj.name };
+                }
+            }
+        }
+
+        return best;
+    }
+
+    // Helper function needed for the upper face value lookup
+    function getUpperFaceValue(catId) {
+        const mapping = { ones: 1, twos: 2, threes: 3, fours: 4, fives: 5, sixes: 6 };
+        return mapping[catId] || 0;
+    }
+
+    function getUpperCatId(val) {
+        return ['ones', 'twos', 'threes', 'fours', 'fives', 'sixes'][val - 1];
+    }
+
+    function getUpperTarget(catId) {
+        const targets = { ones: 3, twos: 6, threes: 9, fours: 12, fives: 15, sixes: 18 };
+        return targets[catId] || 0;
+    }
+
+    // --- Event Listeners ---
+    rollBtn.addEventListener('click', roll);
+    restartBtn.addEventListener('click', initGame);
+
+    resetStatsBtn.addEventListener('click', () => {
+        if (confirm("Reset career statistics?")) {
+            stats = { played: 0, wins: 0, losses: 0, highScore: 0, yahtzees: 0 };
+            saveStats();
+        }
+    });
+
+    diceElements.forEach(el => {
+        const handleInteraction = () => {
+            const index = parseInt(el.dataset.index);
+            toggleHold(index);
+        };
+
+        el.addEventListener('click', handleInteraction);
+        el.addEventListener('keydown', (e) => {
             if (e.key === ' ' || e.key === 'Enter') {
-                if (game.gameOver) resetGame();
                 e.preventDefault();
-            }
-            const n = parseInt(e.key);
-            if (n >= 1 && n <= 5) {
-                if (game.turn === 'player' && !game.waitingScore) {
-                    toggleHold(n - 1);
-                }
-                e.preventDefault();
+                handleInteraction();
             }
         });
+    });
 
-        // ===== START =====
-        initAudio();
-        resetGame();
-
-        const orig = playSound;
-        playSound = function(t) { try { orig(t); } catch (e) {} };
-    </script>
+    // Boot
+    loadStats();
+    initGame();
+</script>
 </body>
 </html>
