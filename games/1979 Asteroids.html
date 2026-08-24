@@ -102,9 +102,6 @@
         const W = 800,
             H = 600;
 
-		// ----- MOBILE CONTROLS -----
-		let touchControls = { left: false, right: false, up: false };
-
         // ----- HIGH SCORE (persistent) -----
         let highScore = parseInt(localStorage.getItem('asteroidsHighScore')) || 0;
         highScoreSpan.textContent = highScore;
@@ -512,11 +509,11 @@
             }
 
             // ---- Ship rotation ----
-            if (keys.left || touchControls.left) ship.angle -= ship.turnSpeed;
-            if (keys.right || touchControls.right) ship.angle += ship.turnSpeed;
+            if (keys.left) ship.angle -= ship.turnSpeed;
+            if (keys.right) ship.angle += ship.turnSpeed;
 
             // ---- Ship thrust ----
-            if (keys.up || touchControls.up) {
+            if (keys.up) {
                 const thrustX = Math.cos(ship.angle) * ship.thrustPower;
                 const thrustY = Math.sin(ship.angle) * ship.thrustPower;
                 ship.vx += thrustX;
@@ -743,7 +740,6 @@
             }
             ctx.globalAlpha = 1;
             ctx.shadowBlur = 0;
-			drawTouchControls();
 
             // ---- Asteroids ----
             for (const ast of asteroids) {
@@ -985,112 +981,6 @@
         // ----- START -----
         resetGame();
         gameLoop();
-        
-// Draw touch controls on canvas
-function drawTouchControls() {
-    if (!('ontouchstart' in window)) return;
-    
-    ctx.save();
-    ctx.globalAlpha = 0.5;
-    
-    // Left button
-    ctx.fillStyle = '#224466';
-    ctx.shadowColor = '#4488ff';
-    ctx.shadowBlur = 10;
-    ctx.beginPath();
-    ctx.arc(70, 530, 35, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#88ddff';
-    ctx.font = '30px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.shadowBlur = 0;
-    ctx.fillText('◀', 70, 530);
-    
-    // Right button
-    ctx.fillStyle = '#224466';
-    ctx.shadowColor = '#4488ff';
-    ctx.shadowBlur = 10;
-    ctx.beginPath();
-    ctx.arc(150, 530, 35, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#88ddff';
-    ctx.shadowBlur = 0;
-    ctx.fillText('▶', 150, 530);
-    
-    // Thrust button
-    ctx.fillStyle = '#224466';
-    ctx.shadowColor = '#4488ff';
-    ctx.shadowBlur = 10;
-    ctx.beginPath();
-    ctx.arc(230, 530, 35, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#88ddff';
-    ctx.shadowBlur = 0;
-    ctx.fillText('▲', 230, 530);
-    
-    // Fire button
-    ctx.fillStyle = '#662244';
-    ctx.shadowColor = '#ff4488';
-    ctx.shadowBlur = 15;
-    ctx.beginPath();
-    ctx.arc(730, 530, 40, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#ff6688';
-    ctx.shadowBlur = 0;
-    ctx.font = '28px Arial';
-    ctx.fillText('🔥', 730, 530);
-    
-    ctx.restore();
-}
-
-// Touch handlers
-canvas.addEventListener('touchstart', handleTouch, { passive: false });
-canvas.addEventListener('touchmove', handleTouch, { passive: false });
-canvas.addEventListener('touchend', (e) => {
-    e.preventDefault();
-    touchControls.left = false;
-    touchControls.right = false;
-    touchControls.up = false;
-}, { passive: false });
-
-function handleTouch(e) {
-    e.preventDefault();
-    initAudio();
-    
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    
-    // Reset controls
-    touchControls.left = false;
-    touchControls.right = false;
-    touchControls.up = false;
-    
-    // Check each touch
-    for (let touch of e.touches) {
-        const x = (touch.clientX - rect.left) * scaleX;
-        const y = (touch.clientY - rect.top) * scaleY;
-        
-        // Left button (70, 530, radius 35)
-        if (Math.hypot(x - 70, y - 530) < 35) {
-            touchControls.left = true;
-        }
-        // Right button (150, 530, radius 35)
-        else if (Math.hypot(x - 150, y - 530) < 35) {
-            touchControls.right = true;
-        }
-        // Thrust button (230, 530, radius 35)
-        else if (Math.hypot(x - 230, y - 530) < 35) {
-            touchControls.up = true;
-        }
-        // Fire button (730, 530, radius 40)
-        else if (Math.hypot(x - 730, y - 530) < 40) {
-            if (!gameOver && !paused) shoot();
-        }
-    }
-}
-        
     </script>
 </body>
 </html>
