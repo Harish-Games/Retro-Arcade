@@ -102,6 +102,9 @@
         const W = 800,
             H = 600;
 
+		// ----- MOBILE CONTROLS -----
+		let touchControls = { left: false, right: false, up: false };
+
         // ----- HIGH SCORE (persistent) -----
         let highScore = parseInt(localStorage.getItem('asteroidsHighScore')) || 0;
         highScoreSpan.textContent = highScore;
@@ -983,9 +986,6 @@
         resetGame();
         gameLoop();
         
-        // ----- SIMPLE MOBILE CONTROLS -----
-let touchControls = { left: false, right: false, up: false };
-
 // Draw touch controls on canvas
 function drawTouchControls() {
     if (!('ontouchstart' in window)) return;
