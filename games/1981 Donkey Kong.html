@@ -39,11 +39,11 @@
 	</head>
 	<body>
 
-		<div id="scoreBoard">SCORE: <span id="score">0</span> | HIGH: <span id="highScore">0</span> | LIVES: <span id="lives">3</span> | LEVEL: <span id="level">1</span> | BONUS: <span id="bonus">5000</span></div>
+		<div id="scoreBoard">SCORE: <span id="score">0</span> | HIGH: <span id="highScore">0</span> | LIVES: <span id="lives">3</span> | LEVEL: <span id="level">1</span> | BONUS: <span id="bonus">5000</span> | <span id="difficultyLabel">NORMAL</span></div>
 		<canvas id="gameCanvas" width="480" height="560"></canvas>
 		<div class="controls">
-			<strong>Controls:</strong> Arrow Keys to Move/Climb | <strong>Spacebar</strong> to Jump
-		</div>
+    <strong>Controls:</strong> Arrow Keys to Move/Climb | <strong>Spacebar</strong> to Jump | <strong>P</strong> to Pause
+</div>
 
 	<script>
 		const canvas = document.getElementById("gameCanvas");
@@ -75,6 +75,53 @@
 			osc.stop(audioCtx.currentTime + duration);
 		}
 
+		    function playWhoosh(volume = 0.18, duration = 0.25) {
+        if (!audioCtx) return;
+
+        // --- Layer 1: filtered noise (the "shh") ---
+        const bufferSize = Math.floor(audioCtx.sampleRate * duration);
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = buffer;
+
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = "bandpass";
+        filter.frequency.setValueAtTime(1800, audioCtx.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + duration);
+        filter.Q.value = 1.5;
+
+        const noiseGain = audioCtx.createGain();
+        noiseGain.gain.setValueAtTime(0, audioCtx.currentTime);
+        noiseGain.gain.linearRampToValueAtTime(volume, audioCtx.currentTime + 0.03);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+
+        noise.connect(filter);
+        filter.connect(noiseGain);
+        noiseGain.connect(audioCtx.destination);
+        noise.start();
+        noise.stop(audioCtx.currentTime + duration);
+
+        // --- Layer 2: low resonant sweep (the "thrrung" body) ---
+        const osc = audioCtx.createOscillator();
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(140, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(70, audioCtx.currentTime + duration * 0.8);
+
+        const oscGain = audioCtx.createGain();
+        oscGain.gain.setValueAtTime(0, audioCtx.currentTime);
+        oscGain.gain.linearRampToValueAtTime(volume * 0.6, audioCtx.currentTime + 0.02);
+        oscGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration * 0.9);
+
+        osc.connect(oscGain);
+        oscGain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+    }
+
 		function playJump()   { beep(400, 0.10, "square", 0.06, 700); }
 		function playDeath()  { beep(300, 0.40, "sawtooth", 0.10, 80); }
 		function playWin()    { beep(523, 0.10, "square", 0.08); setTimeout(() => beep(659, 0.10, "square", 0.08), 100); setTimeout(() => beep(784, 0.20, "square", 0.08), 200); }
@@ -87,10 +134,39 @@
 		const livesEl = document.getElementById("lives");
 		const levelEl = document.getElementById("level");
 		const bonusEl = document.getElementById("bonus");
+		    const difficultyEl = document.getElementById("difficultyLabel");
+
+ const DIFFICULTY = {
+        0: { name: "EASY",   barrelSpeed: 0.7, barrelRate: 1.3,  fireSpeed: 0.7, fireRate: 1.5, lives: 4 },
+        1: { name: "NORMAL", barrelSpeed: 1.0, barrelRate: 1.0,  fireSpeed: 1.0, fireRate: 1.0, lives: 3 },
+        2: { name: "HARD",   barrelSpeed: 1.3, barrelRate: 0.75, fireSpeed: 1.3, fireRate: 0.7, lives: 3 }
+    };
+    let difficultyIndex = 1;      // 1 = NORMAL default
+    let onMenu = true;            // true = showing startup menu
+
+    function diff() { return DIFFICULTY[difficultyIndex]; }
+    
     const highScoreEl = document.getElementById("highScore");
 
-    let highScore = parseInt(localStorage.getItem("dk_highScore") || "0", 10);
-    highScoreEl.textContent = highScore;
+    let highScore = 0;
+function formatScore(n) {
+    return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+    function highScoreKey() {
+        return "dk_highScore_" + diff().name.toLowerCase();
+    }
+
+function loadHighScore() {
+    highScore = parseInt(localStorage.getItem(highScoreKey()) || "0", 10);
+    highScoreEl.textContent = formatScore(highScore);
+}
+
+function saveHighScore(value) {
+    highScore = value;
+    localStorage.setItem(highScoreKey(), String(value));
+    highScoreEl.textContent = formatScore(highScore);
+}
 
 		// Game State
     let paused = false;
@@ -99,21 +175,37 @@
     const SWING_DURATION = 12;
     let dyingTimer = 0;
     const DYING_DURATION = 40;
+    const GAME_OVER_FADE_DURATION = 60;
 		
 		let playerFacing = 1;   // 1 = right, -1 = left
 		let score = 0;
 		let lives = 3;
 		let currentLevel = 1;
-		let gameOver = false;
+		    let gameOver = false;
+    let gameOverFadeTimer = 0;
 		let victoryState = false;
 		let victoryTimer = 0;
-		let levelStartTimer = 0;
+    let levelStartTimer = 0;
 
 		const keys = {};
-    window.addEventListener("keydown", e => {
+        window.addEventListener("keydown", e => {
         initAudio();
         keys[e.code] = true;
-        if (gameOver && (e.code === "Enter" || e.code === "Space")) resetGame();
+
+        if (onMenu) {
+            if (e.code === "ArrowLeft")  difficultyIndex = (difficultyIndex + 2) % 3;
+            if (e.code === "ArrowRight") difficultyIndex = (difficultyIndex + 1) % 3;
+            if (e.code === "Space" || e.code === "Enter") {
+                onMenu = false;
+                resetGame();
+            }
+            return;
+        }
+
+        if (gameOver && (e.code === "Enter" || e.code === "Space")) {
+            onMenu = true;   // back to menu after game over
+            return;
+        }
         if ((e.code === "KeyP" || e.code === "Escape") && !gameOver && !victoryState) {
             paused = !paused;
         }
@@ -188,8 +280,8 @@
     }
 
     function spawnBarrel() {
-        let baseSpeed = 1.6 + (currentLevel * 0.15);
-        kongThrowTimer = KONG_THROW_FRAMES;
+        let baseSpeed = (1.6 + (currentLevel * 0.10)) * diff().barrelSpeed;
+                kongThrowTimer = KONG_THROW_FRAMES;
         beep(120, 0.15, "sawtooth", 0.08, 60);   // low thunk
 			barrels.push({
 				x: 155,
@@ -204,9 +296,10 @@
 		}
 
 	function spawnFireball() {
-		const speed = 1.0 + currentLevel * 0.15;
-		const ground = platforms[0];
-		fireballs.push({
+        const speed = (1.0 + currentLevel * 0.05) * diff().fireSpeed;
+        		const ground = platforms[0];
+        playWhoosh(0.18, 0.25);   // fire "thrrung"
+                		fireballs.push({
 			x: 40,
 			y: ground.y - 7,
 			r: 7,
@@ -244,10 +337,9 @@
         dyingTimer = 0;
         if (lives <= 0) {
             gameOver = true;
+            gameOverFadeTimer = GAME_OVER_FADE_DURATION;
             if (score > highScore) {
-                highScore = score;
-                localStorage.setItem("dk_highScore", String(highScore));
-                highScoreEl.textContent = highScore;
+                saveHighScore(score);
             }
         } else {
             resetPositions();
@@ -264,34 +356,37 @@
 			barrels = [];
 			fireballs = [];
 			fireballSpawnTimer = 0;
-			bonusTimer = BONUS_START;
-			bonusTickCounter = 0;
+        bonusTimer = BONUS_START;
+                			bonusTickCounter = 0;
 			bonusEl.textContent = bonusTimer;
 			hammerTimer = 0;
-			        if (currentLevel >= 2) {
+			        if (currentLevel >= 3) {
             hammers = pickHammers();
         } else {
             hammers = [];
         }
 		}
 
-		function resetGame() {
-			score = 0;
-			lives = 3;
-			currentLevel = 1;
-			gameOver = false;
-			victoryState = false;
-			victoryTimer = 0;
-			barrelSpawnTimer = 0;
-			fireballSpawnTimer = 0;
-			barrels = [];
-			fireballs = [];
-			resetPositions();
-			scoreEl.textContent = score;
-			livesEl.textContent = lives;
-			levelEl.textContent = currentLevel;
-			bonusEl.textContent = bonusTimer;
-		}
+    function resetGame() {
+    loadHighScore();
+    score = 0;
+    lives = diff().lives;
+    currentLevel = 1;
+    gameOver = false;
+        gameOverFadeTimer = 0;
+    victoryState = false;
+    victoryTimer = 0;
+    barrelSpawnTimer = 0;
+    fireballSpawnTimer = 0;
+    barrels = [];
+    fireballs = [];
+    resetPositions();
+    scoreEl.textContent = score;
+    livesEl.textContent = lives;
+    levelEl.textContent = currentLevel;
+    bonusEl.textContent = bonusTimer;
+    difficultyEl.textContent = diff().name;
+}
 
 		function nextLevel() {
 			currentLevel++;
@@ -301,8 +396,14 @@
 			playLevelUp();
 		}
 
-    function update() {
-        if (gameOver || paused) return;
+        function update() {
+                if (onMenu || paused) return;
+
+        if (gameOver) {
+            // fade runs even while game is "over" so we can animate in
+            if (gameOverFadeTimer > 0) gameOverFadeTimer--;
+            return;
+        }
 
         if (dying) {
             dyingTimer++;
@@ -431,8 +532,8 @@
 
 			// --- BARREL LOGIC ---
 			barrelSpawnTimer++;
-			let spawnRate = Math.max(80, 150 - (currentLevel * 10));
-			if (barrelSpawnTimer > spawnRate) {
+        let spawnRate = Math.max(90, 175 - (currentLevel * 8)) * diff().barrelRate;
+        			if (barrelSpawnTimer > spawnRate) {
 				spawnBarrel();
 				barrelSpawnTimer = 0;
 			}
@@ -510,10 +611,10 @@
 			}
 
 			// --- FIREBALL LOGIC ---
-			if (currentLevel >= 3) {
+			if (currentLevel >= 5) {
 				fireballSpawnTimer++;
-				const fireballSpawnRate = Math.max(180, 360 - currentLevel * 30);
-				if (fireballSpawnTimer > fireballSpawnRate) {
+            const fireballSpawnRate = Math.max(180, 400 - currentLevel * 30) * diff().fireRate;
+            				if (fireballSpawnTimer > fireballSpawnRate) {
 					spawnFireball();
 					fireballSpawnTimer = 0;
 				}
@@ -624,6 +725,52 @@
 		function draw() {
 			ctx.fillStyle = "black";
 			ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (onMenu) {
+            ctx.fillStyle = "yellow";
+            ctx.font = "bold 32px 'Courier New'";
+            ctx.textAlign = "center";
+            ctx.fillText("DONKEY KONG", canvas.width / 2, 140);
+
+            ctx.fillStyle = "white";
+            ctx.font = "16px 'Courier New'";
+            ctx.fillText("ENDLESS ARCADE EDITION", canvas.width / 2, 170);
+
+            ctx.font = "bold 24px 'Courier New'";
+            const names = ["EASY", "NORMAL", "HARD"];
+            const keys = ["easy", "normal", "hard"];
+            for (let i = 0; i < 3; i++) {
+                const selected = i === difficultyIndex;
+                const x = canvas.width / 2 - 140 + i * 140;
+                if (selected) {
+                    ctx.fillStyle = "yellow";
+                    ctx.fillText(">", x - 55, 280);
+                    ctx.fillText("<", x + 55, 280);
+                }
+                ctx.fillStyle = selected ? "yellow" : "#666";
+                ctx.font = "bold 24px 'Courier New'";
+                ctx.fillText(names[i], x, 280);
+
+                // high score below each name
+                               const storedHi = parseInt(localStorage.getItem("dk_highScore_" + keys[i]) || "0", 10);
+                ctx.fillStyle = selected ? "#ffcc00" : "#444";
+                ctx.font = "12px 'Courier New'";
+                ctx.fillText("HI " + formatScore(storedHi), x, 305);
+            }
+
+            ctx.fillStyle = "white";
+            ctx.font = "14px 'Courier New'";
+            ctx.fillText("ARROW KEYS TO SELECT", canvas.width / 2, 380);
+            ctx.fillText("SPACE TO START", canvas.width / 2, 405);
+
+            ctx.fillStyle = "#888";
+            ctx.font = "12px 'Courier New'";
+            ctx.fillText("Arrow Keys Move/Climb  |  Space Jump", canvas.width / 2, 480);
+            ctx.fillText("P Pauses", canvas.width / 2, 500);
+
+            ctx.textAlign = "left";
+            return;
+        }
 
 			// 1. Draw Blue Ladders
 			ctx.strokeStyle = "#00ffff";
@@ -1009,8 +1156,15 @@
 
 			// Screen Overlays
         if (gameOver) {
-            ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
+            // fade the game to black, then reveal the overlay
+            const fadeProgress = 1 - (gameOverFadeTimer / GAME_OVER_FADE_DURATION);  // 0 → 1
+            const backdropAlpha = 0.9 * fadeProgress;
+            const textAlpha = Math.max(0, fadeProgress * 1.5 - 0.5);   // text appears after ~1/3 of the fade
+
+            ctx.fillStyle = `rgba(0, 0, 0, ${backdropAlpha})`;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.globalAlpha = textAlpha;
             ctx.fillStyle = "red";
             ctx.font = "bold 32px 'Courier New'";
             ctx.fillText("GAME OVER", 150, 260);
@@ -1026,6 +1180,7 @@
             }
             ctx.fillStyle = "white";
             ctx.fillText("PRESS ENTER TO PLAY AGAIN", 120, 365);
+            ctx.globalAlpha = 1;
         }
 
 			if (victoryState) {
