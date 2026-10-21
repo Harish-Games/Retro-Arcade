@@ -1,374 +1,1061 @@
-<!-- Gemini Created -->
+	<!-- Gemini Created -->
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Donkey Kong - Endless Arcade Edition</title>
-    <style>
-        body {
-            background-color: #111;
-            color: white;
-            font-family: 'Courier New', Courier, monospace;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            overflow: hidden;
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Donkey Kong - Endless Arcade Edition</title>
+		<style>
+			body {
+				background-color: #111;
+				color: white;
+				font-family: 'Courier New', Courier, monospace;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				height: 100vh;
+				margin: 0;
+				overflow: hidden;
+			}
+			#scoreBoard {
+				font-size: 18px;
+				margin-bottom: 10px;
+				letter-spacing: 2px;
+			}
+			canvas {
+				border: 4px solid #333;
+				background-color: black;
+				box-shadow: 0px 0px 20px rgba(255, 0, 85, 0.3);
+			}
+			.controls {
+				margin-top: 15px;
+				color: #aaa;
+				text-align: center;
+				font-size: 14px;
+			}
+		</style>
+	</head>
+	<body>
+
+		<div id="scoreBoard">SCORE: <span id="score">0</span> | HIGH: <span id="highScore">0</span> | LIVES: <span id="lives">3</span> | LEVEL: <span id="level">1</span> | BONUS: <span id="bonus">5000</span></div>
+		<canvas id="gameCanvas" width="480" height="560"></canvas>
+		<div class="controls">
+			<strong>Controls:</strong> Arrow Keys to Move/Climb | <strong>Spacebar</strong> to Jump
+		</div>
+
+	<script>
+		const canvas = document.getElementById("gameCanvas");
+		const ctx = canvas.getContext("2d");
+
+		// --- AUDIO ---
+		let audioCtx = null;
+		function initAudio() {
+			if (!audioCtx) {
+				audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+			}
+			if (audioCtx.state === "suspended") audioCtx.resume();
+		}
+
+		function beep(freq, duration, type = "square", volume = 0.08, slideTo = null) {
+			if (!audioCtx) return;
+			const osc = audioCtx.createOscillator();
+			const gain = audioCtx.createGain();
+			osc.type = type;
+			osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+			if (slideTo !== null) {
+				osc.frequency.linearRampToValueAtTime(slideTo, audioCtx.currentTime + duration);
+			}
+			gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+			gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+			osc.connect(gain);
+			gain.connect(audioCtx.destination);
+			osc.start();
+			osc.stop(audioCtx.currentTime + duration);
+		}
+
+		function playJump()   { beep(400, 0.10, "square", 0.06, 700); }
+		function playDeath()  { beep(300, 0.40, "sawtooth", 0.10, 80); }
+		function playWin()    { beep(523, 0.10, "square", 0.08); setTimeout(() => beep(659, 0.10, "square", 0.08), 100); setTimeout(() => beep(784, 0.20, "square", 0.08), 200); }
+		function playHammer() { beep(800, 0.15, "square", 0.10, 400); }
+		function playSmash()  { beep(150, 0.08, "square", 0.10, 60); }
+		function playScore()  { beep(880, 0.06, "square", 0.05); }
+		function playLevelUp(){ beep(400, 0.08, "square", 0.08); setTimeout(() => beep(600, 0.08, "square", 0.08), 80); setTimeout(() => beep(900, 0.15, "square", 0.08), 160); }
+
+		const scoreEl = document.getElementById("score");
+		const livesEl = document.getElementById("lives");
+		const levelEl = document.getElementById("level");
+		const bonusEl = document.getElementById("bonus");
+    const highScoreEl = document.getElementById("highScore");
+
+    let highScore = parseInt(localStorage.getItem("dk_highScore") || "0", 10);
+    highScoreEl.textContent = highScore;
+
+		// Game State
+    let paused = false;
+    let dying = false;
+    let swingTimer = 0;
+    const SWING_DURATION = 12;
+    let dyingTimer = 0;
+    const DYING_DURATION = 40;
+		
+		let playerFacing = 1;   // 1 = right, -1 = left
+		let score = 0;
+		let lives = 3;
+		let currentLevel = 1;
+		let gameOver = false;
+		let victoryState = false;
+		let victoryTimer = 0;
+		let levelStartTimer = 0;
+
+		const keys = {};
+    window.addEventListener("keydown", e => {
+        initAudio();
+        keys[e.code] = true;
+        if (gameOver && (e.code === "Enter" || e.code === "Space")) resetGame();
+        if ((e.code === "KeyP" || e.code === "Escape") && !gameOver && !victoryState) {
+            paused = !paused;
         }
-        #scoreBoard {
-            font-size: 18px;
-            margin-bottom: 10px;
-            letter-spacing: 2px;
-        }
-        canvas {
-            border: 4px solid #333;
-            background-color: black;
-            box-shadow: 0px 0px 20px rgba(255, 0, 85, 0.3);
-        }
-        .controls {
-            margin-top: 15px;
-            color: #aaa;
-            text-align: center;
-            font-size: 14px;
-        }
-    </style>
-</head>
-<body>
+    });
+    		window.addEventListener("keyup", e => keys[e.code] = false);
 
-    <div id="scoreBoard">SCORE: <span id="score">0</span> | LIVES: <span id="lives">3</span> | LEVEL: <span id="level">1</span></div>
-    <canvas id="gameCanvas" width="480" height="560"></canvas>
-    <div class="controls">
-        <strong>Controls:</strong> Arrow Keys to Move/Climb | <strong>Spacebar</strong> to Jump
-    </div>
+		// Grid Layout
+		const platforms = [
+			{ x: 0,   y: 530, w: 480, h: 12 },
+			{ x: 0,   y: 450, w: 430, h: 12 },
+			{ x: 50,  y: 370, w: 430, h: 12 },
+			{ x: 0,   y: 290, w: 430, h: 12 },
+			{ x: 50,  y: 210, w: 430, h: 12 },
+			{ x: 0,   y: 130, w: 360, h: 12 },
+			{ x: 180, y: 75,  w: 120, h: 12 }
+		];
 
-    <script>
-        const canvas = document.getElementById("gameCanvas");
-        const ctx = canvas.getContext("2d");
+		// Ladders
+		const ladders = [
+			{ x: 390, y: 450, w: 18, h: 80 },
+			{ x: 70,  y: 370, w: 18, h: 80 },
+			{ x: 390, y: 290, w: 18, h: 80 },
+			{ x: 70,  y: 210, w: 18, h: 80 },
+			{ x: 200, y: 130, w: 18, h: 80 },
+			{ x: 230, y: 75,  w: 18, h: 55 }
+		];
 
-        // Game State
-        let score = 0;
-        let lives = 3;
-        let currentLevel = 1;
-        let gameOver = false;
-        let victoryState = false;
-        let victoryTimer = 0;
+		// Jumpman Player
+		const player = {
+			x: 30,
+			y: 490,
+			w: 16,
+			h: 22,
+			vx: 0,
+			vy: 0,
+			speed: 2.2,
+			jumpForce: 6.8,
+			gravity: 0.35,
+			isGrounded: false,
+			isClimbing: false
+		};
 
-        const keys = {};
-        window.addEventListener("keydown", e => keys[e.code] = true);
-        window.addEventListener("keyup", e => keys[e.code] = false);
+		// Barrels
+		let barrels = [];
+		let barrelSpawnTimer = 0;
 
-        // Grid Layout
-        const platforms = [
-            { x: 0,   y: 530, w: 480, h: 12 }, // Ground (Level 0)
-            { x: 0,   y: 450, w: 430, h: 12 }, // Level 1 (Gap on Right)
-            { x: 50,  y: 370, w: 430, h: 12 }, // Level 2 (Gap on Left)
-            { x: 0,   y: 290, w: 430, h: 12 }, // Level 3 (Gap on Right)
-            { x: 50,  y: 210, w: 430, h: 12 }, // Level 4 (Gap on Left)
-            { x: 0,   y: 130, w: 360, h: 12 }, // Level 5 (Kong's floor)
-            { x: 180, y: 75,  w: 120, h: 12 }  // Pauline's Top Safety Perch
-        ];
+		// Fireballs
+		let fireballs = [];
+		let fireballSpawnTimer = 0;
+		
+		let bonusTimer = 5000;
+		const BONUS_START = 5000;
+		const BONUS_TICK = 1;        // points lost per tick
+		const BONUS_TICK_FRAMES = 36; // frames between ticks (~1.2s per point, 100 pts ≈ 2s)
+		let bonusTickCounter = 0;
 
-        // Ladders
-        const ladders = [
-            { x: 390, y: 450, w: 18, h: 80 }, 
-            { x: 70,  y: 370, w: 18, h: 80 }, 
-            { x: 390, y: 290, w: 18, h: 80 }, 
-            { x: 70,  y: 210, w: 18, h: 80 }, 
-            { x: 200, y: 130, w: 18, h: 80 }, 
-            { x: 230, y: 75,  w: 18, h: 55 }  
-        ];
+		let kongThrowTimer = 0;
+		const KONG_THROW_FRAMES = 18;   // ~0.3s wind-up + throw pose
+		let hammers = [];
+		let hammerTimer = 0;
+		const HAMMER_DURATION = 300;   // 5 seconds at 60fps
+    const HAMMER_POOL = [
+        { x: 100, y: 350 }, { x: 200, y: 350 }, { x: 300, y: 350 }, { x: 380, y: 350 }, // y=370 girder
+        { x: 100, y: 270 }, { x: 200, y: 270 }, { x: 300, y: 270 }, { x: 380, y: 270 }, // y=290 girder
+        { x: 100, y: 190 }, { x: 200, y: 190 }, { x: 300, y: 190 }, { x: 380, y: 190 }, // y=210 girder
+        { x: 100, y: 430 }, { x: 200, y: 430 }, { x: 300, y: 430 }                     // y=450 girder
+    ];
 
-        // Jumpman Player
-        const player = {
-            x: 30,
-            y: 490,
-            w: 16,
-            h: 22,
-            vx: 0,
-            vy: 0,
-            speed: 2.2,
-            jumpForce: 6.8,
-            gravity: 0.35,
-            isGrounded: false,
-            isClimbing: false
-        };
+    function pickHammers() {
+        const shuffled = [...HAMMER_POOL].sort(() => Math.random() - 0.5);
+        return shuffled.slice(0, 2).map(p => ({ x: p.x, y: p.y, w: 20, h: 20, taken: false }));
+    }
 
-        // Barrels
-        let barrels = [];
-        let barrelSpawnTimer = 0;
+    function spawnBarrel() {
+        let baseSpeed = 1.6 + (currentLevel * 0.15);
+        kongThrowTimer = KONG_THROW_FRAMES;
+        beep(120, 0.15, "sawtooth", 0.08, 60);   // low thunk
+			barrels.push({
+				x: 155,
+				y: 90,               // starts above Kong's head
+				r: 8,
+				vx: baseSpeed,
+				vy: 0,
+				isFalling: true,     // falls onto the girder before rolling
+				thrown: true,
+				scored: false
+			});
+		}
 
-        function spawnBarrel() {
-            let baseSpeed = 1.6 + (currentLevel * 0.3);
-            barrels.push({
-                x: 320,       
-                y: 110,
-                r: 8,
-                vx: -baseSpeed, 
-                vy: 0,
-                isFalling: false
-            });
-        }
+	function spawnFireball() {
+		const speed = 1.0 + currentLevel * 0.15;
+		const ground = platforms[0];
+		fireballs.push({
+			x: 40,
+			y: ground.y - 7,
+			r: 7,
+			vx: speed,
+			speed: speed,
+			climbing: false,
+			climbTarget: null,
+			climbDir: 0,
+			ladderCooldown: 0,
+			scored: false
+		});
+	}
 
-        function getActiveLadder(entity) {
-            for (let l of ladders) {
-                if (entity.x + entity.w/2 > l.x && entity.x + entity.w/2 < l.x + l.w &&
-                    entity.y + entity.h > l.y && entity.y < l.y + l.h) {
-                    return l;
-                }
+		function getActiveLadder(entity) {
+			for (let l of ladders) {
+				if (entity.x + entity.w/2 > l.x && entity.x + entity.w/2 < l.x + l.w &&
+					entity.y + entity.h > l.y && entity.y < l.y + l.h) {
+					return l;
+				}
+			}
+			return null;
+		}
+
+    function playerDeath() {
+        if (dying) return;   // prevent double-death in one frame
+        lives--;
+        livesEl.textContent = lives;
+        playDeath();
+        dying = true;
+        dyingTimer = 0;
+    }
+
+    function finishDeath() {
+        dying = false;
+        dyingTimer = 0;
+        if (lives <= 0) {
+            gameOver = true;
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem("dk_highScore", String(highScore));
+                highScoreEl.textContent = highScore;
             }
-            return null;
-        }
-
-        function playerDeath() {
-            lives--;
-            document.getElementById("lives").innerText = lives;
-            if (lives <= 0) {
-                gameOver = true;
-            } else {
-                resetPositions();
-            }
-        }
-
-        function resetPositions() {
-            player.x = 30;
-            player.y = 490;
-            player.vx = 0;
-            player.vy = 0;
-            player.isClimbing = false;
-            barrels = [];
-        }
-
-        function nextLevel() {
-            currentLevel++;
-            document.getElementById("level").innerText = currentLevel;
-            victoryState = false;
+        } else {
             resetPositions();
         }
+    }
 
-        function update() {
-            if (gameOver) return;
+		function resetPositions() {
+			player.x = 30;
+			player.y = 490;
+		        levelStartTimer = 0;
+			player.vx = 0;
+			player.vy = 0;
+			player.isClimbing = false;
+			barrels = [];
+			fireballs = [];
+			fireballSpawnTimer = 0;
+			bonusTimer = BONUS_START;
+			bonusTickCounter = 0;
+			bonusEl.textContent = bonusTimer;
+			hammerTimer = 0;
+			        if (currentLevel >= 2) {
+            hammers = pickHammers();
+        } else {
+            hammers = [];
+        }
+		}
 
-            if (victoryState) {
-                victoryTimer++;
-                if (victoryTimer > 90) { 
-                    victoryTimer = 0;
-                    nextLevel();
-                }
-                return; 
-            }
+		function resetGame() {
+			score = 0;
+			lives = 3;
+			currentLevel = 1;
+			gameOver = false;
+			victoryState = false;
+			victoryTimer = 0;
+			barrelSpawnTimer = 0;
+			fireballSpawnTimer = 0;
+			barrels = [];
+			fireballs = [];
+			resetPositions();
+			scoreEl.textContent = score;
+			livesEl.textContent = lives;
+			levelEl.textContent = currentLevel;
+			bonusEl.textContent = bonusTimer;
+		}
 
-            // --- PLAYER LOGIC ---
-            const ladder = getActiveLadder(player);
+		function nextLevel() {
+			currentLevel++;
+			levelEl.textContent = currentLevel;
+			victoryState = false;
+			resetPositions();
+			playLevelUp();
+		}
 
-            if (ladder) {
-                if (keys["ArrowUp"]) {
-                    player.isClimbing = true;
-                    player.vy = -2;
-                } else if (keys["ArrowDown"]) {
-                    player.isClimbing = true;
-                    player.vy = 2;
-                } else if (player.isClimbing) {
-                    player.vy = 0;
-                }
-            } else {
-                player.isClimbing = false;
-            }
+    function update() {
+        if (gameOver || paused) return;
 
-            if (!player.isClimbing) {
-                if (keys["ArrowLeft"]) player.vx = -player.speed;
-                else if (keys["ArrowRight"]) player.vx = player.speed;
-                else player.vx = 0;
-
-                player.vy += player.gravity;
-
-                if (keys["Space"] && player.isGrounded) {
-                    player.vy = -player.jumpForce;
-                    player.isGrounded = false;
-                }
-            } else {
-                if (keys["ArrowUp"] || keys["ArrowDown"]) {
-                    player.vx = 0;
-                    player.x = ladder.x + ladder.w/2 - player.w/2;
-                }
-            }
-
-            player.x += player.vx;
+        if (dying) {
+            dyingTimer++;
+            player.vy += 0.5;   // fall faster
             player.y += player.vy;
-
-            if (player.x < 0) player.x = 0;
-            if (player.x + player.w > canvas.width) player.x = canvas.width - player.w;
-
-            // Player Platform Collisions
-            player.isGrounded = false;
-            if (!player.isClimbing) {
-                for (let p of platforms) {
-                    if (player.x + player.w > p.x && player.x < p.x + p.w) {
-                        if (player.y + player.h >= p.y && player.y + player.h - player.vy <= p.y + 6) {
-                            player.y = p.y - player.h;
-                            player.vy = 0;
-                            player.isGrounded = true;
-                        }
-                    }
-                }
+            if (dyingTimer >= DYING_DURATION) {
+                finishDeath();
             }
+            return;
+        }
+        levelStartTimer++;
+        
+			if (victoryState) {
+				victoryTimer++;
+				if (victoryTimer > 90) {
+					victoryTimer = 0;
+					nextLevel();
+				}
+				return;
+			}
 
-            // Check Win Condition
-            if (player.y < 100 && player.x > 170 && player.x < 310) {
-                victoryState = true;
-                score += 5000;
-                document.getElementById("score").innerText = score;
-            }
+			// --- HAMMER LOGIC ---
+			if (hammerTimer > 0) {
+				hammerTimer--;
+			}
 
-            // --- BARREL LOGIC ---
-            barrelSpawnTimer++;
-            let spawnRate = Math.max(60, 150 - (currentLevel * 15));
-            if (barrelSpawnTimer > spawnRate) { 
-                spawnBarrel();
-                barrelSpawnTimer = 0;
-            }
+			if (hammerTimer === 0) {
+				for (let h of hammers) {
+					if (h.taken) continue;
+					if (player.x + player.w > h.x && player.x < h.x + h.w &&
+						player.y + player.h > h.y && player.y < h.y + h.h) {
+						h.taken = true;
+						hammerTimer = HAMMER_DURATION;
+						playHammer();
+						break;
+					}            }
+			}
 
-            for (let i = barrels.length - 1; i >= 0; i--) {
-                let b = barrels[i];
+			const hasHammer = hammerTimer > 0;
+        if (swingTimer > 0) swingTimer--;
 
-                b.vy += 0.35; 
-                b.y += b.vy;
-                
-                if (!b.isFalling) {
-                    b.x += b.vx;
-                }
+			// --- PLAYER LOGIC ---
+			const groundedForLadder = player.isGrounded || player.isClimbing;
+			const ladder = (hasHammer || !groundedForLadder) ? null : getActiveLadder(player);
 
-                let groundedThisFrame = false;
+			if (ladder) {
+				if (keys["ArrowUp"]) {
+					player.isClimbing = true;
+					player.vy = -2;
+				} else if (keys["ArrowDown"]) {
+					player.isClimbing = true;
+					player.vy = 2;
+				} else if (player.isClimbing) {
+					player.vy = 0;
+				}
+			} else {
+				player.isClimbing = false;
+			}
 
-                for (let p of platforms) {
-                    if (b.x > p.x && b.x < p.x + p.w) {
-                        if (b.y + b.r >= p.y && b.y + b.r - b.vy <= p.y + 8) {
-                            b.y = p.y - b.r;
-                            b.vy = 0;
-                            groundedThisFrame = true;
+			if (!player.isClimbing) {
+				if (keys["ArrowLeft"])  { player.vx = -player.speed; playerFacing = -1; }
+				else if (keys["ArrowRight"]) { player.vx = player.speed; playerFacing = 1; }
+				else player.vx = 0;
 
-                            if (b.isFalling) {
-                                b.isFalling = false;
-                                b.vx = -b.vx; 
-                            }
-                        }
-                    }
-                }
+				player.vy += player.gravity;
 
-                if (!groundedThisFrame) {
-                    b.isFalling = true;
-                }
+							if (keys["Space"] && player.isGrounded && !hasHammer) {
+					player.vy = -player.jumpForce;
+					player.isGrounded = false;
+					playJump();
+				}
+			} else {
+				if (keys["ArrowUp"] || keys["ArrowDown"]) {
+					player.vx = 0;
+					player.x = ladder.x + ladder.w/2 - player.w/2;
+				}
+			}
 
-                if (b.y > canvas.height) {
+			player.x += player.vx;
+			player.y += player.vy;
+
+			if (player.x < 0) player.x = 0;
+			if (player.x + player.w > canvas.width) player.x = canvas.width - player.w;
+
+			// Player Platform Collisions
+			player.isGrounded = false;
+			if (!player.isClimbing) {
+				for (let p of platforms) {
+					if (player.x + player.w > p.x && player.x < p.x + p.w) {
+						if (player.y + player.h >= p.y && player.y + player.h - player.vy <= p.y + 6) {
+							player.y = p.y - player.h;
+							player.vy = 0;
+							player.isGrounded = true;
+						}
+					}
+				}
+			}
+
+			// Check Win Condition — must be standing on Pauline's perch
+			const perch = platforms[6];
+			const feet  = player.y + player.h;
+			const onPerch =
+				Math.abs(feet - perch.y) < 3 &&
+				player.x + player.w > perch.x &&
+				player.x < perch.x + perch.w;
+
+			if (onPerch && !victoryState) {
+				victoryState = true;
+				score += 5000;
+				score += bonusTimer;
+				scoreEl.textContent = score;
+				playWin();
+				return;
+			}
+
+			// Bonus timer countdown
+			if (bonusTimer > 0) {
+				bonusTickCounter++;
+				if (bonusTickCounter >= BONUS_TICK_FRAMES) {
+					bonusTickCounter = 0;
+					bonusTimer -= 100;
+					if (bonusTimer < 0) bonusTimer = 0;
+					bonusEl.textContent = bonusTimer;
+				}
+			}
+
+			// --- BARREL LOGIC ---
+			barrelSpawnTimer++;
+			let spawnRate = Math.max(80, 150 - (currentLevel * 10));
+			if (barrelSpawnTimer > spawnRate) {
+				spawnBarrel();
+				barrelSpawnTimer = 0;
+			}
+
+			for (let i = barrels.length - 1; i >= 0; i--) {
+				let b = barrels[i];
+
+				b.vy += 0.35;
+				b.y += b.vy;
+
+				if (!b.isFalling) {
+					b.x += b.vx;
+				}
+
+				let groundedThisFrame = false;
+
+				for (let p of platforms) {
+					if (b.x > p.x && b.x < p.x + p.w) {
+						if (b.y + b.r >= p.y && b.y + b.r - b.vy <= p.y + 8) {
+							b.y = p.y - b.r;
+							b.vy = 0;
+							groundedThisFrame = true;
+
+													if (b.isFalling) {
+								b.isFalling = false;
+								if (!b.thrown) {
+									b.vx = -b.vx;
+								}
+								b.thrown = false;
+							}
+						}
+					}
+				}
+
+				if (!groundedThisFrame) {
+					b.isFalling = true;
+				}
+
+				if (b.y > canvas.height) {
+					barrels.splice(i, 1);
+					score += 100;
+					scoreEl.textContent = score;
+					continue;
+				}
+
+				// Score for jumping a barrel (once per barrel)
+				if (!b.scored && player.vy > 0) {
+					const pfeet = player.y + player.h;
+					const top   = b.y - b.r;
+					const dx    = Math.abs(b.x - (player.x + player.w / 2));
+					if (pfeet < top && pfeet > top - 30 && dx < 24) {
+						b.scored = true;
+						score += 100;
+						scoreEl.textContent = score;
+						playScore();
+					}
+				}
+
+				// Collision Check
+				let distX = Math.abs(b.x - (player.x + player.w/2));
+				let distY = Math.abs(b.y - (player.y + player.h/2));
+				if (distX < (player.w/2 + b.r) && distY < (player.h/2 + b.r)) {
+                if (hasHammer) {
                     barrels.splice(i, 1);
-                    score += 100;
-                    document.getElementById("score").innerText = score;
+                    score += 300;
+                    scoreEl.textContent = score;
+                    playSmash();
+                    swingTimer = SWING_DURATION;
                     continue;
-                }
+                } else {
+						playerDeath();
+						break;
+					}
+				}
+			}
 
-                // Collision Check
-                let distX = Math.abs(b.x - (player.x + player.w/2));
-                let distY = Math.abs(b.y - (player.y + player.h/2));
-                if (distX < (player.w/2 + b.r) && distY < (player.h/2 + b.r)) {
-                    playerDeath();
-                    break; // CRITICAL FIX: Breaks loop instantly so undefined variables aren't read
-                }
-            }
+			// --- FIREBALL LOGIC ---
+			if (currentLevel >= 3) {
+				fireballSpawnTimer++;
+				const fireballSpawnRate = Math.max(180, 360 - currentLevel * 30);
+				if (fireballSpawnTimer > fireballSpawnRate) {
+					spawnFireball();
+					fireballSpawnTimer = 0;
+				}
+			}
+
+			const playerCX = player.x + player.w / 2;
+			const playerCY = player.y + player.h / 2;
+
+			for (let i = fireballs.length - 1; i >= 0; i--) {
+				let f = fireballs[i];
+
+				if (f.climbing && f.climbTarget) {
+					// --- Climbing a ladder, one direction only ---
+					if (f.climbDir > 0) {
+						f.y -= 1.5;
+						if (f.y <= f.climbTarget.toY) {
+							f.y = f.climbTarget.toY;
+							f.climbing = false;
+							f.climbTarget = null;
+							f.vx = f.speed;
+							f.ladderCooldown = 40;
+						}
+					} else {
+						f.y += 1.5;
+						if (f.y >= f.climbTarget.toY) {
+							f.y = f.climbTarget.toY;
+							f.climbing = false;
+							f.climbTarget = null;
+							f.vx = -f.speed;
+							f.ladderCooldown = 40;
+						}
+					}
+				} else {
+					f.x += f.vx;
+
+					const currentPlat = platforms.find(p =>
+						Math.abs((f.y + f.r) - p.y) < 6 &&
+						f.x + f.r > p.x && f.x - f.r < p.x + p.w
+					);
+
+					if (currentPlat) {
+						f.y = currentPlat.y - f.r;   // snap y to platform surface
+
+						if (f.x - f.r < currentPlat.x) {
+							f.x = currentPlat.x + f.r;
+							f.vx = Math.abs(f.vx);
+						} else if (f.x + f.r > currentPlat.x + currentPlat.w) {
+							f.x = currentPlat.x + currentPlat.w - f.r;
+							f.vx = -Math.abs(f.vx);
+						}
+
+						if (f.ladderCooldown > 0) f.ladderCooldown--;
+						if (f.ladderCooldown === 0) {
+							for (let l of ladders) {
+								const cx = l.x + l.w / 2;
+								if (Math.abs(f.x - cx) < f.r + 2) {
+									const atBottom = Math.abs((f.y + f.r) - (l.y + l.h)) < 6;
+									if (atBottom) {
+										f.climbing = true;
+										f.climbDir = 1;
+										f.climbTarget = { toY: l.y - f.r };
+										f.x = cx;
+										break;
+									}
+								}
+							}
+						}
+					} else {
+						f.y += 2;
+					}
+				}
+
+				if (f.y > canvas.height + 20) {
+					fireballs.splice(i, 1);
+					continue;
+				}
+
+				if (!f.scored && player.vy > 0) {
+					const pfeet = player.y + player.h;
+					const top   = f.y - f.r;
+					const dx    = Math.abs(f.x - playerCX);
+					if (pfeet < top && pfeet > top - 30 && dx < 24) {
+						f.scored = true;
+						score += 100;
+						scoreEl.textContent = score;
+						playScore();
+					}
+				}
+
+				const ddx = Math.abs(f.x - playerCX);
+				const ddy = Math.abs(f.y - playerCY);
+				if (ddx < (player.w/2 + f.r) && ddy < (player.h/2 + f.r)) {
+                if (hasHammer) {
+                    fireballs.splice(i, 1);
+                    score += 500;
+                    scoreEl.textContent = score;
+                    playSmash();
+                    swingTimer = SWING_DURATION;
+                    continue;
+                } else {
+						playerDeath();
+						break;
+					}
+				}
+			}
+		}
+
+		function draw() {
+			ctx.fillStyle = "black";
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+			// 1. Draw Blue Ladders
+			ctx.strokeStyle = "#00ffff";
+			ctx.lineWidth = 2;
+			for (let l of ladders) {
+				ctx.strokeRect(l.x, l.y, l.w, l.h);
+				for (let rY = l.y + 4; rY < l.y + l.h; rY += 8) {
+					ctx.beginPath();
+					ctx.moveTo(l.x, rY);
+					ctx.lineTo(l.x + l.w, rY);
+					ctx.stroke();
+				}
+			}
+
+			// 2. Draw Crimson Girders
+			ctx.fillStyle = "#ff0055";
+			for (let p of platforms) {
+				ctx.fillRect(p.x, p.y, p.w, p.h);
+				ctx.fillStyle = "#111";
+				for (let j = p.x + 6; j < p.x + p.w - 4; j += 14) {
+					ctx.fillRect(j, p.y + 2, 4, p.h - 4);
+				}
+				ctx.fillStyle = "#ff0055";
+			}
+
+			// 3. Draw Kong
+			const throwing = kongThrowTimer > 0;
+			const kx = 100, ky = 70;   // Kong's bounding box origin
+
+			// --- SILHOUETTE (dark brown) ---
+			ctx.fillStyle = "#4a2408";
+
+			// head (wide, flat-topped)
+			ctx.fillRect(kx + 8,  ky,      40, 10);
+			ctx.fillRect(kx + 6,  ky + 6,  44, 16);
+			ctx.fillRect(kx + 10, ky + 18, 36, 6);
+
+			// brow ridge (sticks out to sides)
+			ctx.fillRect(kx + 4,  ky + 14, 48, 4);
+
+			// shoulders (wider than head)
+			ctx.fillRect(kx,      ky + 24, 56, 6);
+
+			// torso (tapering to narrow waist)
+			ctx.fillRect(kx + 2,  ky + 30, 52, 14);
+			ctx.fillRect(kx + 6,  ky + 44, 44, 8);
+
+			// hips
+			ctx.fillRect(kx + 6,  ky + 52, 44, 8);
+
+			// --- FACE (skin tone) ---
+			ctx.fillStyle = "#c98e5a";
+			// muzzle area
+			ctx.fillRect(kx + 12, ky + 20, 32, 10);
+			// nose/muzzle highlight
+			ctx.fillStyle = "#e0a878";
+			ctx.fillRect(kx + 22, ky + 24, 12, 6);
+
+			// --- EYES (deep set, under brow) ---
+			ctx.fillStyle = "#000";
+			ctx.fillRect(kx + 14, ky + 16, 6, 4);
+			ctx.fillRect(kx + 36, ky + 16, 6, 4);
+
+			// eye highlights
+			ctx.fillStyle = "#fff";
+			ctx.fillRect(kx + 16, ky + 17, 2, 2);
+			ctx.fillRect(kx + 38, ky + 17, 2, 2);
+
+			// --- NOSTRILS ---
+			ctx.fillStyle = "#000";
+			ctx.fillRect(kx + 24, ky + 27, 2, 2);
+			ctx.fillRect(kx + 30, ky + 27, 2, 2);
+
+			// --- MOUTH (frowning line) ---
+			ctx.fillStyle = "#2a1404";
+			ctx.fillRect(kx + 20, ky + 32, 16, 2);
+
+			// --- CHEST HIGHLIGHT (lighter fur) ---
+			ctx.fillStyle = "#8a4a1c";
+			ctx.fillRect(kx + 14, ky + 34, 28, 8);
+
+			// --- ARMS ---
+			if (throwing) {
+				// right arm raised overhead, barrel in hand
+				ctx.fillStyle = "#4a2408";
+				ctx.fillRect(kx + 48, ky - 8, 12, 28);   // upper arm
+				ctx.fillRect(kx + 56, ky - 14, 14, 12);  // forearm reaching
+				ctx.fillStyle = "#c98e5a";
+				ctx.fillRect(kx + 62, ky - 12, 10, 10);  // hand
+			} else {
+				// right arm hanging
+				ctx.fillStyle = "#4a2408";
+				ctx.fillRect(kx + 48, ky + 26, 12, 22);
+				ctx.fillStyle = "#c98e5a";
+				ctx.fillRect(kx + 50, ky + 46, 10, 10);
+			}
+
+			// left arm (always down, on his knee)
+			ctx.fillStyle = "#4a2408";
+			ctx.fillRect(kx - 4, ky + 26, 12, 22);
+			ctx.fillStyle = "#c98e5a";
+			ctx.fillRect(kx - 2, ky + 46, 10, 10);
+
+			// --- LEGS (bowed, short, gorilla posture) ---
+			ctx.fillStyle = "#4a2408";
+			ctx.fillRect(kx + 10, ky + 58, 14, 8);
+			ctx.fillRect(kx + 34, ky + 58, 14, 8);
+			ctx.fillStyle = "#c98e5a";
+			ctx.fillRect(kx + 8,  ky + 64, 16, 6);   // left foot
+			ctx.fillRect(kx + 34, ky + 64, 16, 6);   // right foot
+
+			// decrement throw timer
+			if (kongThrowTimer > 0) kongThrowTimer--;
+
+			 // 4. Draw Pauline — upscaled sprite (roughly 18×36 total)
+			const px = 228;   // left edge
+			const py = 42;    // top edge
+
+			// hair (dark brown, framing head)
+			ctx.fillStyle = "#3a1e10";
+			ctx.fillRect(px + 4, py,      10, 2);   // top of hair
+			ctx.fillRect(px + 2, py + 2,  14, 8);   // hair mass behind head
+			ctx.fillRect(px + 2, py + 10, 4, 8);    // hair falling left
+			ctx.fillRect(px + 12, py + 10, 4, 8);   // hair falling right
+
+			// face
+			ctx.fillStyle = "#ffe0bd";
+			ctx.fillRect(px + 5, py + 4,  8, 8);
+
+			// eyes
+			ctx.fillStyle = "#000";
+			ctx.fillRect(px + 7, py + 7,  1, 2);
+			ctx.fillRect(px + 10, py + 7, 1, 2);
+
+			// lips
+			ctx.fillStyle = "#cc1133";
+			ctx.fillRect(px + 8, py + 11, 3, 1);
+
+			// neck
+			ctx.fillStyle = "#ffe0bd";
+			ctx.fillRect(px + 7, py + 12, 4, 2);
+
+			// dress bodice — narrow at waist, wider at shoulders
+			ctx.fillStyle = "#ff2d88";  // hot pink
+			ctx.fillRect(px + 4, py + 14, 10, 4);   // shoulders/chest
+			ctx.fillRect(px + 5, py + 18, 8, 3);    // narrower waist
+			ctx.fillRect(px + 3, py + 21, 12, 8);   // skirt flaring out
+			ctx.fillRect(px + 2, py + 27, 14, 3);   // skirt hem
+
+			// arm on left (resting)
+			ctx.fillStyle = "#ffe0bd";
+			ctx.fillRect(px + 2, py + 15, 2, 6);
+
+			// arm on right (raised, waving)
+			ctx.fillRect(px + 14, py + 14, 2, 2);
+			ctx.fillRect(px + 15, py + 12, 2, 2);
+			ctx.fillRect(px + 16, py + 10, 1, 2);
+
+			// legs
+			ctx.fillStyle = "#ffe0bd";
+			ctx.fillRect(px + 5, py + 30, 3, 5);
+			ctx.fillRect(px + 10, py + 30, 3, 5);
+
+			// heels
+			ctx.fillStyle = "#cc1133";
+			ctx.fillRect(px + 5, py + 35, 3, 1);
+			ctx.fillRect(px + 10, py + 35, 3, 1);
+
+			        // 5. Draw Jumpman (Mario) — facing direction aware
+        // During death, spin the sprite by rotating the canvas
+        if (dying) {
+            ctx.save();
+            ctx.translate(player.x + player.w / 2, player.y + player.h / 2);
+            ctx.rotate(dyingTimer * 0.3);
+            ctx.translate(-(player.x + player.w / 2), -(player.y + player.h / 2));
         }
 
-        function draw() {
-            ctx.fillStyle = "black";
+        const mx = player.x;
+			const my = player.y;
+			const pHeading = playerFacing > 0;   // true = facing right
+
+			// --- CAP (red) ---
+			ctx.fillStyle = "#d61e1e";
+			ctx.fillRect(mx + 2, my,      12, 4);
+			ctx.fillRect(mx + (pHeading ? 11 : 1), my + 1, 4, 3);
+
+			// --- FACE (skin) ---
+			ctx.fillStyle = "#ffd9a8";
+			ctx.fillRect(mx + 3, my + 4, 10, 6);
+
+			// --- EYE ---
+			ctx.fillStyle = "#000";
+			ctx.fillRect(mx + (pHeading ? 9 : 5), my + 6, 2, 2);
+
+			// --- MUSTACHE ---
+			ctx.fillStyle = "#3a1e10";
+			ctx.fillRect(mx + (pHeading ? 7 : 5), my + 9, 4, 1);
+
+			// --- NOSE ---
+			ctx.fillStyle = "#f0b880";
+			ctx.fillRect(mx + (pHeading ? 12 : 2), my + 7, 2, 3);
+
+			// --- OVERALLS ---
+			ctx.fillStyle = "#1a3ba8";
+			ctx.fillRect(mx + 1, my + 10, 14, 8);
+
+			// straps
+			ctx.fillStyle = "#d61e1e";
+			ctx.fillRect(mx + 4, my + 10, 2, 2);
+			ctx.fillRect(mx + 10, my + 10, 2, 2);
+
+			// overall button
+			ctx.fillStyle = "#ffd400";
+			ctx.fillRect(mx + (pHeading ? 9 : 5), my + 11, 2, 2);
+
+			// --- ARMS ---
+			ctx.fillStyle = "#ffd9a8";
+			if (pHeading) {
+				ctx.fillRect(mx + 13, my + 11, 3, 5);
+			} else {
+				ctx.fillRect(mx, my + 11, 3, 5);
+			}
+			ctx.fillStyle = "#e8b870";
+			if (pHeading) {
+				ctx.fillRect(mx, my + 12, 2, 4);
+			} else {
+				ctx.fillRect(mx + 14, my + 12, 2, 4);
+			}
+
+			// --- LEGS ---
+			ctx.fillStyle = "#1a3ba8";
+			if (pHeading) {
+				ctx.fillRect(mx + 9, my + 18, 5, 4);
+				ctx.fillRect(mx + 3, my + 18, 5, 4);
+			} else {
+				ctx.fillRect(mx + 2, my + 18, 5, 4);
+				ctx.fillRect(mx + 8, my + 18, 5, 4);
+			}
+
+			// --- BOOTS ---
+			ctx.fillStyle = "#4a2408";
+			if (pHeading) {
+				ctx.fillRect(mx + 9, my + 21, 6, 1);
+				ctx.fillRect(mx + 3, my + 21, 5, 1);
+			} else {
+				ctx.fillRect(mx + 1, my + 21, 6, 1);
+				ctx.fillRect(mx + 8, my + 21, 5, 1);
+			}
+			
+			        if (dying) ctx.restore();
+
+        // 5b. Draw Oil Drum (fire source) at bottom-left
+        ctx.fillStyle = "#553311";
+        ctx.fillRect(8, 510, 24, 20);
+        ctx.strokeStyle = "#221100";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(8, 510, 24, 20);
+        ctx.beginPath();
+        ctx.moveTo(8, 516);
+        ctx.lineTo(32, 516);
+        ctx.moveTo(8, 524);
+        ctx.lineTo(32, 524);
+        ctx.stroke();
+
+        // flame flicker on top
+        const flameFlicker = Math.floor(performance.now() / 100) % 2;
+        ctx.fillStyle = flameFlicker ? "#ff6600" : "#ffcc00";
+        ctx.beginPath();
+        ctx.arc(20, 505, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ffff99";
+        ctx.beginPath();
+        ctx.arc(20, 503, 2, 0, Math.PI * 2);
+        ctx.fill();
+
+
+			// 6. Draw Rolling Barrels
+			ctx.fillStyle = "#cc6600";
+			for (let b of barrels) {
+				ctx.beginPath();
+				ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.strokeStyle = "#221100";
+				ctx.lineWidth = 1.5;
+				ctx.beginPath();
+				ctx.arc(b.x, b.y, b.r - 3, 0, Math.PI * 2);
+				ctx.stroke();
+			}
+
+			// 7. Draw Fireballs
+			for (let f of fireballs) {
+				const flicker = (Math.floor(performance.now() / 80) % 2) ? "#ffcc00" : "#ff6600";
+				ctx.fillStyle = flicker;
+				ctx.beginPath();
+				ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.fillStyle = "#ffff99";
+				ctx.beginPath();
+				ctx.arc(f.x, f.y, f.r * 0.5, 0, Math.PI * 2);
+				ctx.fill();
+				// little flame tips
+				ctx.fillStyle = "#ff3300";
+				ctx.beginPath();
+				ctx.arc(f.x - 2, f.y - f.r - 1, 2, 0, Math.PI * 2);
+				ctx.arc(f.x + 2, f.y - f.r - 1, 2, 0, Math.PI * 2);
+				ctx.fill();
+			}
+
+			// 8. Draw Hammers (uncollected)
+			for (let h of hammers) {
+				if (h.taken) continue;
+				// handle
+				ctx.fillStyle = "#8B4513";
+				ctx.fillRect(h.x + 8, h.y + 8, 4, 12);
+				// head
+				ctx.fillStyle = "#C0C0C0";
+				ctx.fillRect(h.x + 2, h.y + 2, 16, 8);
+				ctx.strokeStyle = "#333";
+				ctx.lineWidth = 1;
+				ctx.strokeRect(h.x + 2, h.y + 2, 16, 8);
+			}
+
+			// 9. Draw hammer indicator above player when held
+			        if (hammerTimer > 0) {
+            // hammer sprite — position depends on swing animation
+            let hammerY;
+            let hammerX;
+            if (swingTimer > 0) {
+                // swinging down: starts above head, sweeps to the side
+                const progress = 1 - (swingTimer / SWING_DURATION);   // 0 → 1
+                hammerY = player.y - 14 + progress * 16;
+                hammerX = player.x + (playerFacing > 0 ? 4 + progress * 10 : 4 - progress * 10);
+            } else {
+                // idle: flashing above head
+                if (Math.floor(performance.now() / 100) % 2 === 0) {
+                    hammerY = player.y - 14;
+                    hammerX = player.x + 4;
+                }
+            }
+            if (hammerY !== undefined) {
+                ctx.fillStyle = "#C0C0C0";
+                ctx.fillRect(hammerX, hammerY, 8, 6);
+                ctx.fillStyle = "#8B4513";
+                ctx.fillRect(hammerX + 3, hammerY + 6, 2, 8);
+            }
+				// hammer timer bar
+				const barW = 40;
+				const barX = player.x - 12;
+				const barY = player.y - 22;
+				ctx.fillStyle = "#333";
+				ctx.fillRect(barX, barY, barW, 3);
+				ctx.fillStyle = hammerTimer > 60 ? "#00ff00" : "#ff0000";
+				ctx.fillRect(barX, barY, barW * (hammerTimer / HAMMER_DURATION), 3);
+			}
+
+// Level intro banner
+        if (levelStartTimer < 120) {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+            ctx.fillRect(0, 240, canvas.width, 80);
+            ctx.fillStyle = "yellow";
+            ctx.font = "bold 28px 'Courier New'";
+            ctx.textAlign = "center";
+            ctx.fillText("SAVE PAULINE!", canvas.width / 2, 285);
+            ctx.fillStyle = "cyan";
+            ctx.font = "bold 20px 'Courier New'";
+            ctx.fillText(`LEVEL ${currentLevel}`, canvas.width / 2, 308);
+            ctx.textAlign = "left";
+        }
+
+        if (paused) {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "yellow";
+            ctx.font = "bold 28px 'Courier New'";
+            ctx.textAlign = "center";
+            ctx.fillText("PAUSED", canvas.width / 2, 280);
+            ctx.font = "14px 'Courier New'";
+            ctx.fillStyle = "white";
+            ctx.fillText("Press P or Esc to resume", canvas.width / 2, 310);
+            ctx.textAlign = "left";
+        }
 
-            // 1. Draw Blue Ladders
-            ctx.strokeStyle = "#00ffff";
-            ctx.lineWidth = 2;
-            for (let l of ladders) {
-                ctx.strokeRect(l.x, l.y, l.w, l.h);
-                for (let rY = l.y + 4; rY < l.y + l.h; rY += 8) {
-                    ctx.beginPath();
-                    ctx.moveTo(l.x, rY);
-                    ctx.lineTo(l.x + l.w, rY);
-                    ctx.stroke();
-                }
-            }
 
-            // 2. Draw Crimson Girders
-            ctx.fillStyle = "#ff0055";
-            for (let p of platforms) {
-                ctx.fillRect(p.x, p.y, p.w, p.h);
-                ctx.fillStyle = "#111";
-                for (let j = p.x + 6; j < p.x + p.w - 4; j += 14) {
-                    ctx.fillRect(j, p.y + 2, 4, p.h - 4);
-                }
-                ctx.fillStyle = "#ff0055";
-            }
-
-            // 3. Draw Kong
-            ctx.fillStyle = "#663300"; 
-            ctx.fillRect(100, 70, 55, 60); 
-            ctx.fillStyle = "#ffcc99"; 
-            ctx.fillRect(112, 85, 30, 30);
-            ctx.fillStyle = "#ff0000"; 
-            ctx.fillRect(118, 92, 4, 4);
-            ctx.fillRect(132, 92, 4, 4);
-
-            // 4. Draw Pauline
-            ctx.fillStyle = "#ff69b4";
-            ctx.fillRect(230, 45, 16, 30);
-
-            // 5. Draw Jumpman (Mario)
-            ctx.fillStyle = "#0000ff"; 
-            ctx.fillRect(player.x, player.y + 8, player.w, player.h - 8);
-            ctx.fillStyle = "#ff0000"; 
-            ctx.fillRect(player.x, player.y, player.w, 10);
-            ctx.fillStyle = "#ffe0bd"; 
-            ctx.fillRect(player.x + 4, player.y + 3, 8, 6);
-
-            // 6. Draw Rolling Barrels
-            ctx.fillStyle = "#cc6600";
-            for (let b of barrels) {
-                ctx.beginPath();
-                ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.strokeStyle = "#221100";
-                ctx.lineWidth = 1.5;
-                ctx.beginPath();
-                ctx.arc(b.x, b.y, b.r - 3, 0, Math.PI * 2);
-                ctx.stroke();
-            }
-
-            // Screen Overlays
-            if (gameOver) {
-                ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.fillStyle = "red";
-                ctx.font = "bold 32px 'Courier New'";
-                ctx.fillText("GAME OVER", 150, 280);
-            }
-
-            if (victoryState) {
-                ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+			// Screen Overlays
+        if (gameOver) {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "red";
+            ctx.font = "bold 32px 'Courier New'";
+            ctx.fillText("GAME OVER", 150, 260);
+            ctx.fillStyle = "white";
+            ctx.font = "16px 'Courier New'";
+            ctx.fillText(`SCORE: ${score}`, 180, 300);
+            if (score >= highScore && score > 0) {
                 ctx.fillStyle = "yellow";
-                ctx.font = "bold 24px 'Courier New'";
-                ctx.fillText(`STAGE ${currentLevel} CLEAR!`, 130, 260);
-                ctx.fillStyle = "white";
-                ctx.font = "16px 'Courier New'";
-                ctx.fillText("PREPARING NEXT LEVEL...", 130, 300);
+                ctx.fillText("NEW HIGH SCORE!", 155, 325);
+            } else {
+                ctx.fillStyle = "#aaa";
+                ctx.fillText(`HIGH: ${highScore}`, 180, 325);
             }
+            ctx.fillStyle = "white";
+            ctx.fillText("PRESS ENTER TO PLAY AGAIN", 120, 365);
         }
 
-        function loop() {
-            update();
-            draw();
-            requestAnimationFrame(loop);
-        }
+			if (victoryState) {
+				ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+				ctx.fillRect(0, 0, canvas.width, canvas.height);
+				ctx.fillStyle = "yellow";
+				ctx.font = "bold 24px 'Courier New'";
+				ctx.fillText(`STAGE ${currentLevel} CLEAR!`, 130, 260);
+				ctx.fillStyle = "white";
+				ctx.font = "16px 'Courier New'";
+				ctx.fillText("PREPARING NEXT LEVEL...", 130, 300);
+			}
+		}
 
-        requestAnimationFrame(loop);
-    </script>
-</body>
-</html>
+		const STEP = 1000 / 60;
+		let lastTime = performance.now();
+		let accumulator = 0;
+
+		function loop(now) {
+			accumulator += Math.min(now - lastTime, 200);
+			lastTime = now;
+			while (accumulator >= STEP) {
+				update();
+				accumulator -= STEP;
+			}
+			draw();
+			requestAnimationFrame(loop);
+		}
+
+		requestAnimationFrame(loop);
+	</script>
+	</body>
+	</html>
