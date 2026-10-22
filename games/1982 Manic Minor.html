@@ -44,6 +44,45 @@ canvas {
     ctx.scale(4, 4);
     ctx.imageSmoothingEnabled = false;
 
+    // ---------- AUDIO ----------
+    let audioCtx = null;
+    let masterGain = null;
+    let muted = false;
+
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            masterGain = audioCtx.createGain();
+            masterGain.gain.value = 0.5;
+            masterGain.connect(audioCtx.destination);
+        }
+        if (audioCtx.state === "suspended") audioCtx.resume();
+    }
+
+    function beep(freq, duration, type = "square", volume = 0.08, slideTo = null) {
+        if (!audioCtx || muted) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        if (slideTo !== null) osc.frequency.linearRampToValueAtTime(slideTo, audioCtx.currentTime + duration);
+        gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(masterGain);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+    }
+
+    // ---- Named sound effects ----
+    function sfxJump()          { beep(400, 0.10, "square",   0.06, 700); }
+    function sfxKey()           { beep(880, 0.06, "square",   0.05); beep(1320, 0.06, "square", 0.05); }
+    function sfxDoorOpen()      { beep(660, 0.08, "square",   0.06); setTimeout(() => beep(880, 0.08, "square", 0.06), 80); setTimeout(() => beep(1320, 0.12, "square", 0.06), 160); }
+    function sfxLevelComplete() { beep(523, 0.10, "square",   0.07); setTimeout(() => beep(659, 0.10, "square", 0.07), 100); setTimeout(() => beep(784, 0.10, "square", 0.07), 200); setTimeout(() => beep(1046, 0.20, "square", 0.07), 300); }
+    function sfxDeath()         { beep(300, 0.40, "sawtooth", 0.10, 80); }
+    function sfxBonus()         { beep(1200, 0.02, "square",  0.04); }
+    function sfxGameOver()      { beep(392, 0.20, "triangle", 0.09); setTimeout(() => beep(330, 0.20, "triangle", 0.09), 200); setTimeout(() => beep(262, 0.40, "triangle", 0.09), 400); }
+
     // ---------- CONSTANTS ----------
     const GRAVITY = 0.6;
     const JUMP_FORCE = -6.0; 	// lower (closer to zero) is lower jump
@@ -63,9 +102,14 @@ canvas {
     // ---------- GAME STATE ----------
     const keys = {};
     document.addEventListener('keydown', (e) => {
+        initAudio();
         keys[e.code] = true;
         if (e.code === 'Space') e.preventDefault();
         if (e.code === 'KeyR') resetGame();
+        if (e.code === 'KeyM') {
+            muted = !muted;
+            if (masterGain) masterGain.gain.value = muted ? 0 : 0.5;
+        }
     });
     document.addEventListener('keyup', (e) => {
         keys[e.code] = false;
@@ -86,7 +130,11 @@ canvas {
     let levelNumber = 1;
     let bgColor = '#0a0a1a';
     let monsters = [];
-    
+    let dying = false;
+    let dyingTimer = 0;
+    let bonusPhase = false;
+    let bonusAccumulator = 0;
+        
      // ---- LEVEL TRACKING ----
     let currentLevel = 0;         // index into LEVELS array
     const TOTAL_LEVELS = 2;       // update when you add more
@@ -201,10 +249,21 @@ const player = {
                 id: index
             });
         });
-          levelName = 'Central Cavern';
+        player.x = 24;
+        player.y = 104;
+        player.vx = 0;
+        player.vy = 0;
+        player.onGround = false;
+
+        door.x = 232;
+        door.y = 104;
+        door.w = 16;
+        door.h = 16;
+        door.active = false;
+
+        levelName = 'Central Cavern';
         levelNumber = 1;
-          bgColor = '#000000'; 
-  
+        bgColor = '#000000';
     }  
     
         function buildLevel2() {
@@ -416,7 +475,7 @@ function resolveVertical() {
 
     // ---------- PHYSICS UPDATE ----------
 function updatePlayer() {
-    if (gameOver || levelComplete) return;
+    if (gameOver || levelComplete || dying) return;
 
     // ---- HORIZONTAL MOVEMENT ----
     const speed = player.onGround ? MOVE_SPEED : AIR_SPEED;
@@ -469,6 +528,7 @@ function updatePlayer() {
     if (keys['Space'] && player.onGround) {
         player.vy = JUMP_FORCE;
         player.onGround = false;
+                sfxJump();
     }
 
     // ---- CONVEYOR BELT ----
@@ -555,15 +615,17 @@ function updatePlayer() {
                 item.collected = true;
                 score += 100;
                 if (score > highScore) highScore = score;
+                        sfxKey();
                 updateHUD();
             }
         }
     });
 
 
-        const collectedCount = items.filter(item => item.collected).length;
-    if (collectedCount === totalKeys) {
+     const collectedCount = items.filter(item => item.collected).length;
+    if (collectedCount === totalKeys && !door.active) {
         door.active = true;
+        sfxDoorOpen();
     }
 
     // ---- CHECK FOR EXIT ----
@@ -574,11 +636,12 @@ function updatePlayer() {
                     player.y + player.h > door.y;
         if (hit) {
             levelComplete = true;
-            levelCompleteTimer = 0;   // reset the countdown
+            bonusPhase = true;
+            bonusAccumulator = 0;
+            levelCompleteTimer = 0;
+                        sfxLevelComplete();
         }
     }
-
-    updateHUD();
 }
 
 function updateMonsters() {
@@ -591,16 +654,32 @@ function updateMonsters() {
 
     // ---------- GAME FUNCTIONS ----------
     function loseLife() {
+        if (dying || gameOver) return;   // already dying or dead — ignore
+        dying = true;
+        dyingTimer = 60;
+        player.vx = 0;
+        player.vy = 0;
+        sfxDeath();
+        
+        // Decrement immediately — no pending state to leak into a reset
         lives--;
+        if (lives <= 0) {
+            // Out of lives — flag will be honoured when animation ends
+        }
+        updateHUD();
+    }
+
+    function finishDeath() {
+        dying = false;
         if (lives <= 0) {
             gameOver = true;
         } else {
-            // Respawn at start
             player.x = 24;
             player.y = 104;
             player.vx = 0;
             player.vy = 0;
             player.onGround = false;
+            air = 100;
         }
         updateHUD();
     }
@@ -611,8 +690,13 @@ function updateMonsters() {
         air = 100;
         gameOver = false;
         levelComplete = false;
-        loadLevel(1);               
+                door.active = false;
+        loadLevel(0);               
         updateHUD();
+        bonusPhase = false;
+        bonusAccumulator = 0;
+        dying = false;
+        dyingTimer = 0;
     }
 
     function updateHUD() {
@@ -829,8 +913,12 @@ function updateMonsters() {
 
         // ---- PLAYER ----
         if (!gameOver) {
-            const px = player.x;
-            const py = player.y;
+            // Blink the player: visible on even frames, invisible on odd, while dying
+            const visible = !dying || Math.floor(dyingTimer / 4) % 2 === 0;
+
+            if (visible) {
+                const px = player.x;
+                const py = player.y;
             ctx.fillStyle = 'rgba(0,0,0,0.3)';
             ctx.fillRect(px + 2, py + player.h - 2, player.w - 4, 3);
             ctx.fillStyle = '#4A90D9';
@@ -854,6 +942,14 @@ function updateMonsters() {
             ctx.fillRect(px + 1, py + 13, 3, 1);
             ctx.fillRect(px + 6, py + 13, 3, 1);
         }
+	}
+
+        // ---- DEATH FLASH ----
+        if (dying) {
+            const alpha = Math.max(0, dyingTimer / 60) * 0.35;
+            ctx.fillStyle = `rgba(200, 30, 30, ${alpha})`;
+            ctx.fillRect(0, 0, W, H);
+        }
 
         // ---- PANEL ----
         drawPanel();
@@ -861,12 +957,18 @@ function updateMonsters() {
         // ---- OVERLAYS ----
         if (levelComplete) {
             ctx.fillStyle = 'rgba(0,0,0,0.7)';
-            ctx.fillRect(0, 40, W, 30);
+            ctx.fillRect(0, 30, W, 50);
             ctx.fillStyle = '#FFD700';
             ctx.font = 'bold 12px "Courier New"';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('CAVERN COMPLETE!', W/2, 55);
+            ctx.fillText('CAVERN COMPLETE!', W/2, 42);
+
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 8px "Courier New"';
+            ctx.fillText('AIR BONUS', W/2, 56);
+            ctx.fillStyle = '#FFD700';
+            ctx.fillText('+' + bonusAccumulator, W/2, 68);
         }
         if (gameOver) {
             ctx.fillStyle = 'rgba(0,0,0,0.8)';
@@ -962,12 +1064,38 @@ function updateMonsters() {
             updateHUD();
         }
 
-        // Level complete countdown → advance
+                // ---- LEVEL COMPLETE — AIR BONUS ----
         if (levelComplete && !gameOver) {
-            levelCompleteTimer++;
-            if (levelCompleteTimer > 120) {   // 2 seconds at 60fps
-                levelCompleteTimer = 0;
-                advanceLevel();
+            if (bonusPhase) {
+                // Drain air and convert to score
+                if (air > 0) {
+                    // 1 air unit per frame drains in ~1.5 seconds (100 air / 1.5s / 60fps ≈ 1.1/frame)
+                    const drain = Math.min(air, 1.0);
+                    air -= drain;
+                    const points = Math.round(drain * 10);   // 10 points per air unit
+                    score += points;
+                    bonusAccumulator += points;
+                    if (score > highScore) highScore = score;
+                } else {
+                    air = 0;
+                    bonusPhase = false;
+                    levelCompleteTimer = 0;   // start the "pause" countdown
+                }
+            } else {
+                // Bonus is done — short pause, then advance
+                levelCompleteTimer++;
+                if (levelCompleteTimer > 60) {    // 1 second
+                    levelCompleteTimer = 0;
+                    advanceLevel();
+                }
+            }
+        }
+
+        // ---- DYING ----
+        if (dying && !gameOver) {
+            dyingTimer--;
+            if (dyingTimer <= 0) {
+                finishDeath();
             }
         }
 
@@ -983,10 +1111,13 @@ function updateMonsters() {
             currentLevel++;
             air = 100;
             levelComplete = false;
+            bonusPhase = false;
+            bonusAccumulator = 0;
             loadLevel(currentLevel);
         } else {
             // finished all levels — show game complete, offer restart with R
             gameOver = true;
+                        sfxGameOver();
         }
     }
 
