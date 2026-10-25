@@ -116,7 +116,6 @@ canvas {
     });
 
     // ---------- LEVEL DEFINITION ----------
-    // 0 = empty, 1 = platform, 2 = wall, 3 = deadly, 4 = quicksand
     let level = [];
     let items = [];
     let totalKeys = 5;
@@ -125,9 +124,8 @@ canvas {
     let air = 100;
     let gameOver = false;
     let levelComplete = false;
-    let highScore = 0;
-    let levelName = 'Central Cavern';
-    let levelNumber = 1;
+	let highScore = parseInt(localStorage.getItem('manic-miner-hi') || '0', 10);    
+	let levelName = 'Central Cavern';
     let bgColor = '#0a0a1a';
     let monsters = [];
 	let monsterSpawns = [];
