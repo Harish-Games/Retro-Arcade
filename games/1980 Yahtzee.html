@@ -931,7 +931,7 @@ function evaluateAIStrategy(currentDice, currentScores) {
 
         // Quick helper checks
         const openUpperValues = [1, 2, 3, 4, 5, 6].filter(v => openCats.includes(getUpperCatId(v)));
-        const needSets = openCats.includes('threeKind') || openCats.includes('fourKind') || openCats.includes('chance');
+        const needSets = openCats.includes('threeKind') || openCats.includes('fourKind');
         const needFullHouse = openCats.includes('fullHouse');
         const needLargeStr = openCats.includes('largeStr');
         const needSmallStr = openCats.includes('smallStr');
@@ -1069,8 +1069,8 @@ function evaluateAIStrategy(currentDice, currentScores) {
             for (const catId of sacrificePriority) {
                 if (openCats.some(c => c.id === catId)) {
                     const catObj = CATEGORIES.find(c => c.id === catId);
-                    return { catId, score: 0, catName: catObj.name };
-                }
+                    return { catId, score: calculateScore(catId, currentDice), catName: catObj.name };
+                 }
             }
         }
 
