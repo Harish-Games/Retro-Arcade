@@ -235,8 +235,8 @@
         // Helper: pick 3 directions away from a wall
         function getAwayFromWall(wall) {
             switch(wall) {
-                case 'top':    return [6, 7, 0]; // N, NE, E
-                case 'bottom': return [2, 3, 4]; // S, SW, W
+                case 'top':    return [2, 3, 4]; // S, SW, W
+				case 'bottom': return [6, 7, 0]; // N, NE, E
                 case 'left':   return [0, 7, 6]; // E, NE, N
                 case 'right':  return [4, 3, 2]; // W, SW, S
                 default:       return [0, 1, 2, 3, 4, 5, 6, 7];
@@ -590,6 +590,15 @@
                         g.wanderAngle = randomDir();
                         g.wanderTimer = Math.floor(random(5, 15));
                     }
+                    if (g.state === 'panic' && hitWall !== 'corner') {
+    g.targetAngle = randomAwayDir(hitWall);
+    g.fleeTimer = Math.floor(random(10, 40));
+}
+if (g.state === 'panic' && hitWall === 'corner') {
+    g.targetAngle = randomDir();
+    g.fleeTimer = Math.floor(random(10, 40));
+}
+                    
                 }
 
                 // ---- HEADSTONE PUSH ----

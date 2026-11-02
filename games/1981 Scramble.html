@@ -264,6 +264,7 @@
         let loopCount = 1;
         let gameState = 'START_SCREEN';
         let cameraX = 0;
+        let gates = [];
         const STAGE_LENGTH = 3400;
         let frameCount = 0;
 
@@ -293,7 +294,7 @@
             2: { name: 'STAGE 2 · CAVE', groundColor: '#2a0a3a', lineColor: '#cc66ff', ceiling: true, bgColor: '#0a0510' },
             3: { name: 'STAGE 3 · METEOR STORM', groundColor: '#2a1a0a', lineColor: '#ff6633', ceiling: false, bgColor: '#100805' },
             4: { name: 'STAGE 4 · ROCKET SILO', groundColor: '#1a2a1a', lineColor: '#66ff66', ceiling: true, bgColor: '#050f05' },
-            5: { name: 'STAGE 5 · THE MAZE', groundColor: '#1a1a2a', lineColor: '#ffcc44', ceiling: true, bgColor: '#0a0a12' },
+            5: { name: 'STAGE 5 · THE MAZE', groundColor: '#0a0a14', lineColor: '#4466ff', ceiling: true, bgColor: '#02020a' },
             6: { name: 'STAGE 6 · CORE BUNKER', groundColor: '#1a1a1a', lineColor: '#ff3344', ceiling: true, bgColor: '#080808' },
         };
 
@@ -487,15 +488,15 @@
 
             switch (type) {
                 case 'turret':
-                    ctx.fillStyle = '#4a4a5a';
-                    ctx.fillRect(-w / 2, -2, w, 4);
-                    ctx.fillStyle = '#6a7a8a';
-                    ctx.fillRect(-4, -6, 8, 12);
-                    ctx.fillStyle = '#8a9aaa';
-                    ctx.fillRect(-6, -8, 12, 4);
-                    ctx.fillStyle = '#ff4444';
-                    ctx.fillRect(-2, -4, 4, 8);
-                    break;
+    ctx.fillStyle = maxHealth > 2 ? '#7a3a2a' : '#4a4a5a';
+    ctx.fillRect(-w / 2, -2, w, 4);
+    ctx.fillStyle = maxHealth > 2 ? '#cc5522' : '#6a7a8a';
+    ctx.fillRect(-4, -6, 8, 12);
+    ctx.fillStyle = maxHealth > 2 ? '#ff8844' : '#8a9aaa';
+    ctx.fillRect(-6, -8, 12, 4);
+    ctx.fillStyle = '#ff4444';
+    ctx.fillRect(-2, -4, 4, 8);
+    break;
                 case 'flyer':
                     ctx.beginPath();
                     ctx.moveTo(w / 2, 0);
@@ -559,101 +560,156 @@
         }
 
         // ----- POPULATE STATIC ELEMENTS -----
-        function spawnStaticEnemies(stage) {
-            enemies = [];
-            const stopIdx = (stage === 6) ? 130 : TOTAL_SEGMENTS - 14;
-            for (let i = 10; i < stopIdx; i++) {
-                const wx = i * SEGMENT_WIDTH;
-                const floor = floorMap[i] || H - 30;
-                const ceil = ceilMap[i] || 0;
+    function spawnStaticEnemies(stage) {
+    enemies = [];
+    gates = [];
+    const stopIdx = (stage === 6) ? 130 : TOTAL_SEGMENTS - 14;
 
-                if (i % 9 === 0 && Math.random() < 0.40 && stage !== 5) {
-                    enemies.push({
-                        x: wx, y: floor - 14, w: 18, h: 14,
-                        type: 'turret', alive: true, static: true,
-                        shootTimer: 25 + Math.floor(Math.random() * 30),
-                        health: 2, maxHealth: 2, scoreVal: 200, phase: Math.random() * 10
-                    });
-                }
+    for (let i = 10; i < stopIdx; i++) {
+        const wx = i * SEGMENT_WIDTH;
+        const floor = floorMap[i] || H - 30;
+        const ceil = ceilMap[i] || 0;
 
-                if (i % 6 === 0 && Math.random() < 0.15 && stage !== 6) {
-                    enemies.push({
-                        x: wx, y: floor - 20, w: 14, h: 20,
-                        type: 'fuel', alive: true, static: true,
-                        health: 1, maxHealth: 1, scoreVal: 150
-                    });
-                }
-
-                if (stage === 2 && i % 7 === 0 && Math.random() < 0.20) {
-                    enemies.push({
-                        x: wx, y: ceil + 30 + Math.random() * (floor - ceil - 80),
-                        w: 26, h: 16, type: 'ufo', alive: true, static: true,
-                        health: 1, maxHealth: 1, scoreVal: 200, angle: Math.random() * 10,
-                        shootTimer: 40 + Math.floor(Math.random() * 30)
-                    });
-                }
-                if (stage === 4 && i % 14 === 0 && Math.random() < 0.35) {
-                    enemies.push({
-                        x: wx, y: floor - 18, w: 12, h: 18,
-                        type: 'rocket', alive: true, static: true, launched: false,
-                        health: 1, maxHealth: 1, scoreVal: 180, launchTimer: 30 + Math.floor(Math.random() * 25)
-                    });
-                }
-            }
-
-            if (stage === 6) {
-                const bx = 122 * SEGMENT_WIDTH;
-                const bfloor = floorMap[122] || H - 40;
-                enemies.push({
-                    x: bx, y: bfloor - 32, w: 32, h: 32,
-                    type: 'base_core', alive: true, static: true,
-                    health: 6, maxHealth: 6, scoreVal: 1000, shootTimer: 18
-                });
-            }
-        }
-
-        function spawnDynamicEnemy() {
-            const wx = cameraX + W + 60 + Math.random() * 140;
-            const bounds = getTerrainBounds(wx);
-            const floor = bounds.floor;
-            const ceil = bounds.ceil;
-            if (floor - ceil - 40 < 30) return;
-
-            const roll = Math.random();
-            let type = 'flyer';
-            if (roll < 0.4) type = 'flyer';
-            else if (roll < 0.7) type = 'diver';
-            else if (currentStage === 3) type = 'meteor';
-
-            const y = ceil + 20 + Math.random() * (floor - ceil - 50);
-            const health = 1 + Math.floor((loopCount + currentStage) / 4);
+        if (i % 9 === 0 && Math.random() < 0.40 && stage !== 5) {
+            const isBurst = (stage === 2 || stage === 4 || stage === 6) && Math.random() < 0.25;
             enemies.push({
-                x: wx, y: y,
-                w: type === 'meteor' ? 16 : 20,
-                h: type === 'meteor' ? 16 : 16,
-                type: type, alive: true, static: false,
-                vx: -(1.6 + currentStage * 0.10) - Math.random() * 0.5, vy: 0,
-                health: health, maxHealth: health, scoreVal: 100,
-                shootTimer: 40 + Math.floor(Math.random() * 35),
-                phase: Math.random() * Math.PI * 2, timer: 0
+                x: wx, y: floor - 14, w: 18, h: 14,
+                type: 'turret', alive: true, static: true,
+                shootTimer: 25 + Math.floor(Math.random() * 30),
+                health: isBurst ? 3 : 2, maxHealth: isBurst ? 3 : 2,
+                burst: isBurst, burstCount: 0,
+                scoreVal: isBurst ? 300 : 200, phase: Math.random() * 10
             });
         }
 
-        // ----- REBOOT STAGES -----
-        function resetStage() {
-            fuel = 100;
-            cameraX = 0;
-            lasers = [];
-            bombs = [];
-            enemyBullets = [];
-            particles = [];
-            floatingScores = [];
-            player.x = 100; player.y = 250; player.vx = 0; player.vy = 0;
-            player.alive = true; player.invincible = 90;
-            spawnTimer = 0;
-            generateTerrainForStage(currentStage);
-            spawnStaticEnemies(currentStage);
+        if (i % 6 === 0 && Math.random() < 0.15 && stage !== 6) {
+            enemies.push({
+                x: wx, y: floor - 20, w: 14, h: 20,
+                type: 'fuel', alive: true, static: true,
+                health: 1, maxHealth: 1, scoreVal: 150
+            });
         }
+
+        if (stage === 2 && i % 7 === 0 && Math.random() < 0.20) {
+            enemies.push({
+                x: wx, y: ceil + 30 + Math.random() * (floor - ceil - 80),
+                w: 26, h: 16, type: 'ufo', alive: true, static: true,
+                health: 1, maxHealth: 1, scoreVal: 200, angle: Math.random() * 10,
+                shootTimer: 40 + Math.floor(Math.random() * 30)
+            });
+        }
+        if (stage === 4 && i % 14 === 0 && Math.random() < 0.35) {
+            enemies.push({
+                x: wx, y: floor - 18, w: 12, h: 18,
+                type: 'rocket', alive: true, static: true, launched: false,
+                health: 1, maxHealth: 1, scoreVal: 180, launchTimer: 30 + Math.floor(Math.random() * 25)
+            });
+        }
+    }
+
+if (stage === 5) {
+    for (let i = 40; i < TOTAL_SEGMENTS - 20; i += 35) {
+        const wx = i * SEGMENT_WIDTH;
+        const floor = floorMap[i];
+        const ceil = ceilMap[i];
+        const gapH = 90;
+        const usable = (floor - ceil) - gapH - 20;
+        if (usable < 30) continue;
+        const gapY = ceil + 10 + Math.random() * usable;
+        gates.push({ x: wx, gapY, gapH, w: 8 });
+
+        if (Math.random() < 0.5) {
+            enemies.push({
+                x: wx + 30, y: gapY - 14, w: 18, h: 14,
+                type: 'turret', alive: true, static: true,
+                shootTimer: 60 + Math.floor(Math.random() * 40),
+                health: 2, maxHealth: 2, burst: false, burstCount: 0,
+                scoreVal: 200, phase: Math.random() * 10
+            });
+        }
+    }
+}
+
+    if (stage === 6) {
+        const bx = 122 * SEGMENT_WIDTH;
+        const bfloor = floorMap[122] || H - 40;
+        const bceil = ceilMap[122] || 0;
+        const coreH = 100;
+        const coreY = (bceil + bfloor) / 2 - coreH / 2;
+        enemies.push({
+            x: bx, y: coreY, w: 80, h: coreH,
+            type: 'base_core', alive: true, static: true,
+            health: 50, maxHealth: 50, scoreVal: 5000, shootTimer: 35
+        });
+    }
+}
+
+function spawnDynamicEnemy() {
+    const roll = Math.random();
+    let type = 'flyer';
+    if (roll < 0.4) type = 'flyer';
+    else if (roll < 0.7) type = 'diver';
+    else if (currentStage === 3) type = 'meteor';
+
+if (type === 'meteor') {
+    const wx = cameraX + Math.random() * W;
+    enemies.push({
+        x: wx, y: -20,
+        w: 16, h: 16,
+        type: 'meteor', alive: true, static: false,
+        vx: -(0.3 + Math.random() * 0.4),
+        vy: 3.5 + Math.random() * 2.0,
+        health: 1, maxHealth: 1, scoreVal: 100,
+        shootTimer: 0,
+        phase: 0, timer: 0
+    });
+    return;
+}
+
+    const wx = cameraX + W + 60 + Math.random() * 140;
+    const bounds = getTerrainBounds(wx);
+    const floor = bounds.floor;
+    const ceil = bounds.ceil;
+    if (floor - ceil - 40 < 30) return;
+
+    const y = ceil + 20 + Math.random() * (floor - ceil - 50);
+    const health = 1 + Math.floor((loopCount + currentStage) / 4);
+    enemies.push({
+        x: wx, y: y,
+        w: 20, h: 16,
+        type: type, alive: true, static: false,
+        vx: -(1.6 + currentStage * 0.10) - Math.random() * 0.5,
+        vy: 0,
+        health: health, maxHealth: health, scoreVal: 100,
+        shootTimer: 40 + Math.floor(Math.random() * 35),
+        phase: Math.random() * Math.PI * 2, timer: 0
+    });
+}
+
+        // ----- REBOOT STAGES -----
+       function resetStage() {
+    fuel = 100;
+    cameraX = 0;
+    lasers = [];
+    bombs = [];
+    enemyBullets = [];
+    particles = [];
+    floatingScores = [];
+    gates = [];
+    generateTerrainForStage(currentStage);
+    spawnStaticEnemies(currentStage);
+
+    // Safe spawn: center vertically between ceiling and floor
+    const startX = 100;
+    const b = getTerrainBounds(startX);
+    player.x = startX;
+    player.y = Math.max(b.ceil + 10, Math.min(b.floor - player.h - 10, (b.ceil + b.floor) / 2 - player.h / 2));
+    player.vx = 0;
+    player.vy = 0;
+    player.alive = true;
+    player.invincible = 90;
+    spawnTimer = 0;
+}
 
         function advanceStage() {
             if (currentStage >= 6) {
@@ -674,7 +730,7 @@
         function triggerDeath() {
             if (!player.alive) return;
             player.alive = false;
-            spawnExplosion(player.x + player.w / 2, player.y + player.h / 2, '#ff4488', 30, 6);
+            spawnExplosion(player.x + player.w / 2 + cameraX, player.y + player.h / 2, '#ff4488', 30, 6);
             playSound('death');
             lives--;
             if (lives < 0) {
@@ -721,12 +777,16 @@
             frameCount++;
 
             const scrollSpeed = 1.8 + currentStage * 0.04;
-            cameraX += scrollSpeed;
+cameraX += scrollSpeed;
+if (currentStage === 6 && cameraX > 122 * 16 - 200) cameraX = 122 * 16 - 200;
 
-            if (cameraX >= STAGE_LENGTH) {
-                advanceStage();
-                return;
-            }
+            if (currentStage === 6) {
+    const coreAlive = enemies.some(e => e.type === 'base_core' && e.alive);
+    if (!coreAlive) { advanceStage(); return; }
+} else if (cameraX >= STAGE_LENGTH) {
+    advanceStage();
+    return;
+}
 
             // Ship Movement
             const spd = player.speed;
@@ -759,17 +819,43 @@
             }
 
             // Bombs
-            for (let i = bombs.length - 1; i >= 0; i--) {
-                const b = bombs[i];
-                b.x += b.vx; b.vy += 0.18; b.y += b.vy;
-                if (b.y > H + 20) { bombs.splice(i, 1); continue; }
-                const bounds = getTerrainBounds(b.x + cameraX);
-                if (b.y + b.h > bounds.floor) {
-                    spawnExplosion(b.x, bounds.floor, '#ffcc44', 12, 4);
-                    playSound('explode');
-                    bombs.splice(i, 1);
+for (let i = bombs.length - 1; i >= 0; i--) {
+    const b = bombs[i];
+    b.x += b.vx; b.vy += 0.18; b.y += b.vy;
+    if (b.y > H + 20) { bombs.splice(i, 1); continue; }
+    const bounds = getTerrainBounds(b.x + cameraX);
+    if (b.y + b.h > bounds.floor) {
+        const blastX = b.x + cameraX;
+        const blastY = bounds.floor;
+        const BLAST_RADIUS = 55;
+
+        spawnExplosion(blastX, blastY, '#ffcc44', 12, 4);
+        playSound('explode');
+
+        for (let j = enemies.length - 1; j >= 0; j--) {
+            const e = enemies[j];
+            if (!e.alive) continue;
+            const ex = e.x + e.w / 2;
+            const ey = e.y + e.h / 2;
+            if (Math.hypot(ex - blastX, ey - blastY) < BLAST_RADIUS) {
+                e.health--;
+                if (e.health <= 0) {
+                    if (e.type === 'fuel') {
+                        fuel = Math.min(100, fuel + 25);
+                        playSound('fuel');
+                    } else {
+                        playSound('explode');
+                    }
+                    addScore(e.scoreVal || 100, e.x, e.y);
+                    spawnExplosion(e.x + e.w/2, e.y + e.h/2, '#ff8844', 12, 4);
+                    e.alive = false;
                 }
             }
+        }
+
+        bombs.splice(i, 1);
+    }
+}
 
             // Bullets
             for (let i = enemyBullets.length - 1; i >= 0; i--) {
@@ -787,41 +873,73 @@
             }
 
             // Generative Spawn
-            spawnTimer++;
-            if (spawnTimer > 50) {
-                spawnTimer = 0;
-                spawnDynamicEnemy();
-            }
+            // Generative Spawn
+spawnTimer++;
+if (spawnTimer > 50) {
+    spawnTimer = 0;
+    spawnDynamicEnemy();
+    if (currentStage === 3 && Math.random() < 0.6) {
+        spawnDynamicEnemy();
+    }
+}
 
-            // Process Active Entities
+                     // Process Active Entities
             for (let i = enemies.length - 1; i >= 0; i--) {
                 const e = enemies[i];
                 if (!e.alive) { enemies.splice(i, 1); continue; }
 
-                const sx = e.x - cameraX;
-                if (sx < -70) { enemies.splice(i, 1); continue; }
+const sx = e.x - cameraX;
+if (sx < -70) { enemies.splice(i, 1); continue; }
+if (e.type === 'meteor' && e.y > H + 20) { enemies.splice(i, 1); continue; }
 
                 if (e.static) {
                     if (e.type === 'rocket') {
                         if (!e.launched && sx < 400) { e.launched = true; e.vy = -4; }
                         if (e.launched) { e.y += e.vy; e.x -= 0.5; }
                     } else if (e.type === 'turret' && sx < 600) {
+    e.shootTimer--;
+    if (e.shootTimer <= 0 && player.alive) {
+        const dx = (player.x + cameraX) - e.x;
+        const dy = (player.y + player.h / 2) - e.y;
+        const d = Math.hypot(dx, dy);
+        enemyBullets.push({ x: e.x, y: e.y, vx: (dx / d) * 3, vy: (dy / d) * 3 });
+        if (e.burst && e.burstCount < 2) {
+            e.burstCount++;
+            e.shootTimer = 8;
+        } else {
+            e.burstCount = 0;
+            e.shootTimer = e.burst ? 180 + Math.random() * 40 : 70 + Math.random() * 40;
+        }
+    }
+}
+                     else if (e.type === 'base_core' && sx < 700 && sx > -50) {
                         e.shootTimer--;
                         if (e.shootTimer <= 0 && player.alive) {
-                            const dx = (player.x + cameraX) - e.x;
-                            const dy = (player.y + player.h / 2) - e.y;
-                            const d = Math.hypot(dx, dy);
-                            enemyBullets.push({ x: e.x, y: e.y, vx: (dx / d) * 3, vy: (dy / d) * 3 });
-                            e.shootTimer = 70 + Math.random() * 40;
+                            for (let s = -1; s <= 1; s++) {
+                                const dy = (player.y + player.h / 2) - e.y;
+                                const dx = (player.x + cameraX) - e.x;
+                                const angle = Math.atan2(dy, dx) + s * 0.25;
+                                enemyBullets.push({
+                                    x: e.x, y: e.y + e.h / 2,
+                                    vx: Math.cos(angle) * 3.2,
+                                    vy: Math.sin(angle) * 3.2
+                                });
+                            }
+                            e.shootTimer = 90 + Math.random() * 30;
                         }
                     }
                 } else {
-                    e.timer++;
-                    e.x += e.vx;
-                    e.y += Math.sin(e.timer * 0.05 + e.phase) * 1.2;
-                }
+    e.timer++;
+    e.x += e.vx;
+    if (e.type === 'meteor') {
+        e.y += e.vy;
+        if (Math.random() < 0.3) spawnExplosion(e.x, e.y, '#ff8844', 1, 1);
+    } else {
+        e.y += Math.sin(e.timer * 0.05 + e.phase) * 1.2;
+    }
+}
 
-                // Hit detection (Lasers)
+                                // Hit detection (Lasers)
                 const screenRect = { x: sx, y: e.y, w: e.w, h: e.h };
                 for (let l = lasers.length - 1; l >= 0; l--) {
                     if (rectCollide(lasers[l], screenRect)) {
@@ -831,7 +949,7 @@
                             if (e.type === 'fuel') { fuel = Math.min(100, fuel + 25); playSound('fuel'); }
                             else { playSound('explode'); }
                             addScore(e.scoreVal || 100, e.x, e.y);
-                            spawnExplosion(sx + e.w/2, e.y + e.h/2, '#ff8844', 12, 4);
+                            spawnExplosion(e.x + e.w/2, e.y + e.h/2, '#ff8844', 12, 4);
                             e.alive = false;
                         }
                         break;
@@ -846,13 +964,26 @@
             }
 
             // Terrain crash logic
-            if (player.alive && player.invincible === 0) {
-                const bLeft = getTerrainBounds(player.x + cameraX);
-                const bRight = getTerrainBounds(player.x + player.w + cameraX);
-                if (player.y < Math.max(bLeft.ceil, bRight.ceil) || (player.y + player.h) > Math.min(bLeft.floor, bRight.floor)) {
+if (player.alive && player.invincible === 0) {
+    const bLeft = getTerrainBounds(player.x + cameraX);
+    const bRight = getTerrainBounds(player.x + player.w + cameraX);
+    if (player.y < Math.max(bLeft.ceil, bRight.ceil) || (player.y + player.h) > Math.min(bLeft.floor, bRight.floor)) {
+        triggerDeath();
+    }
+
+    if (currentStage === 5) {
+        for (const gate of gates) {
+            const gsx = gate.x - cameraX;
+            if (gsx < -20 || gsx > W + 20) continue;
+            if (player.x + player.w > gsx && player.x < gsx + gate.w) {
+                if (!(player.y > gate.gapY && player.y + player.h < gate.gapY + gate.gapH)) {
                     triggerDeath();
+                    return;
                 }
             }
+        }
+    }
+}
 
             // Particles clean up
             for (let i = particles.length - 1; i >= 0; i--) {
@@ -892,6 +1023,19 @@
             ctx.beginPath(); ctx.moveTo(0, floorMap[0]);
             for (let i = 1; i < floorMap.length; i++) ctx.lineTo(i * SEGMENT_WIDTH, floorMap[i]);
             ctx.stroke();
+
+// Stage 5 gates
+if (currentStage === 5) {
+    ctx.fillStyle = '#4a3a1a';
+    ctx.strokeStyle = '#8a6a2a';
+    ctx.lineWidth = 1;
+    for (const gate of gates) {
+        ctx.fillRect(gate.x, 0, gate.w, gate.gapY);
+        ctx.strokeRect(gate.x, 0, gate.w, gate.gapY);
+        ctx.fillRect(gate.x, gate.gapY + gate.gapH, gate.w, H - (gate.gapY + gate.gapH));
+        ctx.strokeRect(gate.x, gate.gapY + gate.gapH, gate.w, H - (gate.gapY + gate.gapH));
+    }
+}
 
             // Ceil Vector Rendering
             if (config.ceiling) {
@@ -951,10 +1095,27 @@
             ctx.fillText(config.name, 450, 30);
 
             // Fuel UI
-            ctx.fillStyle = '#88aacc'; ctx.fillText('FUEL', 15, 470);
-            ctx.strokeStyle = '#334466'; ctx.strokeRect(80, 458, 150, 14);
-            ctx.fillStyle = fuel > 30 ? '#00ff88' : '#ff3366';
-            ctx.fillRect(82, 460, 146 * (fuel / 100), 10);
+ctx.fillStyle = '#88aacc'; ctx.fillText('FUEL', 15, 470);
+ctx.strokeStyle = '#334466'; ctx.strokeRect(80, 458, 150, 14);
+ctx.fillStyle = fuel > 30 ? '#00ff88' : '#ff3366';
+ctx.fillRect(82, 460, 146 * (fuel / 100), 10);
+
+// Level progress bar
+let progress;
+if (currentStage === 6) {
+    const core = enemies.find(e => e.type === 'base_core' && e.alive);
+    progress = core ? 1 - core.health / core.maxHealth : 1;
+} else {
+    progress = Math.min(1, cameraX / STAGE_LENGTH);
+}
+ctx.fillStyle = '#334466';
+ctx.fillRect(20, H - 12, W - 40, 4);
+ctx.fillStyle = config.lineColor;
+ctx.fillRect(20, H - 12, (W - 40) * progress, 4);
+       if (progress > 0.9) {
+    ctx.fillStyle = `rgba(255,255,255,${0.3 + Math.sin(frameCount * 0.2) * 0.3})`;
+    ctx.fillRect(20 + (W - 40) * 0.9, H - 12, (W - 40) * 0.1, 4);
+}
         }
 
         // ================================================================
