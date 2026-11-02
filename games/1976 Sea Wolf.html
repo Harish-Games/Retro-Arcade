@@ -110,7 +110,7 @@
             <div class="high">⭐ <span id="highDisplay">0</span></div>
         </div>
         <div class="controls">
-            <kbd>Mouse</kbd> aim periscope &nbsp;|&nbsp; <kbd>Click</kbd> or <kbd>Space</kbd> fire &nbsp;|&nbsp;
+            <kbd>←</kbd> <kbd>→</kbd> aim periscope &nbsp;|&nbsp; <kbd>Space</kbd> fire &nbsp;|&nbsp;
             <button id="restartBtn">NEW GAME</button>
         </div>
     </div>
@@ -203,16 +203,18 @@
         // ----- GAME STATE -----
         let score = 0;
         let highScore = parseInt(localStorage.getItem('seawolf_high')) || 0;
-        let timeLeft = 120;
+        let timeLeft = 90;
+        let lastBonusScore = 0;
         let gameOver = false;
         let frameCount = 0;
         let torpedoCount = 5;
         let maxTorpedoes = 5;
         let reloading = false;
-        let reloadTimer = 0;
+        let reloadTimer = 90;
         let sonarTimer = 0;
         let scanAngle = 0;
-
+		let gameOverLockout = 0;
+		
         // ----- SUBMARINE (periscope aim) -----
         const sub = {
             x: CX,
@@ -240,7 +242,8 @@
         let mouseX = CX,
             mouseY = 120;
         let mouseDown = false;
-
+        const keys = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false };
+        
         // ----- HIGH SCORE -----
         function updateHighScore() {
             if (score > highScore) {
@@ -260,7 +263,8 @@
         // ----- RESET -----
         function resetGame() {
             score = 0;
-            timeLeft = 120;
+            timeLeft = 90;
+            lastBonusScore = 0;
             gameOver = false;
             frameCount = 0;
             torpedoCount = maxTorpedoes;
@@ -278,41 +282,41 @@
             playSound('sonar');
         }
 
-        function spawnShip() {
-            const type = SHIP_TYPES[Math.floor(Math.random() * SHIP_TYPES.length)];
-            const x = -20 + Math.random() * 20;
-            const y = 40 + Math.random() * 80;
-            const speed = type.speed * (Math.random() < 0.5 ? 1 : -1);
-            ships.push({
-                x: x,
-                y: y,
-                w: type.width,
-                h: type.height,
-                speed: speed,
-                points: type.points,
-                type: type,
-                alive: true,
-            });
-            if (type.name === 'PT Boat') {
-                playSound('ptboat');
-            }
-        }
+      function spawnShip() {
+    const type = SHIP_TYPES[Math.floor(Math.random() * SHIP_TYPES.length)];
+    const fromLeft = Math.random() < 0.5;
+    const x = fromLeft ? -type.width - 10 : W + type.width + 10;
+    const y = 160 + Math.random() * 80;  // band below the horizon
+    const direction = fromLeft ? 1 : -1;
+    ships.push({
+        x: x,
+        y: y,
+        w: type.width,
+        h: type.height,
+        speed: type.speed * direction,
+        points: type.points,
+        type: type,
+        alive: true,
+    });
+    if (type.name === 'PT Boat') {
+        playSound('ptboat');
+    }
+}
 
-        function spawnMine() {
-            const angle = Math.random() * Math.PI * 2;
-            const dist = 100 + Math.random() * 180;
-            const x = CX + Math.cos(angle) * dist;
-            const y = CY + Math.sin(angle) * dist;
-            mines.push({
-                x: x,
-                y: y,
-                speed: (0.2 + Math.random() * 0.3) * (Math.random() < 0.5 ? 1 : -1),
-                r: 10,
-                alive: true,
-                angle: angle,
-                dist: dist,
-            });
-        }
+ function spawnMine() {
+    const fromLeft = Math.random() < 0.5;
+    const x = fromLeft ? -20 : W + 20;
+    const y = 180 + Math.random() * 100;
+    const direction = fromLeft ? 1 : -1;
+    mines.push({
+        x: x,
+        y: y,
+        vx: (0.3 + Math.random() * 0.3) * direction,
+        vy: 0,
+        r: 10,
+        alive: true,
+    });
+}
 
         function updateUI() {
             scoreDisplay.textContent = score;
@@ -351,22 +355,32 @@
         }
 
         // ----- UPDATE -----
-        function update() {
-            if (gameOver) return;
+      function update() {
+    if (gameOverLockout > 0) gameOverLockout--;
+    if (gameOver) return;
 
-            frameCount++;
+    frameCount++;
 
-            // ---- Time ----
-            if (frameCount % 60 === 0) {
-                timeLeft--;
-                if (timeLeft <= 0) {
-                    gameOver = true;
-                    playSound('gameover');
-                    updateHighScore();
-                    return;
-                }
-                updateUI();
-            }
+    // ---- Time ----
+    if (frameCount % 60 === 0) {
+        timeLeft--;
+        if (timeLeft <= 0) {
+            timeLeft = 0;
+            gameOver = true;
+            gameOverLockout = 90;
+            playSound('gameover');
+            updateHighScore();
+            return;
+        }
+        updateUI();
+    }
+
+    // Score-based bonus time every 5000 points
+    if (score >= lastBonusScore + 5000) {
+        lastBonusScore += 5000;
+        timeLeft = Math.min(120, timeLeft + 8);
+        updateUI();
+    }
 
             // ---- Reload ----
             if (reloading) {
@@ -379,8 +393,11 @@
             }
 
             // ---- Aim ----
-            sub.aimX = mouseX;
-            sub.aimY = Math.min(Math.max(mouseY, 30), H - 60);
+const AIM_SPEED = 3.5;
+if (keys.ArrowLeft) sub.aimX -= AIM_SPEED;
+if (keys.ArrowRight) sub.aimX += AIM_SPEED;
+sub.aimX = Math.max(60, Math.min(W - 60, sub.aimX));
+sub.aimY = 200;  // fixed at ship band height
 
             // ---- Fire ----
             if (mouseDown) {
@@ -410,28 +427,29 @@
                 spawnMine();
             }
 
-            // ---- Move ships ----
-            for (let i = ships.length - 1; i >= 0; i--) {
-                const s = ships[i];
-                s.x += s.speed;
-                if (s.x < -60 || s.x > W + 60) {
-                    ships.splice(i, 1);
-                    continue;
-                }
-            }
+// ---- Move ships ----
+for (let i = ships.length - 1; i >= 0; i--) {
+    const s = ships[i];
+    s.x += s.speed;
 
-            // ---- Move mines ----
-            for (let i = mines.length - 1; i >= 0; i--) {
-                const m = mines[i];
-                m.angle += m.speed * 0.01;
-                m.x = CX + Math.cos(m.angle) * m.dist;
-                m.y = CY + Math.sin(m.angle) * m.dist;
-                if (m.x < -30 || m.x > W + 30 || m.y < -30 || m.y > H + 30) {
-                    mines.splice(i, 1);
-                    continue;
-                }
-            }
+    // Despawn when off either edge — NO time penalty
+    if (s.x < -80 || s.x > W + 80) {
+        ships.splice(i, 1);
+        continue;
+    }
+}
 
+// ---- Move mines ----
+for (let i = mines.length - 1; i >= 0; i--) {
+    const m = mines[i];
+    m.x += m.vx;
+    m.y += m.vy;
+
+    // Despawn when off either edge
+    if (m.x < -60 || m.x > W + 60) {
+        mines.splice(i, 1);
+    }
+}
             // ---- Move torpedoes ----
             for (let i = torpedoes.length - 1; i >= 0; i--) {
                 const t = torpedoes[i];
@@ -460,27 +478,27 @@
                 }
                 if (hitMine) continue;
 
-                // ---- Check ship collision ----
-                let hitShip = false;
-                for (let j = ships.length - 1; j >= 0; j--) {
-                    const s = ships[j];
-                    if (!s.alive) continue;
-                    if (t.x < s.x + s.w && t.x + t.w > s.x &&
-                        t.y < s.y + s.h && t.y + t.h > s.y) {
-                        s.alive = false;
-                        hitShip = true;
-                        score += s.points;
-                        spawnParticles(s.x + s.w / 2, s.y + s.h / 2, '#ff8844', 30);
-                        playSound('explosion');
-                        ships.splice(j, 1);
-                        updateUI();
-                        updateHighScore();
-                        if (s.points >= 300) {
-                            timeLeft = Math.min(180, timeLeft + 5);
-                        }
-                        break;
-                    }
-                }
+ // ---- Check ship collision ----
+let hitShip = false;
+for (let j = ships.length - 1; j >= 0; j--) {
+    const s = ships[j];
+    if (!s.alive) continue;
+    const sx = s.x - s.w / 2;
+    const sy = s.y;
+    if (t.x < sx + s.w && t.x + t.w > sx &&
+        t.y < sy + s.h && t.y + t.h > sy) {
+        s.alive = false;
+        hitShip = true;
+        score += s.points;
+        spawnParticles(s.x, s.y + s.h / 2, '#ff8844', 30);
+        playSound('explosion');
+        ships.splice(j, 1);
+        updateUI();
+        updateHighScore();
+       
+        break;
+    }
+}
                 if (hitShip) {
                     torpedoes.splice(i, 1);
                 }
@@ -531,7 +549,50 @@
             grad.addColorStop(1, '#061830');
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, W, H);
+// ---- Sky (top of view) ----
+const skyGrad = ctx.createLinearGradient(0, 0, 0, 140);
+skyGrad.addColorStop(0, '#1a3a5a');    // dark blue-grey at very top
+skyGrad.addColorStop(0.6, '#2a4a6a');  // lighter
+skyGrad.addColorStop(1, '#3a5a7a');    // near horizon, hazy
+ctx.fillStyle = skyGrad;
+ctx.fillRect(0, 0, W, 140);
 
+// ---- Horizon line ----
+ctx.strokeStyle = 'rgba(100, 180, 255, 0.4)';
+ctx.lineWidth = 1;
+ctx.beginPath();
+ctx.moveTo(0, 140);
+ctx.lineTo(W, 140);
+ctx.stroke();
+
+// ---- Distant haze on the horizon ----
+const hazeGrad = ctx.createLinearGradient(0, 130, 0, 180);
+hazeGrad.addColorStop(0, 'rgba(150, 200, 255, 0.15)');
+hazeGrad.addColorStop(1, 'rgba(150, 200, 255, 0)');
+ctx.fillStyle = hazeGrad;
+ctx.fillRect(0, 130, W, 50);
+
+// ---- Ocean (below horizon) ----
+const oceanGrad = ctx.createLinearGradient(0, 140, 0, H);
+oceanGrad.addColorStop(0, '#0d2848');
+oceanGrad.addColorStop(0.5, '#0a2040');
+oceanGrad.addColorStop(1, '#061830');
+ctx.fillStyle = oceanGrad;
+ctx.fillRect(0, 140, W, H - 140);
+
+// ---- Wave detail near horizon ----
+ctx.strokeStyle = 'rgba(100, 180, 255, 0.08)';
+ctx.lineWidth = 1;
+for (let row = 0; row < 6; row++) {
+    const y = 150 + row * 8;
+    ctx.beginPath();
+    for (let x = 0; x < W; x += 3) {
+        const wy = y + Math.sin(x * 0.05 + frameCount * 0.01 + row) * 2;
+        if (x === 0) ctx.moveTo(x, wy);
+        else ctx.lineTo(x, wy);
+    }
+    ctx.stroke();
+}
             // ---- Water surface (waves) ----
             ctx.strokeStyle = 'rgba(51, 170, 255, 0.12)';
             ctx.lineWidth = 1;
@@ -565,51 +626,67 @@
                 ctx.fillText((i + 1) * 10 + 'm', 12, y + 1);
             }
 
-            // ---- Ships ----
-            for (const s of ships) {
-                if (!s.alive) continue;
-                const x = s.x,
-                    y = s.y;
-                ctx.strokeStyle = s.type.color || '#44aa66';
-                ctx.lineWidth = 1.5;
-                ctx.shadowColor = 'rgba(51,170,85,0.08)';
-                ctx.shadowBlur = 5;
-                ctx.strokeRect(x, y, s.w, s.h);
-                ctx.strokeRect(x + 4, y - 4, s.w * 0.3, 4);
-                if (s.type.name === 'Warship') {
-                    ctx.strokeRect(x + s.w * 0.35, y - 8, 4, 4);
-                }
-                if (s.type.name === 'PT Boat') {
-                    ctx.fillStyle = 'rgba(51,170,85,0.08)';
-                    ctx.fillRect(x + s.w - 6, y - 6, 4, 4);
-                }
-                ctx.fillStyle = 'rgba(51,170,85,0.15)';
-                ctx.font = '7px monospace';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                ctx.fillText('' + s.points, x + s.w / 2, y - 2);
-                ctx.shadowBlur = 0;
-            }
+// ---- Ships ----
+for (const s of ships) {
+    if (!s.alive) continue;
+    const x = s.x - s.w / 2;
+    const y = s.y;
 
-            // ---- Mines ----
-            for (const m of mines) {
-                ctx.strokeStyle = 'rgba(255, 80, 50, 0.4)';
-                ctx.lineWidth = 1.5;
-                ctx.shadowColor = 'rgba(255,80,50,0.15)';
-                ctx.shadowBlur = 8;
-                ctx.beginPath();
-                const safeR = Math.max(0.1, m.r);
-                ctx.arc(m.x, m.y, safeR, 0, Math.PI * 2);
-                ctx.stroke();
-                for (let i = 0; i < 8; i++) {
-                    const a = i * Math.PI / 4 + frameCount * 0.02;
-                    ctx.beginPath();
-                    ctx.moveTo(m.x + Math.cos(a) * safeR * 0.6, m.y + Math.sin(a) * safeR * 0.6);
-                    ctx.lineTo(m.x + Math.cos(a) * safeR, m.y + Math.sin(a) * safeR);
-                    ctx.stroke();
-                }
-                ctx.shadowBlur = 0;
-            }
+    ctx.strokeStyle = s.type.color || '#44aa66';
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = 'rgba(51,170,85,0.08)';
+    ctx.shadowBlur = 5;
+    ctx.strokeRect(x, y, s.w, s.h);
+    ctx.strokeRect(x + s.w * 0.1, y - s.h * 0.3, s.w * 0.3, s.h * 0.3);
+
+    if (s.type.name === 'Warship') {
+        ctx.strokeRect(x + s.w * 0.35, y - s.h * 0.6, s.w * 0.15, s.h * 0.3);
+    }
+    if (s.type.name === 'PT Boat') {
+        ctx.fillStyle = 'rgba(51,170,85,0.1)';
+        ctx.fillRect(x + s.w - s.w * 0.2, y - s.h * 0.4, s.w * 0.15, s.h * 0.25);
+    }
+
+    ctx.fillStyle = 'rgba(51,170,85,0.2)';
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('' + s.points, x + s.w / 2, y - 2);
+    ctx.shadowBlur = 0;
+}
+
+// ---- Mines ----
+for (const m of mines) {
+    const safeR = Math.max(0.1, m.r);
+    const flatR = safeR * 0.4;   // vertical squish for perspective
+
+    ctx.strokeStyle = 'rgba(255, 80, 50, 0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = 'rgba(255,80,50,0.2)';
+    ctx.shadowBlur = 8;
+
+    // Flat disk (ellipse)
+    ctx.beginPath();
+    ctx.ellipse(m.x, m.y, safeR, flatR, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Spikes radiating outward, flattened with the ellipse
+    for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4 + frameCount * 0.02;
+        ctx.beginPath();
+        ctx.moveTo(
+            m.x + Math.cos(a) * safeR * 0.6,
+            m.y + Math.sin(a) * flatR * 0.6
+        );
+        ctx.lineTo(
+            m.x + Math.cos(a) * safeR * 1.4,
+            m.y + Math.sin(a) * flatR * 1.4
+        );
+        ctx.stroke();
+    }
+
+    ctx.shadowBlur = 0;
+}
 
             // ---- Torpedoes ----
             for (const t of torpedoes) {
@@ -732,16 +809,18 @@
             const torpedoText = 'TORPEDOES: ' + torpedoCount + '/' + maxTorpedoes;
             ctx.fillText(torpedoText, 20, H - 10);
 
-            // ---- Sonar ping ring ----
-            if (sonarTimer > 60) {
-                const ringProgress = 1 - (sonarTimer / 180);
-                const ringSize = 20 + ringProgress * 200;
-                ctx.strokeStyle = `rgba(51, 170, 255, ${0.08 * (1 - ringProgress)})`;
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.arc(CX, CY, ringSize, 0, Math.PI * 2);
-                ctx.stroke();
-            }
+           // ---- Sonar ping ring ----
+if (sonarTimer > 60) {
+    const ringProgress = Math.max(0, 1 - (sonarTimer / 180));
+    const ringSize = 20 + ringProgress * 200;
+    if (ringSize > 0) {
+        ctx.strokeStyle = `rgba(51, 170, 255, ${0.08 * (1 - ringProgress)})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(CX, CY, ringSize, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+}
 
             // ---- Game Over ----
             if (gameOver) {
@@ -801,18 +880,28 @@
         canvas.addEventListener('mouseup', () => { mouseDown = false; });
         canvas.addEventListener('mouseleave', () => { mouseDown = false; });
 
-        document.addEventListener('keydown', (e) => {
-            const k = e.key;
-            if (k === ' ') {
-                e.preventDefault();
-                if (gameOver) {
-                    resetGame();
-                    return;
-                }
-                fireTorpedo();
-            }
-            if (k === 'r' || k === 'R') { resetGame(); }
-        });
+document.addEventListener('keydown', (e) => {
+    const k = e.key;
+    if (k === 'ArrowLeft') { keys.ArrowLeft = true; e.preventDefault(); }
+    if (k === 'ArrowRight') { keys.ArrowRight = true; e.preventDefault(); }
+    if (k === ' ') {
+    e.preventDefault();
+    if (gameOver) {
+        if (gameOverLockout <= 0) {
+            resetGame();
+        }
+        return;
+    }
+    fireTorpedo();
+}
+    if (k === 'r' || k === 'R') { resetGame(); }
+});
+
+document.addEventListener('keyup', (e) => {
+    const k = e.key;
+    if (k === 'ArrowLeft') keys.ArrowLeft = false;
+    if (k === 'ArrowRight') keys.ArrowRight = false;
+});
 
         document.getElementById('restartBtn').addEventListener('click', resetGame);
 
@@ -826,6 +915,7 @@
         resetGame();
         highDisplay.textContent = highScore;
         gameLoop();
+        gameOverLockout = 0;
     </script>
 </body>
 </html>
