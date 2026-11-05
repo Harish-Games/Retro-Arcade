@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Indy 800</title>
+<style>
+  body { background: #111; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; font-family: 'Courier New', monospace; padding: 20px; margin: 0; color: #ddd; }
+  #hud { display: flex; gap: 24px; font-size: 16px; font-weight: bold; margin-bottom: 12px; letter-spacing: 1px; }
+  #hud span { padding: 4px 10px; border-radius: 4px; }
+  #timer { color: #ffdd55; font-size: 20px; }
+  canvas { background: #000; border: 3px solid #444; border-radius: 6px; display: block; }
+  #overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; background: rgba(0,0,0,0.75); color: #fff; font-size: 32px; font-weight: bold; text-align: center; }
+  #overlay.show { display: flex; }
+  #overlay small { font-size: 16px; margin-top: 12px; color: #aaa; font-weight: normal; }
+  .wrap { position: relative; }
+    .game-layout {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+  }
+  #sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 200px;
+    font-size: 14px;
+    font-weight: bold;
+  }
+  #timer {
+    color: #ffdd55;
+    font-size: 28px;
+    text-align: center;
+    padding: 8px;
+    background: #1a1a30;
+    border-radius: 6px;
+    letter-spacing: 1px;
+  }
+  #scores {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  #scores span {
+    padding: 4px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+    #overlay {
+    font-size: 20px;
+    line-height: 1.5;
+  }
+  #overlay div {
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+</style>
+</head>
+<body>
+
+<div class="game-layout">
+  <div class="wrap">
+    <canvas id="game"></canvas>
+    <div id="overlay"><div id="overlayText"></div><small>Press R to restart</small></div>
+  </div>
+<div id="sidebar">
+    <select id="raceLength" style="background:#1a1a30; color:#ffdd55; border:1px solid #3a3a6a; border-radius:6px; padding:6px; font-family:inherit; font-size:14px; font-weight:bold;">
+        <option value="30">30s Sprint</option>
+        <option value="60">60s</option>
+        <option value="90" selected>90s Standard</option>
+        <option value="120">120s</option>
+        <option value="180">180s Endurance</option>
+        <option value="360">360s Super Endurance</option>
+    </select>
+    <div id="timer">90.0</div>
+    <div id="scores"></div>
+</div>
+</div>
+
+<script>
+(function () {
+	
+	  // ---------- AUDIO ----------
+  let audioCtx = null;
+
+  function initAudio() {
+    if (audioCtx) return;
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) { /* silent fail */ }
+  }
+
+
+
+  function playBeep(freq, duration, volume) {
+    if (!audioCtx) return;
+    try {
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(volume || 0.08, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + duration);
+    } catch (e) {}
+  }
+
+  function playCrash() {
+    if (!audioCtx) return;
+    try {
+      const now = audioCtx.currentTime;
+      // Noise burst
+      const bufferSize = audioCtx.sampleRate * 0.2;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.15));
+      }
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0.2;
+      source.connect(gain);
+      gain.connect(audioCtx.destination);
+      source.start(now);
+      
+      // Low thud
+      const osc = audioCtx.createOscillator();
+      const oscGain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(120, now);
+      osc.frequency.exponentialRampToValueAtTime(40, now + 0.25);
+      oscGain.gain.setValueAtTime(0.15, now);
+      oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      osc.connect(oscGain);
+      oscGain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.25);
+    } catch (e) {}
+  }
+	
+  // Countdown crowd cheer — swells in volume as the clock runs down
+  let crowdNodes = null;
+
+  function startFinalSiren() {
+    if (!audioCtx || crowdNodes) return;
+    try {
+      const now = audioCtx.currentTime;
+
+      // Outer gain: fixed, safe ceiling
+      const master = audioCtx.createGain();
+      master.gain.value = 1.0;
+      master.connect(audioCtx.destination);
+
+      // Swell gain: WE drive this every frame. Starts near silent.
+      const swell = audioCtx.createGain();
+      swell.gain.value = 0.01;
+      swell.connect(master);
+
+      // Base "roar" — filtered noise
+      const noiseLen = audioCtx.sampleRate * 2;
+      const noiseBuf = audioCtx.createBuffer(1, noiseLen, audioCtx.sampleRate);
+      const nd = noiseBuf.getChannelData(0);
+      for (let i = 0; i < noiseLen; i++) nd[i] = Math.random() * 2 - 1;
+      const noiseSrc = audioCtx.createBufferSource();
+      noiseSrc.buffer = noiseBuf;
+      noiseSrc.loop = true;
+      const noiseFilter = audioCtx.createBiquadFilter();
+      noiseFilter.type = 'bandpass';
+      noiseFilter.frequency.value = 700;
+      noiseFilter.Q.value = 0.7;
+      const noiseGain = audioCtx.createGain();
+      noiseGain.gain.value = 0.9;
+      noiseSrc.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(swell);
+      noiseSrc.start(now);
+
+      // Two detuned "voices" — the aaaoooh of the crowd
+      const voiceA = audioCtx.createOscillator();
+      const voiceB = audioCtx.createOscillator();
+      voiceA.type = 'sawtooth';
+      voiceB.type = 'sawtooth';
+      voiceA.frequency.value = 220;
+      voiceB.frequency.value = 331;
+      const lfo = audioCtx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.value = 0.9;
+      const lfoGain = audioCtx.createGain();
+      lfoGain.gain.value = 30;
+      lfo.connect(lfoGain);
+      lfoGain.connect(voiceA.frequency);
+      lfoGain.connect(voiceB.frequency);
+
+      const voiceFilter = audioCtx.createBiquadFilter();
+      voiceFilter.type = 'lowpass';
+      voiceFilter.frequency.value = 900;
+      const voiceGain = audioCtx.createGain();
+      voiceGain.gain.value = 0.03;
+      voiceA.connect(voiceFilter);
+      voiceB.connect(voiceFilter);
+      voiceFilter.connect(voiceGain);
+      voiceGain.connect(swell);
+      voiceA.start(now);
+      voiceB.start(now);
+      lfo.start(now);
+
+      crowdNodes = { master, swell, noiseSrc, voiceA, voiceB, lfo };
+    } catch (e) { crowdNodes = null; }
+  }
+
+  function updateCrowdVolume(timeLeft) {
+    if (!crowdNodes || !audioCtx) return;
+    // 10s remaining -> 0.02 ; 0s remaining -> 0.35
+    const t = Math.max(0, Math.min(1, (10 - timeLeft) / 10));
+    const gain = 0.02 + t * t * 0.33;
+    try {
+      // Direct set, no ramping — guaranteed instant
+      crowdNodes.swell.gain.value = gain;
+    } catch (e) {}
+  }
+
+  function stopFinalSiren() {
+    if (!crowdNodes || !audioCtx) return;
+    try {
+      const now = audioCtx.currentTime;
+      // Quick fade-out so it doesn't click
+      crowdNodes.swell.gain.cancelScheduledValues(now);
+      crowdNodes.swell.gain.setValueAtTime(crowdNodes.swell.gain.value, now);
+      crowdNodes.swell.gain.linearRampToValueAtTime(0, now + 0.3);
+      crowdNodes.noiseSrc.stop(now + 0.4);
+      crowdNodes.voiceA.stop(now + 0.4);
+      crowdNodes.voiceB.stop(now + 0.4);
+      crowdNodes.lfo.stop(now + 0.4);
+    } catch (e) {}
+    crowdNodes = null;
+  }
+  
+    // ---------- RACE-END FANFARE ----------
+  function playFanfare() {
+    if (!audioCtx) return;
+    try {
+      const now = audioCtx.currentTime;
+      // Three-note rising fanfare: G5, B5, D6 (a bright major triad)
+      const notes = [
+        { freq: 784,   start: 0.00, dur: 0.18, vol: 0.10 },  // G5
+        { freq: 988,   start: 0.20, dur: 0.18, vol: 0.10 },  // B5
+        { freq: 1175,  start: 0.40, dur: 0.55, vol: 0.13 },  // D6 (held)
+      ];
+      for (const n of notes) {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(n.freq, now + n.start);
+        gain.gain.setValueAtTime(0.0001, now + n.start);
+        gain.gain.exponentialRampToValueAtTime(n.vol, now + n.start + 0.02);
+        gain.gain.setValueAtTime(n.vol, now + n.start + n.dur - 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + n.start + n.dur);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now + n.start);
+        osc.stop(now + n.start + n.dur + 0.05);
+      }
+      // Second layer on the held note — a fifth above, for "chord" feel
+      const fifth = audioCtx.createOscillator();
+      const fifthGain = audioCtx.createGain();
+      fifth.type = 'triangle';
+      fifth.frequency.setValueAtTime(1760, now + 0.40); // A6
+      fifthGain.gain.setValueAtTime(0.0001, now + 0.40);
+      fifthGain.gain.exponentialRampToValueAtTime(0.06, now + 0.42);
+      fifthGain.gain.setValueAtTime(0.06, now + 0.90);
+      fifthGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.95);
+      fifth.connect(fifthGain);
+      fifthGain.connect(audioCtx.destination);
+      fifth.start(now + 0.40);
+      fifth.stop(now + 1.0);
+    } catch (e) {}
+  }
+	
+  // ---------- EXACT TRACK DATA FROM YOUR SPREADSHEET ----------
+  const rawRows = [
+    "|  | 2 |  |  |  | - | - | - | - | - | - |  |  |  |  |  |  | - | - | - | - | - | - |  |  |  |  |  |  | - | - | - | - | - | - |  |  |  |",
+    "|  | 3 |  |  | - | - |  |  |  |  |  | - |  |  |  |  | - |  |  |  |  |  |  | - |  |  |  |  | - |  |  |  |  |  |  | - |  |  |",
+    "|  | 4 |  |  | - |  | p43 | p44 | p44 | p45 | p46 |  | - | - | - | - |  | p53 | p54 | p55 | p56 | p57 |  |  | - | - | - | - |  |  | p86 | p87 | p88 |  |  | - |  |  |",
+    "|  | 5 |  |  | - |  | p43 | p43 | p44 | p45 | p46 | p47 | p48 | p49 |  |  | p52 | p53 | p54 | p55 | p56 | p57 | p57 |  |  | - | - |  | p85 | p85 | p86 | p87 | p88 | p89 |  | - |  |  |",
+    "|  | 6 |  |  | - |  | p43 | p43 | p44 | p45 | p46 | p47 | p48 | p49 | p50 | p51 | p52 | p53 |  |  | p58 | p58 | p58 | p57 |  | - |  | p83 | p84 | p85 | p86 | p87 | p89 | p89 |  | - |  |  |",
+    "|  | 7 |  |  | - |  | p42 | p42 | p43 |  |  |  |  |  | p48 | p49 | p50 | p51 | - |  | p59 | p59 | p59 | p58 |  | - |  | p83 | p84 | p85 | p86 |  | p88 | p89 |  | - |  |  |",
+    "|  | 8 |  |  | - |  | p41 | p41 |  |  | - | - | - | p49 | p50 | p50 | p51 | p52 | - |  | p60 | p60 | p60 |  |  | - |  | p84 | p85 | p85 | p85 | p86 |  | p90 |  | - |  |  |",
+    "|  | 9 |  |  | - |  | p40 | p40 |  | - | - |  |  |  |  | - | - | - |  | p61 | p61 | p61 |  |  | - | - |  | p83 | p84 | p84 | p84 | - |  | p91 |  | - |  |  |",
+    "|  | 10 |  |  | - |  | p39 | p39 |  | - |  |  |  | - | - |  |  |  | p62 | p62 | p62 |  |  | - | - |  | p82 | p83 | p83 | p84 | p83 | - |  | p92 |  | - |  |  |",
+    "|  | 11 |  |  | - |  | p38 | p38 |  |  |  |  | - | - |  |  |  | p64 | p63 | p63 |  |  | - | - |  | p81 | p82 | p83 | p82 |  | - | - |  | p93 |  | - |  |  |",
+    "|  | 12 |  |  | - |  | p37 | p37 | p37 |  |  | - | - |  |  | p65 | p65 | p64 | p64 |  |  | - | - |  | p80 | p81 | p82 |  |  | - | - |  |  | p94 |  | - |  |  |",
+    "|  | 13 |  |  | - |  | p36 | p36 | p36 |  | - | - |  |  | p67 | p66 | p65 |p65  |  |  | - | - |  | p79 | p80 | p81 | p82 |  | - | - |  |  | p95 | p95 |  | - |  |  |",
+    "|  | 14 |  |  | - |  | p35 | p35 | p35 |  | - |  |  |  | p68 | p68 | p67 | p66 |  | - | - |  | p78 | p79 | p80 | p81 |  | - | - |  |  | p96 | p96 | p96 |  | - |  |  |",
+    "|  | 15 |  |  | - |  | p34 | p34 | p34 |  | - |  |  |  | p69 | p69 | p68 | - | - | - |  | p77 | p78 | p79 |  |  | - | - |  |  | p97 | p97 | p97 | p97 |  | - |  |  |",
+    "|  | 16 |  |  | - |  | p33 | p33 | p33 |  | - |  |  |  | p70 | p70 |  |  | p74 | p75 | p76 | p77 | p78 |  |  | - | - |  |  | p98 | p98 | p98 | p98 | p98 |  | - |  |  |",
+    "|  | 17 |  |  | - |  | p32 | p32 | p32 |  | - |  |  |  |  | p71 | p72 | p73 | p74 | p75 | p76 | p77 |  |  | - | - |  |  | p99 | p99 | p99 | p99 | p99 |  |  | - |  |  |",
+    "|  | 18 |  |  | - |  | p31 | p31 | p31 |  | - |  |  |  |  | p71 | p72 | p73 | p74 | p75 |  |  |  | - | - |  |  | p100 | p100 | p100 | p100 | p100 |  |  |  | - |  |  |",
+    "|  | 19 |  |  | - |  | p30 | p30 | p30 |  | - | - |  |  |  |  | p72 | p73 | p74 |  |  | - | - | - |  |  | p101 | p101 | p101 | p101 | p101 | p100 |  |  |  | - |  |  |",
+    "|  | 20 |  |  | - |  | p29 | p29 | p29 |  |  | - | - |  |  |  |  |  | - | - | - | - |  |  | p9 | p8 | p7 | p6 | p5 | p4 | p3 | p2 | P1 |  |  | - |  |  |",
+    "|  | 21 |  |  | - |  | p28 | p28 | p27 | p26 |  |  | - | - | - | - | - | - | - |  |  |  |  |  | p9 | p8 | p7 | p6 | p5 | p4 | p3 | p2 | p1 |  |  | - |  |  |",
+    "|  | 22 |  |  | - |  | p27 | p27 | p26 | p25 | p24 |  |  |  |  |  |  |  |  |  |  | p12 | p11 | p10 | p9 | p8 | p7 | p6 | p5 | p4 | p3 | p2 | p1 |  |  | - |  |  |",
+    "|  | 23 |  |  | - |  | p26 | p26 | p25 | p24 | p23 | p22 | p21 | p20 | p19 | p18 | p17 | p16 | p15 | p14 | p13 | p12 | p11 | p10 | p9 | p8 | p7 | p6 | p5 | p4 | p3 | p2 | p1 |  |  | - |  |  |",
+    "|  | 24 |  |  | - |  | p25 | p25 | p24 | p23 | p23 | p22 | p21 | p20 | p19 | p18 | p17 | p16 | p15 | p14 | p13 | p12 | p11 | p10 | p9 | p8 | p7 | p6 | p5 | p4 | p3 | p2 | p1 |  |  | - |  |  |",
+    "|  | 25 |  |  | - |  |  | p23 | p23 | p23 | p23 |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | p3 | p2 | p1 |  |  | - |  |  |",
+    "|  | 26 |  |  | - |  |  |  |  |  |  | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - |  |  |  |  |  |  |  |  | - |  |  |",
+    "|  | 27 |  |  | - | - |  |  |  |  | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - |  |  |  |  |  |  |  | - |  |  |",
+    "|  | 28 |  |  |  | - | - | - | - | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - | - | - | - | - | - | - | - |  |"
+  ];
+
+  // ---------- PARSE THE GRID ----------
+  const COLS = 37, ROWS = 28;
+  const wallGrid = Array.from({length: ROWS + 1}, () => Array(COLS + 1).fill(false));
+  const pathPositions = {};
+
+  for (const raw of rawRows) {
+    const cells = raw.split('|').map(s => s.trim());
+    const rowNum = parseInt(cells[2]);
+    if (isNaN(rowNum) || rowNum < 2 || rowNum > 28) continue;
+    
+    for (let c = 2; c <= COLS + 1; c++) {
+      const v = cells[c + 1] || '';
+      if (v === '-') {
+        wallGrid[rowNum][c] = true;
+      } else if (/^p\d+$/i.test(v)) {
+        const n = parseInt(v.substring(1));
+        if (!pathPositions[n]) pathPositions[n] = [];
+        pathPositions[n].push({ r: rowNum, c: c });
+      }
+    }
+  }
+
+  // Build ordered waypoint list p1..p101. Each pN appears as a run of cells;
+  // take the centre of that band so the waypoint sits mid-lane.
+  const waypoints = [];
+  const maxPath = Math.max(...Object.keys(pathPositions).map(Number));
+  for (let n = 1; n <= maxPath; n++) {
+    const cells = pathPositions[n];
+    if (!cells || cells.length === 0) continue;
+    const rs = cells.map(p => p.r).sort((a, b) => a - b);
+    const cs = cells.map(p => p.c).sort((a, b) => a - b);
+    const mid = arr => (arr[0] + arr[arr.length - 1]) / 2;
+    waypoints.push({ r: mid(rs) - 0.5, c: mid(cs) - 0.5 });
+  }
+
+  // ---------- CONFIG ----------
+  const CELL = 20;
+  const W = (COLS + 1) * CELL;
+  const H = (ROWS + 1) * CELL;
+  const RACE_TIME = 90;
+  const ACCEL = 8.0, BRAKE = 12.0, MAX_SPEED = 5.0, FRICTION = 2.5;
+  const TURN_RATE = 3.2;
+  const CAR_RADIUS = 0.45;
+  const AI_TURN_RATE = 6.5;
+  const AI_MAX_SPEED = 4.5;
+
+const START = [
+    { row: 20, col: 33, angle: Math.PI }, // P1
+    { row: 22, col: 33, angle: Math.PI }, // AI1
+    { row: 24, col: 33, angle: Math.PI }, // AI2
+    { row: 26, col: 33, angle: Math.PI }, // AI3
+    { row: 20, col: 30, angle: Math.PI }, // AI4 (second column)
+    { row: 22, col: 30, angle: Math.PI }, // AI5
+    { row: 24, col: 30, angle: Math.PI }, // AI6
+    { row: 26, col: 30, angle: Math.PI }  // AI7
+];
+
+const CAR_COLORS = [
+    '#ffff00',  // Player — bright yellow
+    '#e040e0',  // Max — magenta
+    '#40c040',  // Alain — green
+    '#4080ff',  // Ayrton — blue
+    '#ff3030',  // Lewis — red
+    '#ffffff',  // Michael — white
+    '#00e0e0',  // Jim — cyan (was purple)
+    '#ff8800'   // Nigel — orange
+];
+
+const CAR_NAMES = ['Player', 'Max', 'Alain', 'Ayrton', 'Lewis', 'Michael', 'Jim', 'Nigel'];
+
+  // ---------- CANVAS ----------
+  const canvas = document.getElementById('game');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  const trackCanvas = document.createElement('canvas');
+  trackCanvas.width = W;
+  trackCanvas.height = H;
+  const tctx = trackCanvas.getContext('2d');
+
+  function buildStaticTrack() {
+    tctx.fillStyle = '#0a0a14';
+    tctx.fillRect(0, 0, W, H);
+
+    // Faint grid background
+    tctx.strokeStyle = 'rgba(40, 50, 80, 0.3)';
+    tctx.lineWidth = 1;
+    for (let r = 0; r <= ROWS; r++) {
+      tctx.beginPath();
+      tctx.moveTo(0, r * CELL);
+      tctx.lineTo(W, r * CELL);
+      tctx.stroke();
+    }
+    for (let c = 0; c <= COLS; c++) {
+      tctx.beginPath();
+      tctx.moveTo(c * CELL, 0);
+      tctx.lineTo(c * CELL, H);
+      tctx.stroke();
+    }
+    // Dark road surface
+    tctx.fillStyle = '#141420';
+    tctx.fillRect(0, 0, W, H);
+
+    // Draw all cells
+    for (let r = 1; r <= ROWS; r++) {
+      for (let c = 1; c <= COLS; c++) {
+                if (wallGrid[r] && wallGrid[r][c]) {
+          tctx.shadowColor = '#c0e0a0';
+          tctx.shadowBlur = 6;
+          tctx.fillStyle = '#d0f0b0';
+          tctx.fillRect((c-1)*CELL + 4, (r-1)*CELL + 4, CELL - 8, CELL - 8);
+          tctx.shadowBlur = 0;
+        }
+      }
+    }
+  }
+
+  // ---------- STATE ----------
+  let cars = [];
+  let keys = {};
+  let timeLeft = RACE_TIME;
+  let gameState = 'menu';
+  let menuActive = true;
+  let lastTime = 0;
+  let accumulator = 0;
+  let countdownTimer = 180;
+  const FIXED_DT = 1 / 60;
+
+   function makeCar(idx, isAI) {
+    const s = START[idx];
+    const baseSpeeds = [5.1, 4.7, 5.2, 4.8, 4.9, 5.1, 4.8, 5.3];
+    const frequencies = [1, Math.PI / 3, Math.PI / 5, Math.PI / 4,
+                         Math.PI / 6, Math.PI / 7, Math.PI / 2, Math.PI / 2.5];
+    
+    return {
+     id: idx, isAI,
+     x: s.col - 0.5, y: s.row - 0.5,
+     angle: s.angle, speed: 0, score: 0,
+     color: CAR_COLORS[idx], name: CAR_NAMES[idx],
+     lastX: s.col - 0.5, lastY: s.row - 0.5,
+     wpIndex: 0, stuckTimer: 0,
+     reverse: false,
+	 reverseTimer: 0,
+	 forwardTimer: 0,
+	 spinTimer: 0,
+	 iframes: 0,
+	 lastScoreTime: 0,
+	 zoneACooldown: 0,
+	 zoneBCooldown: 0,
+	 zoneCCooldown: 0,
+	 zonesThisLap: 0,
+	 lastResortTimer: 0,
+	 collisionCleared: true,
+	 laneOffset: [0, -1.2, 1.2, -0.6, 0.6, -1.5, 1.5, 0][idx] || 0,
+	 wallCollisionCleared: true,
+	 baseSpeed: baseSpeeds[idx] || 4.5,
+	 speedVariance: isAI ? 0.6 : 0,
+	 speedTimer: Math.random() * 100,
+	 speedFrequency: frequencies[idx] || Math.PI / 3,
+	 zonesPassed: 0,
+	 spinVx: 0,
+	spinVy: 0
+    };
+  }
+
+function checkZones(car, dt) {
+  if (car.prevX === undefined) {
+    car.prevX = car.x;
+    car.prevY = car.y;
+  }
+
+  if (car.zoneACooldown > 0) car.zoneACooldown -= dt;
+  if (car.zoneBCooldown > 0) car.zoneBCooldown -= dt;
+  if (car.zoneCCooldown > 0) car.zoneCCooldown -= dt;
+
+  const row = Math.round(car.y + 0.5);
+  const col = Math.round(car.x + 0.5);
+  const prevRow = Math.round(car.prevY + 0.5);
+  const prevCol = Math.round(car.prevX + 0.5);
+
+  // Zone A (top straight, moving right)
+  const crossedCol18 = (prevCol < 18 && col >= 18) && row >= 3 && row <= 8;
+  // Zone B (right straight, moving down)
+  const crossedRow11 = (prevRow < 11 && row >= 11) && col >= 30 && col <= 35;
+  // Zone C (bottom left, moving left)
+const crossedCol12 = (prevCol > 12 && col <= 12) && row >= 21 && row <= 26;
+
+ if (crossedCol18 && car.zoneACooldown <= 0 && car.zonesThisLap === 0) {
+    car.score += 2;
+    car.lastScoreTime = performance.now();
+    car.zonesThisLap = 1;
+    car.zoneACooldown = 2.0;
+    playBeep(880, 0.1, 0.06);
+}
+else if (crossedRow11 && car.zoneBCooldown <= 0 && car.zonesThisLap === 1) {
+    car.score += 2;
+    car.lastScoreTime = performance.now();
+    car.zonesThisLap = 2;
+    car.zoneBCooldown = 2.0;
+    playBeep(1100, 0.1, 0.06);
+}
+else if (crossedCol12 && car.zoneCCooldown <= 0 && car.zonesThisLap === 2) {
+    car.score += 2;
+    car.lastScoreTime = performance.now();
+    car.zonesThisLap = 0;
+    car.zoneCCooldown = 2.0;
+    playBeep(660, 0.1, 0.06);
+}
+
+  car.prevX = car.x;
+  car.prevY = car.y;
+}
+
+  // ---------- PHYSICS ----------
+  function updatePlayer(car, dt) {
+    if (car.iframes > 0) car.iframes -= dt;
+
+     if (car.spinTimer > 0) {
+      car.spinTimer -= dt;
+
+      // Try to move with spin velocity — rejected if it would enter a wall
+      tryMoveTo(car, car.x + car.spinVx * dt, car.y + car.spinVy * dt);
+
+      // If the move was rejected (car is against a wall), bounce off it
+      const frontX = car.x + Math.cos(car.angle) * 0.4;
+      const frontY = car.y + Math.sin(car.angle) * 0.4;
+      const fcx = Math.floor(frontX) + 1;
+      const fcy = Math.floor(frontY) + 1;
+      if (fcy < 2 || fcy > 28 || fcx < 2 || fcx > 37 || (wallGrid[fcy] && wallGrid[fcy][fcx])) {
+        car.spinVx = -car.spinVx * 0.6;
+        car.spinVy = -car.spinVy * 0.6;
+      }
+
+      car.spinVx *= 0.94;
+      car.spinVy *= 0.94;
+      car.angle += 12 * dt;
+      car.speed = 0;
+
+      if (car.spinTimer <= 0) {
+        car.iframes = 0.5;
+        car.collisionCleared = false;
+        car.spinVx = 0;
+        car.spinVy = 0;
+        car.speed = 1.5;
+      }
+      return;
+    }
+
+    let accel = 0, turn = 0;
+    if (keys['ArrowUp'] || keys['w'] || keys['W']) accel += 1;
+    if (keys['ArrowDown'] || keys['s'] || keys['S']) accel -= 1;
+    if (keys['ArrowLeft'] || keys['a'] || keys['A']) turn -= 1;
+    if (keys['ArrowRight'] || keys['d'] || keys['D']) turn += 1;
+
+    if (accel > 0) car.speed += ACCEL * dt;
+    else if (accel < 0) car.speed -= BRAKE * dt;
+    else {
+      if (Math.abs(car.speed) < FRICTION * dt) car.speed = 0;
+      else car.speed -= Math.sign(car.speed) * FRICTION * dt;
+    }
+    car.speed = Math.max(-MAX_SPEED * 0.4, Math.min(MAX_SPEED, car.speed));
+    const speedFactor = Math.min(1, Math.abs(car.speed) / 1.5);
+    car.angle += turn * TURN_RATE * dt * speedFactor * Math.sign(car.speed || 1);
+  }
+
+   function updateAI(car, dt) {
+    if (car.iframes > 0) car.iframes -= dt;
+
+     if (car.spinTimer > 0) {
+      car.spinTimer -= dt;
+
+      // Try to move with spin velocity — rejected if it would enter a wall
+      tryMoveTo(car, car.x + car.spinVx * dt, car.y + car.spinVy * dt);
+
+      // If the move was rejected (car is against a wall), bounce off it
+      const frontX = car.x + Math.cos(car.angle) * 0.4;
+      const frontY = car.y + Math.sin(car.angle) * 0.4;
+      const fcx = Math.floor(frontX) + 1;
+      const fcy = Math.floor(frontY) + 1;
+      if (fcy < 2 || fcy > 28 || fcx < 2 || fcx > 37 || (wallGrid[fcy] && wallGrid[fcy][fcx])) {
+        car.spinVx = -car.spinVx * 0.6;
+        car.spinVy = -car.spinVy * 0.6;
+      }
+
+      car.spinVx *= 0.94;
+      car.spinVy *= 0.94;
+      car.angle += 12 * dt;
+      car.speed = 0;
+
+      if (car.spinTimer <= 0) {
+        car.iframes = 0.5;
+        car.collisionCleared = false;
+        car.spinVx = 0;
+        car.spinVy = 0;
+        car.speed = 1.5;
+      }
+      return;
+    }
+    
+        let wp = waypoints[car.wpIndex];
+    let nextWp = waypoints[(car.wpIndex + 1) % waypoints.length];
+
+    let dx = wp.c - car.x;
+    let dy = wp.r - car.y;
+    let dist = Math.hypot(dx, dy);
+
+    // Advance when close to the current waypoint, OR when we've driven past it
+    const _nxt = waypoints[(car.wpIndex + 1) % waypoints.length];
+    const passed = dist < 3.0 &&
+      ((car.x - wp.c) * (_nxt.c - wp.c) + (car.y - wp.r) * (_nxt.r - wp.r)) > 0;
+    if (dist < 1.8 || passed) {
+      car.wpIndex = (car.wpIndex + 1) % waypoints.length;
+    }
+
+    if (car.reverseTimer > 0) {
+      car.reverseTimer -= dt;
+      car.speed = -2.5;
+      const targetAngle = Math.atan2(waypoints[car.wpIndex].r - car.y, waypoints[car.wpIndex].c - car.x);
+      let diff = targetAngle - car.angle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      car.angle -= Math.max(-AI_TURN_RATE * dt, Math.min(AI_TURN_RATE * dt, diff));
+      return;
+    }
+
+    if (car.forwardTimer > 0) {
+      car.forwardTimer -= dt;
+      car.speed = 1.5;
+      const targetAngle = Math.atan2(waypoints[car.wpIndex].r - car.y, waypoints[car.wpIndex].c - car.x);
+      let diff = targetAngle - car.angle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+          // If moving fast, we can't turn as sharply (wider radius)
+    const speedTurnFactor = Math.max(0.4, 1.0 - (car.speed / 8.0));
+    const maxTurnThisFrame = AI_TURN_RATE * dt * speedTurnFactor;
+    car.angle += Math.max(-maxTurnThisFrame, Math.min(maxTurnThisFrame, diff));
+      return;
+    }
+
+    const lookAhead = Math.min(1, 2.5 / (dist + 0.5));
+    let aimX = wp.c + (nextWp.c - wp.c) * lookAhead;
+    let aimY = wp.r + (nextWp.r - wp.r) * lookAhead;
+    if (car.laneOffset) {
+      const trackAngle = Math.atan2(nextWp.r - wp.r, nextWp.c - wp.c);
+      const perpAngle = trackAngle + Math.PI / 2;
+      aimX += Math.cos(perpAngle) * car.laneOffset;
+      aimY += Math.sin(perpAngle) * car.laneOffset;
+    }
+    const targetAngle = Math.atan2(aimY - car.y, aimX - car.x);
+    let diff = targetAngle - car.angle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    car.angle += Math.max(-AI_TURN_RATE * dt, Math.min(AI_TURN_RATE * dt, diff));
+
+    car.speedTimer += dt;
+        if (car.wallCollisionCleared === false) {
+      // Just hit a wall — don't accelerate into it this frame
+      car.speed *= 0.9;  // let friction slow us down
+      return;
+    }
+    const speedWave = Math.sin(car.speedTimer * car.speedFrequency);
+    let currentMaxSpeed = car.baseSpeed;
+    if (car.isAI) currentMaxSpeed += speedWave * car.speedVariance;
+    const turnSharp = Math.abs(diff);
+    const targetSpeed = currentMaxSpeed * (1 - Math.min(0.6, turnSharp * 0.55));
+    if (car.speed < targetSpeed) car.speed += ACCEL * dt;
+    else car.speed -= FRICTION * 1.5 * dt;
+    car.speed = Math.min(car.speed, currentMaxSpeed);
+
+    const moved = Math.hypot(car.x - car.lastX, car.y - car.lastY);
+    car.lastX = car.x;
+    car.lastY = car.y;
+    if (moved < 0.02) car.stuckTimer += dt;
+    else car.stuckTimer = 0;
+
+    if (car.stuckTimer > 0.5) {
+      // Stuck for a full second — force a hard bounce away from the wall
+      car.stuckTimer = 0;
+      // Reverse direction of travel
+      car.speed = -3.5;
+      // Turn away from the wall by sampling which side is open
+      const testAngles = [0, Math.PI/4, -Math.PI/4, Math.PI/2, -Math.PI/2, Math.PI];
+      let bestAngle = car.angle;
+      let bestClear = -1;
+      for (const da of testAngles) {
+        const a = car.angle + Math.PI + da;   // all candidates point away from current heading
+        const tx = car.x + Math.cos(a) * 0.8;
+        const ty = car.y + Math.sin(a) * 0.8;
+        const cc = Math.floor(tx) + 1;
+        const cr = Math.floor(ty) + 1;
+        if (cr < 2 || cr > 28 || cc < 2 || cc > 37) continue;
+        if (wallGrid[cr] && wallGrid[cr][cc]) continue;
+        // Count open neighbours around this candidate
+        let clear = 0;
+        for (let k = 0; k < 8; k++) {
+          const ka = a + k * Math.PI / 4;
+          const kx = car.x + Math.cos(ka) * 1.5;
+          const ky = car.y + Math.sin(ka) * 1.5;
+          const kc = Math.floor(kx) + 1;
+          const kr = Math.floor(ky) + 1;
+          if (kr >= 2 && kr <= 28 && kc >= 2 && kc <= 37 &&
+              !(wallGrid[kr] && wallGrid[kr][kc])) clear++;
+        }
+        if (clear > bestClear) { bestClear = clear; bestAngle = a; }
+      }
+      car.angle = bestAngle;
+      car.reverseTimer = 0;
+      car.forwardTimer = 0;
+    } else if (car.stuckTimer > 0.5) {
+      // Mid-level stuck: gentle reverse (keeps existing behaviour)
+      car.stuckTimer = 0;
+      car.reverseTimer = 0.8;
+      car.forwardTimer = 0.4;
+      car.lastResortTimer += 0.5;
+    } else {
+      car.lastResortTimer = 0;
+    }
+
+    // Last resort: if stuck for 4+ seconds straight, teleport to nearest waypoint
+    if (car.lastResortTimer >= 4.0) {
+      car.lastResortTimer = 0;
+      let bestIdx = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < waypoints.length; i++) {
+        const d = Math.hypot(waypoints[i].c - car.x, waypoints[i].r - car.y);
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+      }
+      const target = waypoints[bestIdx];
+      car.x = target.c - 0.5;
+      car.y = target.r - 0.5;
+      car.angle = Math.atan2(waypoints[(bestIdx + 1) % waypoints.length].r - target.r,
+                             waypoints[(bestIdx + 1) % waypoints.length].c - target.c);
+      car.speed = 2.0;
+      car.wpIndex = bestIdx;
+    }
+  }
+
+function tryMoveTo(car, newX, newY) {
+  const R = CAR_RADIUS;
+  // Check the car's body at the proposed position (front, rear, left, right)
+  const checks = [
+    { x: newX, y: newY },
+    { x: newX + Math.cos(car.angle) * 0.4, y: newY + Math.sin(car.angle) * 0.4 },
+    { x: newX - Math.cos(car.angle) * 0.4, y: newY - Math.sin(car.angle) * 0.4 },
+    { x: newX + Math.sin(car.angle) * 0.3, y: newY - Math.cos(car.angle) * 0.3 },
+    { x: newX - Math.sin(car.angle) * 0.3, y: newY + Math.cos(car.angle) * 0.3 }
+  ];
+  for (const p of checks) {
+    const cc = Math.floor(p.x) + 1;
+    const cr = Math.floor(p.y) + 1;
+    if (cr < 2 || cr > 28 || cc < 2 || cc > 37) return false;
+    if (wallGrid[cr] && wallGrid[cr][cc]) return false;
+  }
+  car.x = newX;
+  car.y = newY;
+  return true;
+}
+
+function applyMovement(car, dt) {
+  const dx = Math.cos(car.angle) * car.speed * dt;
+  const dy = Math.sin(car.angle) * car.speed * dt;
+
+  // Try full movement
+  if (tryMoveTo(car, car.x + dx, car.y + dy)) {
+    car.wallCollisionCleared = true;
+    return;
+  }
+
+  // Wall collision detected
+  if (car.wallCollisionCleared) {
+    car.wallCollisionCleared = false;
+
+    // Find which axis is blocked
+    const canX = tryMoveTo(car, car.x + dx, car.y);
+    const canY = tryMoveTo(car, car.x, car.y + dy);
+
+    // Push out along the free axis, or backward if cornered
+    let pushX = 0, pushY = 0;
+    if (!canX && canY) {
+      pushX = -Math.sign(dx) * 0.6;
+    } else if (canX && !canY) {
+      pushY = -Math.sign(dy) * 0.6;
+    } else {
+      pushX = -Math.cos(car.angle) * 0.6;
+      pushY = -Math.sin(car.angle) * 0.6;
+    }
+    tryMoveTo(car, car.x + pushX, car.y + pushY);
+
+    // Spin away from the wall
+    const turnDir = Math.random() < 0.5 ? 1 : -1;
+    if (car.isAI) {
+      car.angle += turnDir * (Math.PI / 2 + Math.random() * Math.PI / 2);
+    } else {
+      // Player gets a smaller nudge, not a full spin
+      car.angle += turnDir * (Math.PI / 6);
+    }
+
+    // Strong reverse impulse — the car visibly flies back
+    car.speed = -3.0;
+  }
+}
+
+function carCollisions() {
+  for (let i = 0; i < cars.length; i++) {
+    for (let j = i + 1; j < cars.length; j++) {
+      const a = cars[i], b = cars[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const d = Math.hypot(dx, dy);
+      const minDist = CAR_RADIUS * 2;
+
+      if (d < minDist && d > 0.001) {
+        const overlap = minDist - d;
+        const nx = dx / d;
+        const ny = dy / d;
+
+        // Try to push apart — but only if the target position is not a wall
+        tryMoveTo(a, a.x - nx * overlap * 0.5, a.y - ny * overlap * 0.5);
+        tryMoveTo(b, b.x + nx * overlap * 0.5, b.y + ny * overlap * 0.5);
+
+        if (a.iframes > 0 || b.iframes > 0) continue;
+        if (a.collisionCleared && b.collisionCleared) {
+          a.spinTimer = 0.4;
+          b.spinTimer = 0.4;
+          a.spinVx = -nx * 8.0;
+          a.spinVy = -ny * 8.0;
+          b.spinVx = nx * 8.0;
+          b.spinVy = ny * 8.0;
+          a.speed = 0;
+          b.speed = 0;
+          a.collisionCleared = false;
+          b.collisionCleared = false;
+          playCrash();
+        }
+      } else {
+        if (a.spinTimer <= 0 && b.spinTimer <= 0) {
+          a.collisionCleared = true;
+          b.collisionCleared = true;
+        }
+      }
+    }
+  }
+}
+
+    // Vignette
+    const vignette = ctx.createRadialGradient(W / 2, H / 2, W * 0.3, W / 2, H / 2, W * 0.75);
+    vignette.addColorStop(0, 'rgba(0,0,0,0)');
+    vignette.addColorStop(1, 'rgba(0,0,0,0.5)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, W, H);
+
+  // ---------- RENDER ----------
+function drawCars() {
+  for (const car of cars) {
+    ctx.save();
+    ctx.translate(car.x * CELL, car.y * CELL);
+    ctx.rotate(car.angle);
+
+    const w = CELL * 0.85;
+    const h = CELL * 0.5;
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath();
+    ctx.roundRect(-w/2 + 2, -h/2 + 2, w, h, 2);
+    ctx.fill();
+
+    // Main body (rounded rectangle)
+    ctx.fillStyle = car.color;
+    ctx.beginPath();
+    ctx.roundRect(-w/2, -h/2, w, h, 2);
+    ctx.fill();
+
+    // Slight nose taper (just a small trapezoid at the front)
+    ctx.fillStyle = car.color;
+    ctx.beginPath();
+    ctx.moveTo(w/2 - 2, -h/2 + 1);
+    ctx.lineTo(w/2 + 2, -h/4);
+    ctx.lineTo(w/2 + 2, h/4);
+    ctx.lineTo(w/2 - 2, h/2 - 1);
+    ctx.closePath();
+    ctx.fill();
+
+    // Cockpit (dark, center-back)
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath();
+    ctx.roundRect(-w * 0.15, -h * 0.3, w * 0.3, h * 0.6, 1);
+    ctx.fill();
+
+    // Windshield (light strip in front of cockpit)
+    ctx.fillStyle = 'rgba(150, 200, 255, 0.5)';
+    ctx.fillRect(w * 0.15, -h * 0.35, 2, h * 0.7);
+
+    // Rear spoiler
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(-w/2 - 1, -h/2 + 1, 2, h - 2);
+
+    // Wheels (now 4x3 for visibility)
+    ctx.fillStyle = '#ccc';
+    ctx.fillRect(-w * 0.3, -h/2 - 2, 4, 3);
+    ctx.fillRect(-w * 0.3, h/2 - 1, 4, 3);
+    ctx.fillRect(w * 0.25, -h/2 - 2, 4, 3);
+    ctx.fillRect(w * 0.25, h/2 - 1, 4, 3);
+
+    ctx.restore();
+  }
+}
+
+    function draw() {
+    ctx.clearRect(0, 0, W, H);
+    
+        if (menuActive) {
+      // Dim background
+      ctx.fillStyle = '#0a0a14';
+      ctx.fillRect(0, 0, W, H);
+
+      // Title
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffdd55';
+      ctx.font = 'bold 72px "Courier New", monospace';
+      ctx.shadowColor = '#ffdd55';
+      ctx.shadowBlur = 40;
+      ctx.fillText('INDY 800', W / 2, H / 2 - 60);
+      ctx.shadowBlur = 0;
+
+      // Subtitle
+      ctx.fillStyle = '#88aaff';
+      ctx.font = '20px "Courier New", monospace';
+      ctx.fillText('1975 · ATARI', W / 2, H / 2);
+
+      // Press start
+      const blink = Math.sin(Date.now() / 300) > 0;
+      if (blink) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '18px "Courier New", monospace';
+        ctx.fillText('PRESS SPACE TO START', W / 2, H / 2 + 100);
+      }
+
+      // Controls hint
+      ctx.fillStyle = '#556688';
+      ctx.font = '12px "Courier New", monospace';
+      ctx.fillText('ARROWS / WASD = DRIVE', W / 2, H - 60);
+      ctx.fillText('7 AI OPPONENTS', W / 2, H - 40);
+
+      return;  // Skip the rest of draw() while in menu
+    }
+    
+    ctx.drawImage(trackCanvas, 0, 0);
+    
+        // Scoring line A — vertical, on the top straight, at column 18
+      ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 80, 0.4)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([2, 6]);
+
+    // Zone A: column 18, rows 2-7 (top straight)
+    ctx.beginPath();
+    ctx.moveTo(18 * CELL, 2 * CELL);
+    ctx.lineTo(18 * CELL, 7 * CELL);
+    ctx.stroke();
+
+    // Zone B: row 11, columns 30-35 (right straight)
+    ctx.beginPath();
+    ctx.moveTo(30 * CELL, 11 * CELL);
+    ctx.lineTo(35 * CELL, 11 * CELL);
+    ctx.stroke();
+
+    // Zone C: column 12, rows 21-26 (bottom-left)
+    ctx.beginPath();
+    ctx.moveTo(12 * CELL, 21 * CELL);
+    ctx.lineTo(12 * CELL, 26 * CELL);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    ctx.restore();
+    
+    drawCars();
+
+    // --- COUNTDOWN TEXT ---
+    if (countdownTimer > 0) {
+      const seconds = Math.ceil(countdownTimer / 60);
+      const displayText = seconds === 0 ? 'GO!' : seconds;
+      
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = 'bold 80px "Courier New", monospace';
+      
+      // Pulse effect
+      const pulse = 1 + Math.sin(countdownTimer * 0.15) * 0.1;
+      ctx.translate(W / 2, H / 2);
+      ctx.scale(pulse, pulse);
+      
+      // Color: Red for numbers, Green for GO!
+      ctx.fillStyle = seconds === 0 ? '#40c040' : '#ff3333';
+      ctx.shadowColor = ctx.fillStyle;
+      ctx.shadowBlur = 20;
+      ctx.fillText(displayText, 0, 0);
+      ctx.restore();
+    }
+  }
+
+function getRankedCars() {
+  return [...cars].sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    // Earlier score time = higher rank
+    return (a.lastScoreTime || 0) - (b.lastScoreTime || 0);
+  });
+}
+
+  // ---------- HUD ----------
+function updateHUD() {
+  const scoresEl = document.getElementById('scores');
+  const sorted = getRankedCars();  // <--- Use the function
+  
+  scoresEl.innerHTML = sorted.map((car, i) => {
+    const rank = i + 1;
+    const isPlayer = !car.isAI;
+    const weight = isPlayer ? 'bold' : 'normal';
+    const border = isPlayer ? '2px solid #fff' : '1px solid rgba(255,255,255,0.2)';
+    return `<span style="background:${car.color}; color:#000; font-weight:${weight}; border:${border};">${rank}. ${car.name}: ${car.score}</span>`;
+  }).join('');
+  
+  const timerEl = document.getElementById('timer');
+  timerEl.textContent = Math.max(0, timeLeft).toFixed(1);
+  if (timeLeft <= 10 && timeLeft > 0) {
+    const pulse = 0.6 + Math.abs(Math.sin(Date.now() / 200)) * 0.4;
+    timerEl.style.color = `rgba(255, 80, 80, ${pulse})`;
+  } else {
+    timerEl.style.color = '';
+  }
+}
+
+  // ---------- GAME LOOP ----------
+  function update(dt) {
+	    if (menuActive) return;
+    if (gameState !== 'racing') return;
+  
+      // --- COUNTDOWN LOGIC ---
+        if (countdownTimer > 0) {
+      const prevSec = Math.ceil(countdownTimer / 60);
+      countdownTimer -= dt * 60;
+      const newSec = Math.ceil(countdownTimer / 60);
+      if (newSec !== prevSec) {
+        if (newSec > 0) playBeep(440, 0.15, 0.08);
+        else playBeep(880, 0.3, 0.1);  // GO!
+      }
+      return;
+    }
+     if (timeLeft <= 10 && timeLeft > 0) {
+      startFinalSiren();
+      updateCrowdVolume(timeLeft);
+    } else {
+      stopFinalSiren();
+    }
+    timeLeft -= dt;
+    
+    if (timeLeft <= 0) { stopFinalSiren(); timeLeft = 0; endGame(); return; }
+    timeLeft -= dt;
+        const prevSec = Math.ceil((timeLeft + dt));
+    const currSec = Math.ceil(timeLeft);
+    if (prevSec !== currSec && currSec <= 3 && currSec > 0) {
+      playBeep(660, 0.12, 0.1);
+    }
+    if (timeLeft <= 0) { timeLeft = 0; endGame(); return; }
+
+    for (const car of cars) {
+      if (car.isAI) updateAI(car, dt);
+      else updatePlayer(car, dt);
+    }
+        for (const car of cars) applyMovement(car, dt);
+    carCollisions();
+ 
+    for (const car of cars) {
+      checkZones(car, dt);
+    }
+}
+
+  function loop(now) {
+    if (!lastTime) lastTime = now;
+    let delta = (now - lastTime) / 1000;
+    lastTime = now;
+    if (delta > 0.1) delta = 0.1;
+
+    accumulator += delta;
+    while (accumulator >= FIXED_DT) {
+      update(FIXED_DT);
+      accumulator -= FIXED_DT;
+    }
+
+    draw();
+    updateHUD();
+    if (gameState === 'racing') requestAnimationFrame(loop);
+  }
+
+  function startGame() {
+    cars = START.map((s, i) => makeCar(i, i !== 0));
+        stopFinalSiren();
+    keys = {};
+    const selectedLength = parseInt(document.getElementById('raceLength').value) || 90;
+    timeLeft = selectedLength;
+    countdownTimer = 180;
+    playBeep(440, 0.15, 0.08);  // Beep for "3" immediately 
+    gameState = 'racing';
+    lastTime = 0;
+    accumulator = 0;
+    document.getElementById('overlay').classList.remove('show');
+    requestAnimationFrame(loop);
+  }
+
+function endGame() {
+  gameState = 'finished';
+  stopFinalSiren();
+  playFanfare();
+
+  // Call the exact same function the HUD uses
+  const sorted = getRankedCars();
+  
+  const winner = sorted[0];
+  const isTie = sorted.length > 1 && sorted[0].score === sorted[1].score;
+
+  const overlay = document.getElementById('overlay');
+  const text = document.getElementById('overlayText');
+
+  // Build the list using the exact same sorted array
+  const rankingHTML = sorted.map((c, i) => 
+    `${i + 1}. ${c.name}: ${c.score}`
+  ).join('<br>');
+
+  if (isTie) {
+    text.innerHTML = `🤝 TIE!<br><br><div style="font-size:20px; line-height:1.6;">${rankingHTML}</div>`;
+  } else {
+    text.innerHTML = `🏆 ${winner.name} WINS! 🏆<br><br><div style="font-size:20px; line-height:1.6;">${rankingHTML}</div>`;
+  }
+
+  overlay.classList.add('show');
+  draw();
+  updateHUD();
+}
+
+  document.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+    
+      if (e.key === ' ' && menuActive) {
+    menuActive = false;
+    startGame();
+    return;
+  }
+    if (e.key === 'r' || e.key === 'R') {
+      if (gameState === 'finished') startGame();
+    }
+  });
+  document.addEventListener('keyup', e => {
+    keys[e.key] = false;
+  });
+
+  // Init audio on first keypress (browsers require user interaction)
+  document.addEventListener('keydown', initAudio, { once: true });
+  document.addEventListener('mousedown', initAudio, { once: true });
+
+  buildStaticTrack();
+  startGame();
+})();
+</script>
+</body>
+</html>
