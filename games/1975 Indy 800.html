@@ -9,9 +9,59 @@
   #hud span { padding: 4px 10px; border-radius: 4px; }
   #timer { color: #ffdd55; font-size: 20px; }
   canvas { background: #000; border: 3px solid #444; border-radius: 6px; display: block; }
-  #overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; background: rgba(0,0,0,0.75); color: #fff; font-size: 32px; font-weight: bold; text-align: center; }
+  #overlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    font-size: 32px;
+    font-weight: bold;
+    text-align: center;
+    z-index: 100;
+    padding: 20px;
+  }
   #overlay.show { display: flex; }
-  #overlay small { font-size: 16px; margin-top: 12px; color: #aaa; font-weight: normal; }
+  #overlay > div {
+    max-height: 90vh;
+    overflow-y: auto;
+    max-width: 400px;
+  }
+  #champPanel {
+    color: #ffdd55;
+    font-size: 16px;
+    line-height: 1.6;
+    text-align: left;
+    padding: 20px;
+    background: rgba(20, 20, 32, 0.9);
+    border-radius: 12px;
+    border: 2px solid #2a2a4a;
+  }
+  #trackGap {
+    flex: 0 0 40px;
+        min-width: 40px;
+  }
+  #racePanel {
+    color: #fff;
+    font-size: 16px;
+    line-height: 1.6;
+    text-align: left;
+    padding: 20px;
+    background: rgba(20, 20, 32, 0.9);
+    border-radius: 12px;
+    border: 2px solid #2a2a4a;
+    max-width: 400px;
+  }
+  #racePanel small {
+    display: block;
+    font-size: 13px;
+    margin-top: 12px;
+    color: #88ff88;
+    font-weight: normal;
+    text-align: center;
+  }
   .wrap { position: relative; }
     .game-layout {
     display: flex;
@@ -35,17 +85,31 @@
     border-radius: 6px;
     letter-spacing: 1px;
   }
-  #scores {
+    #scoresRow {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  #raceScores, #champScores {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    flex: 1;
   }
-  #scores span {
+  #raceScores span, #champScores span {
     padding: 4px 10px;
     border-radius: 4px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .section-label {
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    color: #667799;
+    padding: 4px 6px 2px;
+    font-weight: bold;
   }
     #overlay {
     font-size: 20px;
@@ -60,15 +124,29 @@
 <body>
 
 <div class="game-layout">
+  <div id="overlay">
+    <div id="champPanel"></div>
+    <div id="trackGap"></div>
+    <div id="racePanel">
+      <div id="overlayText"></div>
+      <small>Press R to restart</small>
+    </div>
+  </div>
   <div class="wrap">
     <canvas id="game"></canvas>
-    <div id="overlay"><div id="overlayText"></div><small>Press R to restart</small></div>
   </div>
-<div id="sidebar">
+  <div id="sidebar">
         <select id="trackSelect" style="background:#1a1a30; color:#88bbff; border:1px solid #3a3a6a; border-radius:6px; padding:6px; font-family:inherit; font-size:14px; font-weight:bold;">
         <option value="indy800" selected>Indy 800</option>
-        <option value="oval800">Oval 800</option>
+        <option value="chicane800">Chicane 800</option>
         <option value="cross800">Cross 800</option>
+        <option value="oval800">Oval 800</option>
+        <option value="fish800">Fish 800</option>
+    </select>
+    </select>
+    <select id="raceMode" style="background:#1a1a30; color:#88ff88; border:1px solid #3a3a6a; border-radius:6px; padding:6px; font-family:inherit; font-size:14px; font-weight:bold;">
+        <option value="single" selected>Single Race</option>
+        <option value="championship">Championship (5 races)</option>
     </select>
     <select id="raceLength" style="background:#1a1a30; color:#ffdd55; border:1px solid #3a3a6a; border-radius:6px; padding:6px; font-family:inherit; font-size:14px; font-weight:bold;">
         <option value="30">30s Sprint</option>
@@ -78,8 +156,11 @@
         <option value="180">180s Endurance</option>
         <option value="360">360s Super Endurance</option>
     </select>
-    <div id="timer">90.0</div>
-    <div id="scores"></div>
+     <div id="timer">90.0</div>
+    <div id="scoresRow">
+      <div id="raceScores"></div>
+      <div id="champScores"></div>
+    </div>
 </div>
 </div>
 
@@ -146,6 +227,37 @@
       oscGain.connect(audioCtx.destination);
       osc.start(now);
       osc.stop(now + 0.25);
+    } catch (e) {}
+  }
+
+  // Skid — short filtered noise burst, volume scales with slip amount
+  let skidNodes = null;
+  function playSkid(slipAmount) {
+    if (!audioCtx || slipAmount <= 0) return;
+    try {
+      const now = audioCtx.currentTime;
+      // Volume: ~0.005 at threshold, ~0.04 at full slip
+      const vol = Math.min(0.1, slipAmount * 0.04);
+      const dur = 0.15;
+      const bufferSize = audioCtx.sampleRate * dur;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        const env = 1 - i / bufferSize;
+        data[i] = (Math.random() * 2 - 1) * env * env;
+      }
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 1800;   // high, whiny — tyre-like
+      filter.Q.value = 2.5;
+      const gain = audioCtx.createGain();
+      gain.gain.value = vol;
+      source.connect(filter);
+      filter.connect(gain);
+      gain.connect(audioCtx.destination);
+      source.start(now);
     } catch (e) {}
   }
 	
@@ -324,7 +436,7 @@
       zones: {
 		          order: ['A', 'B', 'C'],
         // zone A: top straight, cars cross col 18 while between rows 3-8
-        A: { axis: 'col', value: 18, dir: 'increasing', range: [3, 8] },
+        A: { axis: 'col', value: 18, dir: 'increasing', range: [2, 7] },
         // zone B: right straight, cars cross row 11 while between cols 30-35
         B: { axis: 'row', value: 11, dir: 'increasing', range: [30, 35] },
         // zone C: bottom-left, cars cross col 12 while between rows 21-26
@@ -332,8 +444,8 @@
       }
     },
 
-    oval800: {
-      name: 'Oval 800',
+    chicane800: {
+      name: 'Chicane 800',
       startAngle: Math.PI,
       rows: [
         "|  | 2 |  |  |  | - | - | - | - | - | - |  |  |  |  |  |  | - | - | - | - | - | - |  |  |  |  |  |  | - | - | - | - | - | - |  |  |  |",
@@ -382,9 +494,9 @@
         "|  | 5 |  |  | - |  | p27 | p26 | p25 | p24 | p23 | p22 |  |  |  | - |  |  |  |  |  |  |  |  |  |  | - |  |  |  | p66 | p67 | p68 |  |  | - |  |",
         "|  | 6 |  |  | - |  | p27 | p26 | p25 | p24 | p23 | p22 | p21 | p20 |  |  | - |  |  |  |  |  |  |  |  |  | - |  |  | p65 | p66 | p67 | p68 |  |  | - |  |",
         "|  | 7 |  |  | - |  | p28 | p27 | p26 |  |  |  | p21 | p20 | p19 |  |  | - |  |  |  |  |  |  |  | - |  |  | p64 | p65 | p66 | p67 | p68 |  |  | - |  |",
-        "|  | 8 |  |  | - |  | p28 | p28 |  |  |  |  |  | p20 | p19 | p18 |  |  | - |  |  |  |  |  |  | - |  |  | p64 | p65 |  | p68 | p68 |  |  | - |  |",
-        "|  | 9 |  |  | - |  | p29 | p29 | p29 |  | - | - |  |  | p19 | p18 | p17 |  |  | - |  |  |  |  |  | - |  |  | p63 | p64 |  | - | p69 | p69 |  | - |  |  |",
-        "|  | 10 |  |  | - |  | p30 | p30 | p30 |  | - |  | - |  |  | p18 | p17 | p16 |  |  | - |  |  |  | - |  |  | p62 | p63 | p64 |  | - | p70 | p70 |  | - |  |  |",
+        "|  | 8 |  |  | - |  | p28 | p28 |  |  |  |  |  | p20 | p19 | p18 |  |  | - |  |  |  |  |  |  | - |  | p64 | p65 |  |  | p68 | p68 |  |  | - |  |",
+        "|  | 9 |  |  | - |  | p29 | p29 | p29 |  | - | - |  |  | p19 | p18 | p17 |  |  | - |  |  |  |  |  | - |  | p63 | p64 | p65 |  | - | p69 | p69 |  | - |  |  |",
+        "|  | 10 |  |  | - |  | p30 | p30 | p30 |  | - |  | - |  |  | p18 | p17 | p16 |  |  | - |  |  |  | - |  | p62 | p63 | p64 |  |  | - | p70 | p70 |  | - |  |  |",
         "|  | 11 |  |  | - |  | p31 | p31 | p31 |  | - |  |  | - |  |  | p17 | p16 | p15 |  |  | - |  | - |  |  | p61 | p62 | p63 |  | - | - | p71 | p71 |  | - |  |  |",
         "|  | 12 |  |  | - |  | p32 | p32 | p32 |  | - |  |  |  | - |  |  | p16 | p15 | p14 |  |  | - |  |  | p60 | p61 | p62 |  | - | - |  | p72 | p72 |  | - |  |  |",
         "|  | 13 |  |  | - |  | p33 | p33 | p33 |  | - |  |  |  |  | - |  |  | p15 | p14 | p13 |  |  |  | p59 | p60 | p61 |  | - | - |  | p73 | p73 | p73 |  | - |  |  |",
@@ -411,7 +523,87 @@
         B: { axis: 'col', value: 13, dir: 'increasing', range: [22, 28] },
         C: { axis: 'row', value: 18, dir: 'increasing', range: [28, 35] }
       }
+    },
+        oval800: {
+      name: 'Oval 800',
+      startAngle: Math.PI,
+      rows: [
+        "|  | 2 |  |  |  | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - |  |  |  | - | - | - | - | - | - |  |",
+        "|  | 3 |  |  | - | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - |  | - |  |  |  |  |  | - | - |  |",
+        "|  | 4 |  |  | - |  | p43 | p43 | p44 | p45 | p46 | p47 | p48 | p49 | p50 | p51 | p52 | p53 | p54 | p55 | p56 | p57 | p58 | p59 |  |  |  | - |  |  |  |  |  |  |  | - |  |  |",
+        "|  | 5 |  |  | - |  | p43 | p43 | p44 | p45 | p46 | p47 | p48 | p49 | p50 | p51 | p52 | p53 | p54 | p55 | p56 | p57 | p58 | p59 | p60 | p61 |  | - |  | p65 | p66 | p67 | p68 | p68 |  | - |  |  |",
+        "|  | 6 |  |  | - |  | p43 | p43 | p44 | p45 | p46 | p47 | p48 | p49 | p50 | p51 | p52 | p53 | p54 | p55 | p56 | p57 | p58 | p59 | p60 | p61 |  | - |  | p65 | p66 | p67 | p68 | p69 |  | - |  |  |",
+        "|  | 7 |  |  | - |  | p42 | p42 | p43 |  |  |  |  |  |  |  |  |  |  |  |  |  |  | p60 | p61 | p62 |  | p64 | p65 |  |  | p69 | p70 |  |  | - |  |",
+        "|  | 8 |  |  | - |  | p41 | p41 | p42 |  | - | - | - | - | - | - | - | - | - | - | - | - | - | - | p62 | p62 | p63 | p64 | p64 |  | - |  | p71 | p71 |  | - |  |",
+        "|  | 9 |  |  | - |  | p40 | p40 | p40 |  | - |  |  |  |  |  |  |  |  |  |  |  |  | - |  | p62 | p63 |  |  |  | - |  | p72 |  |  | - |  |",
+        "|  | 10 |  |  | - |  | p39 | p39 | p39 |  | - |  |  |  |  |  |  |  |  |  |  |  |  | - | - | - | - | - | - | - | - | p73 | p73 |  |  | - |  |",
+        "|  | 11 |  |  | - |  | p38 | p38 | p38 |  | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - |  | p74 | p74 |  | - |  |",
+        "|  | 12 |  |  | - |  | p37 | p37 | p37 |  | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - |  | p75 | p75 |  | - |  |",
+        "|  | 13 |  |  | - |  | p36 | p36 | p36 |  | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - |  | p76 | p76 |  | - |  |",
+        "|  | 14 |  |  | - |  | p35 | p35 | p35 |  | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - |  | p77 | p77 |  | - |  |",
+        "|  | 15 |  |  | - |  | p34 | p34 | p34 |  | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - |  | p78 | p78 |  | - |  |",
+        "|  | 16 |  |  | - |  | p33 | p33 | p33 |  | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - |  | p79 | p79 |  | - |  |",
+        "|  | 17 |  |  | - |  | p32 | p32 | p32 |  | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - |  | p80 | p80 |  | - |  |",
+        "|  | 18 |  |  | - |  | p31 | p31 | p31 |  | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - |  | p81 | p81 |  | - |  |",
+        "|  | 19 |  |  | - |  | p30 | p30 | p30 |  | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - | p82 | p82 |  |  | - |  |",
+        "|  | 20 |  |  | - |  | p29 | p29 | p29 |  | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - | p2 | p1 |  |  |  | - |  |",
+        "|  | 21 |  |  | - |  | p28 | p28 | p27 |  | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - |  | p2 | p1 |  |  |  | - |  |",
+        "|  | 22 |  |  | - |  | p27 | p27 | p26 | p25 | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | p4 | p3 | p2 | p1 |  |  |  | - |  |",
+        "|  | 23 |  |  | - |  | p26 | p26 | p25 | p24 | p23 | p22 |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | p4 | p3 | p2 | p1 |  |  | - |  |  |",
+        "|  | 24 |  |  | - |  | p25 | p25 | p24 | p23 | p23 | p22 | p21 | p20 | p19 | p18 | p17 | p16 | p15 | p14 | p13 | p12 | p11 | p10 | p9 | p8 | p7 | p6 | p5 | p4 | p3 | p2 | p1 |  |  | - |  |  |",
+        "|  | 25 |  |  | - |  |  | p23 | p23 | p23 | p23 | p22 | p21 | p20 | p19 | p18 | p17 | p16 | p15 | p14 | p13 | p12 | p11 | p10 | p9 | p8 | p7 | p6 | p5 | p4 | p3 | p2 | p1 |  |  | - |  |  |",
+        "|  | 26 |  |  | - |  |  |  |  |  | p23 | p22 | p21 | p20 | p19 | p18 | p17 | p16 | p15 | p14 | p13 | p12 | p11 | p10 | p9 | p8 | p7 | p6 | p5 | p4 | p3 | p2 | p1 |  |  | - |  |  |",
+        "|  | 27 |  |  | - | - |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | - | - |  |  |",
+        "|  | 28 |  |  |  | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - |  |  |"
+      ],
+      zones: {
+        order: ['A', 'B', 'C'],
+        A: { axis: 'col', value: 16, dir: 'decreasing', range: [21, 28] },
+        B: { axis: 'col', value: 14, dir: 'increasing', range: [2, 8] },
+        C: { axis: 'row', value: 18, dir: 'increasing', range: [30, 35] }
+      }
+    },
+
+    fish800: {
+      name: 'Fish 800',
+      startAngle: Math.PI,
+      rows: [
+        "|  | 2 |  |  |  |  |  |  |  |  |  |  |  |  |  | - | - | - | - |  |  |  |  |  |  |  |  |  | - | - | - | - | - | - | - | - | - |  |",
+        "|  | 3 |  |  |  |  |  |  |  |  |  |  |  |  | - |  |  |  | - |  |  |  |  |  |  |  |  |  | - |  |  |  |  |  |  |  | - |  |  |",
+        "|  | 4 |  |  |  |  |  |  |  |  |  |  |  | - |  | p37 | p38 |  | - |  |  |  |  |  |  |  |  |  | - |  |  | p52 | p53 |  |  |  | - |  |  |",
+        "|  | 5 |  |  |  |  |  |  |  |  |  |  | - |  | p36 | p37 | p38 | p39 |  | - |  |  |  |  |  |  |  | - |  |  | p51 | p52 | p53 | p54 |  |  | - |  |  |",
+        "|  | 6 |  |  |  |  |  |  |  |  |  | - |  | p36 | p36 | p37 | p38 | p39 |  |  | - |  |  |  |  |  | - |  |  |  | p51 | p52 | p53 | p54 | p55 |  | - |  |  |",
+        "|  | 7 |  |  |  |  |  |  |  |  | - |  |  | p35 | p36 | p37 | p38 | p39 | p40 | p41 |  | - |  |  |  | - |  |  |  | p50 | p51 | p52 | p53 | p54 | p55 | p55 | - |  |  |",
+        "|  | 8 |  |  |  |  |  |  |  | - |  | p34 | p34 | p34 | p35 |  |  | p39 | p40 | p41 |  |  | - |  | - |  |  | p48 | p49 | p50 | p51 |  |  | p54 | p55 | p55 | - |  |  |",
+        "|  | 9 |  |  |  |  |  |  | - |  | p33 | p33 | p33 | p33 |  |  | - |  | p40 | p41 | p42 |  |  | - |  |  | p47 | p48 | p49 | p50 | p51 |  |  | p55 | p55 | p56 | - |  |  |",
+        "|  | 10 |  |  |  |  |  | - |  |  | p32 | p32 | p32 |  |  | - |  | - |  | p41 | p42 | p43 | p44 |  |  | p46 | p47 | p48 | p49 | p50 |  |  | - | p56 | p56 | p56 | - |  |  |",
+        "|  | 11 |  |  |  |  | - |  | p31 | p31 | p31 | p31 |  |  | - |  |  |  | - |  | p41 | p42 | p43 | p44 | p45 | p46 | p47 | p48 | p49 | p50 |  | - | - | p57 | p57 | p57 | - |  |  |",
+        "|  | 12 |  |  |  | - |  |  | p30 | p30 | p30 |  |  | - |  |  |  |  |  | - |  | p42 | p43 | p44 | p45 | p46 | p47 |  |  |  | - |  | - | p58 | p58 | p58 | - |  |  |",
+        "|  | 13 |  |  | - |  |  |  | p29 | p29 | p29 |  | - |  |  |  |  |  |  |  | - |  |  |  |  |  |  |  |  | - |  |  | - | p59 | p59 | p59 | - |  |  |",
+        "|  | 14 |  |  | - |  | p28 | p28 | p28 | p28 |  | - |  |  |  |  |  |  |  |  |  | - | - | - | - | - | - | - | - |  |  |  | - | p60 | p60 | p60 | - |  |  |",
+        "|  | 15 |  |  | - |  | p27 | p27 | p27 |  | - |  |  |  |  |  |  |  |  |  |  |  | - | - | - | - | - | - |  |  |  |  | - | p61 | p61 | p61 | - |  |  |",
+        "|  | 16 |  |  | - |  | p26 | p26 | p26 | p25 |  | - |  |  |  |  |  |  |  |  |  | - | - | - | - | - | - | - | - |  |  |  | - | p62 | p62 | p62 | - |  |  |",
+        "|  | 17 |  |  | - |  |  | p25 | p25 | p25 | p24 |  | - |  |  |  |  |  |  |  | - |  |  |  |  |  |  |  |  | - |  |  | - | p63 | p63 | p63 | - |  |  |",
+        "|  | 18 |  |  |  | - |  |  | p25 | p24 | p24 | p23 |  | - |  |  |  |  |  | - |  | p13 | p12 | p11 | p10 | p9 | p8 | p7 |  |  | - |  | - | p64 | p64 | p64 | - |  |  |",
+        "|  | 19 |  |  |  |  | - |  | p25 | p24 | p23 | p22 |  |  | - |  |  |  | - |  | p14 | p13 | p12 | p11 | p10 | p9 | p8 | p7 | p6 | p5 |  | - | - | p65 | p65 | p65 | - |  |  |",
+        "|  | 20 |  |  |  |  |  | - |  | p24 | p23 | p22 | p21 |  |  | - |  | - |  | p15 | p14 | p13 | p12 |  |  |  | p8 | p7 | p6 | p5 | p4 |  | - | p66 | p66 |  | - |  |  |",
+        "|  | 21 |  |  |  |  |  |  | - |  |  | p22 | p21 | p20 |  |  | - |  |  | p15 | p14 | p13 |  | - |  |  |  | p7 | p6 | p5 | p4 | p3 |  | p67 | p67 |  | - |  |  |",
+        "|  | 22 |  |  |  |  |  |  |  | - |  |  | p21 | p20 | p19 |  |  | p16 | p15 | p14 |  |  | - |  | - |  |  |  | p6 | p5 | p4 | p3 | p2 | p1 |  |  | - |  |  |",
+        "|  | 23 |  |  |  |  |  |  |  |  | - |  | p21 | p20 | p19 | p18 | p17 | p16 | p15 |  |  | - |  |  |  | - |  |  |  | p5 | p4 | p3 | p2 | p1 |  |  | - |  |  |",
+        "|  | 24 |  |  |  |  |  |  |  |  |  | - |  | p20 | p19 | p18 | p17 | p16 |  |  | - |  |  |  |  |  | - |  |  |  | p4 | p3 | p2 | p1 |  |  | - |  |  |",
+        "|  | 25 |  |  |  |  |  |  |  |  |  |  | - |  | p19 | p18 | p17 | p16 |  | - |  |  |  |  |  |  |  | - |  |  |  | p3 | p2 | p1 |  |  | - |  |  |",
+        "|  | 26 |  |  |  |  |  |  |  |  |  |  |  | - |  |  | p17 |  | - |  |  |  |  |  |  |  |  |  | - |  |  | p2 | p1 |  |  |  | - |  |  |",
+        "|  | 27 |  |  |  |  |  |  |  |  |  |  |  |  | - |  |  |  | - |  |  |  |  |  |  |  |  |  | - |  |  |  |  |  |  |  | - |  |  |",
+        "|  | 28 |  |  |  |  |  |  |  |  |  |  |  |  |  | - | - | - | - |  |  |  |  |  |  |  |  |  | - | - | - | - | - | - | - | - | - |  |  |"
+      ],
+      zones: {
+        order: ['A', 'B', 'C'],
+        A: { axis: 'col', value: 15, dir: 'decreasing', range: [21, 28] },
+        B: { axis: 'col', value: 23, dir: 'increasing', range: [9, 14] },
+        C: { axis: 'row', value: 18, dir: 'increasing', range: [31, 35] }
+      }
     }
+    
   };
 
   const START = [
@@ -564,6 +756,10 @@ const CAR_NAMES = ['Player', 'Max', 'Alain', 'Ayrton', 'Lewis', 'Michael', 'Jim'
   // ---------- STATE ----------
   let cars = [];
   let keys = {};
+  let raceMode = 'single';           // 'single' or 'championship'
+  let championshipRace = 1;          // current race in championship (1..5)
+  let championshipPoints = {};       // { Player: 0, Max: 0, ... } — accumulates
+  const CHAMPIONSHIP_TRACKS = ['indy800', 'chicane800', 'cross800', 'oval800', 'fish800'];
   let timeLeft = RACE_TIME;
   let gameState = 'menu';
   let menuActive = true;
@@ -572,8 +768,8 @@ const CAR_NAMES = ['Player', 'Max', 'Alain', 'Ayrton', 'Lewis', 'Michael', 'Jim'
   let countdownTimer = 180;
   const FIXED_DT = 1 / 60;
 
-   function makeCar(idx, isAI) {
-    const s = START[idx];
+   function makeCar(idx, isAI, slot) {
+    const s = START[slot !== undefined ? slot : idx];
     const baseSpeeds = [5.1, 4.7, 5.2, 4.8, 4.9, 5.1, 4.8, 5.3];
     const frequencies = [1, Math.PI / 3, Math.PI / 5, Math.PI / 4,
                          Math.PI / 6, Math.PI / 7, Math.PI / 2, Math.PI / 2.5];
@@ -582,6 +778,7 @@ const CAR_NAMES = ['Player', 'Max', 'Alain', 'Ayrton', 'Lewis', 'Michael', 'Jim'
      id: idx, isAI,
      x: s.col - 0.5, y: s.row - 0.5,
      angle: s.angle, speed: 0, score: 0,
+     vx: 0, vy: 0,
      color: CAR_COLORS[idx], name: CAR_NAMES[idx],
      lastX: s.col - 0.5, lastY: s.row - 0.5,
      wpIndex: 0, stuckTimer: 0,
@@ -676,13 +873,9 @@ function checkZones(car, dt) {
   function updatePlayer(car, dt) {
     if (car.iframes > 0) car.iframes -= dt;
 
-     if (car.spinTimer > 0) {
+    if (car.spinTimer > 0) {
       car.spinTimer -= dt;
-
-      // Try to move with spin velocity — rejected if it would enter a wall
       tryMoveTo(car, car.x + car.spinVx * dt, car.y + car.spinVy * dt);
-
-      // If the move was rejected (car is against a wall), bounce off it
       const frontX = car.x + Math.cos(car.angle) * 0.4;
       const frontY = car.y + Math.sin(car.angle) * 0.4;
       const fcx = Math.floor(frontX) + 1;
@@ -691,12 +884,11 @@ function checkZones(car, dt) {
         car.spinVx = -car.spinVx * 0.6;
         car.spinVy = -car.spinVy * 0.6;
       }
-
       car.spinVx *= 0.94;
       car.spinVy *= 0.94;
       car.angle += 12 * dt;
       car.speed = 0;
-
+      car.vx = 0; car.vy = 0;
       if (car.spinTimer <= 0) {
         car.iframes = 0.5;
         car.collisionCleared = false;
@@ -713,15 +905,88 @@ function checkZones(car, dt) {
     if (keys['ArrowLeft'] || keys['a'] || keys['A']) turn -= 1;
     if (keys['ArrowRight'] || keys['d'] || keys['D']) turn += 1;
 
-    if (accel > 0) car.speed += ACCEL * dt;
-    else if (accel < 0) car.speed -= BRAKE * dt;
-    else {
-      if (Math.abs(car.speed) < FRICTION * dt) car.speed = 0;
-      else car.speed -= Math.sign(car.speed) * FRICTION * dt;
+    // --- Longitudinal force (throttle / brake) ---
+    // These act along the FACING direction (engine pushes where car points).
+    const facingX = Math.cos(car.angle);
+    const facingY = Math.sin(car.angle);
+    const forwardSpeed = car.vx * facingX + car.vy * facingY;  // signed
+
+    if (accel > 0) {
+      car.vx += facingX * ACCEL * dt;
+      car.vy += facingY * ACCEL * dt;
+    } else if (accel < 0) {
+      // Brake: oppose current forward motion
+      if (forwardSpeed > 0.1) {
+        car.vx -= facingX * BRAKE * dt;
+        car.vy -= facingY * BRAKE * dt;
+      } else {
+        // Already stopped or reversing — apply reverse thrust
+        car.vx -= facingX * ACCEL * 0.5 * dt;
+        car.vy -= facingY * ACCEL * 0.5 * dt;
+      }
     }
-    car.speed = Math.max(-MAX_SPEED * 0.4, Math.min(MAX_SPEED, car.speed));
-    const speedFactor = Math.min(1, Math.abs(car.speed) / 1.5);
-    car.angle += turn * TURN_RATE * dt * speedFactor * Math.sign(car.speed || 1);
+
+    // --- Steering: rotate the FACING direction ---
+    // Steering authority scales with speed (can't turn while stationary).
+    const speedNow = Math.hypot(car.vx, car.vy);
+    const steerAuthority = Math.min(1, speedNow / 1.5) * Math.sign(forwardSpeed || 1);
+    car.angle += turn * TURN_RATE * dt * steerAuthority;
+
+    // --- Grip: pull velocity toward the facing direction ---
+    const newFacingX = Math.cos(car.angle);
+    const newFacingY = Math.sin(car.angle);
+    const newForwardSpeed = car.vx * newFacingX + car.vy * newFacingY;
+
+    // Decompose velocity into forward + lateral components
+    const fwdVx = newFacingX * newForwardSpeed;
+    const fwdVy = newFacingY * newForwardSpeed;
+    const latVx = car.vx - fwdVx;
+    const latVy = car.vy - fwdVy;
+
+    // Grip strength
+    const GRIP_BASE = 12.0;
+    const GRIP_AT_SPEED = 4.0;
+    const gripBlend = Math.min(1, speedNow / 2.0);
+    const grip = GRIP_BASE * (1 - gripBlend) + GRIP_AT_SPEED * gripBlend;
+
+    // Apply grip: kill lateral component proportionally
+    const lateralKill = Math.min(1, grip * dt);
+    car.vx = fwdVx + latVx * (1 - lateralKill);
+    car.vy = fwdVy + latVy * (1 - lateralKill);
+
+    // Skid sound — fires when lateral velocity is significant at speed
+    const latSpeed = Math.hypot(latVx, latVy);
+    const slip = latSpeed - 0.8;
+    if (slip > 0 && speedNow > 2.0) {
+      car._skidCooldown = (car._skidCooldown || 0) - dt;
+      if (car._skidCooldown <= 0) {
+        playSkid(Math.min(1, slip / 2.0));
+        car._skidCooldown = 0.08;
+      }
+    }
+
+    // --- Friction (slow down when no throttle) ---
+    if (accel === 0) {
+      const fric = FRICTION * dt;
+      const curSpeed = Math.hypot(car.vx, car.vy);
+      if (curSpeed < fric) {
+        car.vx = 0; car.vy = 0;
+      } else {
+        const scale = (curSpeed - fric) / curSpeed;
+        car.vx *= scale;
+        car.vy *= scale;
+      }
+    }
+
+    // --- Speed cap ---
+    const curSpeed = Math.hypot(car.vx, car.vy);
+    if (curSpeed > MAX_SPEED) {
+      car.vx *= MAX_SPEED / curSpeed;
+      car.vy *= MAX_SPEED / curSpeed;
+    }
+
+    // Keep car.speed synced (other code reads it)
+    car.speed = forwardSpeed;
   }
 
    function updateAI(car, dt) {
@@ -834,44 +1099,56 @@ function checkZones(car, dt) {
     if (moved < 0.02) car.stuckTimer += dt;
     else car.stuckTimer = 0;
 
-    if (car.stuckTimer > 0.5) {
-      // Stuck for a full second — force a hard bounce away from the wall
+        if (car.stuckTimer > 0.5) {
+      // Car is stuck. Rotate to face the most open direction, then drive forward.
       car.stuckTimer = 0;
-      // Reverse direction of travel
-      car.speed = -3.5;
-      // Turn away from the wall by sampling which side is open
-      const testAngles = [0, Math.PI/4, -Math.PI/4, Math.PI/2, -Math.PI/2, Math.PI];
+
+      // Sample 12 directions around the car. For each, measure how open the
+      // path is over the next 2 cells. Pick the direction with the most
+      // clear space. Prefer directions roughly away from current heading
+      // (avoids picking the wall we're already pressed against).
       let bestAngle = car.angle;
-      let bestClear = -1;
-      for (const da of testAngles) {
-        const a = car.angle + Math.PI + da;   // all candidates point away from current heading
-        const tx = car.x + Math.cos(a) * 0.8;
-        const ty = car.y + Math.sin(a) * 0.8;
-        const cc = Math.floor(tx) + 1;
-        const cr = Math.floor(ty) + 1;
-        if (cr < 2 || cr > 28 || cc < 2 || cc > 37) continue;
-        if (wallGrid[cr] && wallGrid[cr][cc]) continue;
-        // Count open neighbours around this candidate
+      let bestScore = -Infinity;
+      const SAMPLES = 12;
+      for (let k = 0; k < SAMPLES; k++) {
+        const a = (k / SAMPLES) * Math.PI * 2;
+        // Count clear cells in a 2-cell ray from the car
         let clear = 0;
-        for (let k = 0; k < 8; k++) {
-          const ka = a + k * Math.PI / 4;
-          const kx = car.x + Math.cos(ka) * 1.5;
-          const ky = car.y + Math.sin(ka) * 1.5;
-          const kc = Math.floor(kx) + 1;
-          const kr = Math.floor(ky) + 1;
-          if (kr >= 2 && kr <= 28 && kc >= 2 && kc <= 37 &&
-              !(wallGrid[kr] && wallGrid[kr][kc])) clear++;
+        let blocked = false;
+        for (let step = 0.6; step <= 2.0; step += 0.4) {
+          const tx = car.x + Math.cos(a) * step;
+          const ty = car.y + Math.sin(a) * step;
+          const cc = Math.floor(tx) + 1;
+          const cr = Math.floor(ty) + 1;
+          if (cr < 2 || cr > 28 || cc < 2 || cc > 37) { blocked = true; break; }
+          if (wallGrid[cr] && wallGrid[cr][cc]) { blocked = true; break; }
+          clear++;
         }
-        if (clear > bestClear) { bestClear = clear; bestAngle = a; }
+        if (blocked) continue;
+        // Prefer directions closer to current heading (car is facing a wall —
+        // it needs to turn away, so any open direction is fine, but staying
+        // roughly forward keeps the AI on-track)
+        const angleToTarget = Math.atan2(
+          waypoints[car.wpIndex].r - car.y,
+          waypoints[car.wpIndex].c - car.x
+        );
+        let diffToTarget = angleToTarget - a;
+        while (diffToTarget > Math.PI) diffToTarget -= Math.PI * 2;
+        while (diffToTarget < -Math.PI) diffToTarget += Math.PI * 2;
+        const towardTarget = 1 - Math.abs(diffToTarget) / Math.PI;  // 1 = facing target, 0 = opposite
+
+        const score = clear + towardTarget * 3;
+        if (score > bestScore) {
+          bestScore = score;
+          bestAngle = a;
+        }
       }
+
+      // Turn the car to face the best direction and drive forward into it
       car.angle = bestAngle;
+      car.speed = 2.0;
       car.reverseTimer = 0;
       car.forwardTimer = 0;
-    } else if (car.stuckTimer > 0.5) {
-      // Mid-level stuck: gentle reverse (keeps existing behaviour)
-      car.stuckTimer = 0;
-      car.reverseTimer = 0.8;
-      car.forwardTimer = 0.4;
       car.lastResortTimer += 0.5;
     } else {
       car.lastResortTimer = 0;
@@ -918,9 +1195,17 @@ function tryMoveTo(car, newX, newY) {
 }
 
 function applyMovement(car, dt) {
-  const dx = Math.cos(car.angle) * car.speed * dt;
-  const dy = Math.sin(car.angle) * car.speed * dt;
-
+  // Use velocity vector (drift-friendly). AI cars still set car.speed and angle,
+  // so reconstruct velocity for them (they don't drift).
+  let dx, dy;
+  if (car.isAI) {
+    dx = Math.cos(car.angle) * car.speed * dt;
+    dy = Math.sin(car.angle) * car.speed * dt;
+  } else {
+    dx = car.vx * dt;
+    dy = car.vy * dt;
+  }
+  
   // Try full movement
   if (tryMoveTo(car, car.x + dx, car.y + dy)) {
     car.wallCollisionCleared = true;
@@ -958,6 +1243,9 @@ function applyMovement(car, dt) {
 
     // Strong reverse impulse — the car visibly flies back
     car.speed = -3.0;
+    // Kill velocity so drift doesn't carry through the wall
+    car.vx = Math.cos(car.angle) * car.speed;
+    car.vy = Math.sin(car.angle) * car.speed;
   }
 }
 
@@ -989,6 +1277,8 @@ function carCollisions() {
           b.spinVy = ny * 8.0;
           a.speed = 0;
           b.speed = 0;
+          a.vx = 0; a.vy = 0;
+          b.vx = 0; b.vy = 0;
           a.collisionCleared = false;
           b.collisionCleared = false;
           playCrash();
@@ -1170,17 +1460,57 @@ function getRankedCars() {
 
   // ---------- HUD ----------
 function updateHUD() {
-  const scoresEl = document.getElementById('scores');
-  const sorted = getRankedCars();  // <--- Use the function
-  
-  scoresEl.innerHTML = sorted.map((car, i) => {
+  const raceEl = document.getElementById('raceScores');
+  const champEl = document.getElementById('champScores');
+  const sorted = getRankedCars();
+  const isChamp = raceMode === 'championship';
+
+  // --- Race scores table (always shown) ---
+  // Sort by current race score, with the earlier-first-score tiebreak.
+  const raceHTML = sorted.map((car, i) => {
     const rank = i + 1;
     const isPlayer = !car.isAI;
     const weight = isPlayer ? 'bold' : 'normal';
     const border = isPlayer ? '2px solid #fff' : '1px solid rgba(255,255,255,0.2)';
     return `<span style="background:${car.color}; color:#000; font-weight:${weight}; border:${border};">${rank}. ${car.name}: ${car.score}</span>`;
   }).join('');
-  
+
+  // --- Championship scores table (only in championship mode) ---
+  if (isChamp) {
+    // In champ mode, the sidebar shows the running grand prix standings.
+    // During a race: champPoints already banked + this race's score.
+    // After the race: champPoints already includes this race — don't add again.
+    const raceOver = (gameState === 'finished');
+    const champRows = cars.map(c => ({
+      car: c,
+      total: (championshipPoints[c.name] || 0) + (raceOver ? 0 : c.score)
+    }));
+    champRows.sort((a, b) => {
+      if (b.total !== a.total) return b.total - a.total;
+      const aFirst = a.car.lastScoreTime || Infinity;
+      const bFirst = b.car.lastScoreTime || Infinity;
+      return aFirst - bFirst;
+    });
+    const champHTML = champRows.map((row, i) => {
+      const car = row.car;
+      const rank = i + 1;
+      const isPlayer = !car.isAI;
+      const weight = isPlayer ? 'bold' : 'normal';
+      const border = isPlayer ? '2px solid #fff' : '1px solid rgba(255,255,255,0.2)';
+      return `<span style="background:${car.color}; color:#000; font-weight:${weight}; border:${border};">${rank}. ${car.name}: ${row.total}</span>`;
+    }).join('');
+    champEl.innerHTML = `<div class="section-label">CHAMPIONSHIP</div>${champHTML}`;
+    champEl.style.display = '';
+  } else {
+    champEl.innerHTML = '';
+    champEl.style.display = 'none';
+  }
+
+  raceEl.innerHTML = isChamp
+    ? `<div class="section-label">THIS RACE</div>${raceHTML}`
+    : raceHTML;
+
+  // --- Timer ---
   const timerEl = document.getElementById('timer');
   timerEl.textContent = Math.max(0, timeLeft).toFixed(1);
   if (timeLeft <= 10 && timeLeft > 0) {
@@ -1188,6 +1518,22 @@ function updateHUD() {
     timerEl.style.color = `rgba(255, 80, 80, ${pulse})`;
   } else {
     timerEl.style.color = '';
+  }
+
+  // --- Championship race counter under the timer ---
+  const timer = document.getElementById('timer');
+  if (isChamp) {
+    let raceInfo = document.getElementById('raceInfo');
+    if (!raceInfo) {
+      raceInfo = document.createElement('div');
+      raceInfo.id = 'raceInfo';
+      raceInfo.style.cssText = 'color: #88ff88; font-size: 11px; text-align: center; margin-top: -4px; letter-spacing: 1px;';
+      timer.parentNode.insertBefore(raceInfo, timer.nextSibling);
+    }
+    raceInfo.textContent = `RACE ${championshipRace}/5`;
+  } else {
+    const raceInfo = document.getElementById('raceInfo');
+    if (raceInfo) raceInfo.textContent = '';
   }
 }
 
@@ -1252,10 +1598,35 @@ function updateHUD() {
     if (gameState === 'racing') requestAnimationFrame(loop);
   }
 
-  function startGame() {
-    const trackKey = document.getElementById('trackSelect').value || 'indy800';
+   function startGame() {
+    const modeEl = document.getElementById('raceMode');
+    raceMode = modeEl ? modeEl.value : 'single';
+
+    let trackKey;
+    if (raceMode === 'championship') {
+      trackKey = CHAMPIONSHIP_TRACKS[championshipRace - 1] || CHAMPIONSHIP_TRACKS[0];
+    } else {
+      trackKey = document.getElementById('trackSelect').value || 'indy800';
+    }
     loadTrack(trackKey);
-    cars = START.map((s, i) => makeCar(i, i !== 0));
+
+    // Shuffle the starting grid — randomly assign each driver to a slot.
+    // Player is always somewhere in the lineup, but not always P1.
+    const slotOrder = [0, 1, 2, 3, 4, 5, 6, 7];
+    for (let i = slotOrder.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [slotOrder[i], slotOrder[j]] = [slotOrder[j], slotOrder[i]];
+    }
+    // slotOrder[k] = which car sits in grid slot k
+    cars = slotOrder.map((carIdx, slot) => makeCar(carIdx, carIdx !== 0, slot));
+
+    // Ensure every driver has a championship entry
+    if (raceMode === 'championship') {
+      for (const c of cars) {
+        if (championshipPoints[c.name] === undefined) championshipPoints[c.name] = 0;
+      }
+    }
+
     stopFinalSiren();
     keys = {};
     const selectedLength = parseInt(document.getElementById('raceLength').value) || 90;
@@ -1274,24 +1645,107 @@ function endGame() {
   stopFinalSiren();
   playFanfare();
 
-  // Call the exact same function the HUD uses
+  // Snapshot this race's scores and ranking BEFORE we mutate anything.
   const sorted = getRankedCars();
-  
+  const raceScores = {};
+  for (const c of cars) raceScores[c.name] = c.score;
+
+  // In championship mode, add this race's scores to the running totals,
+  // then zero the per-race scores so the HUD shows only champ points.
+   if (raceMode === 'championship') {
+    for (const c of cars) {
+      championshipPoints[c.name] = (championshipPoints[c.name] || 0) + c.score;
+      // Don't zero c.score — the HUD uses it for the "(+N)" suffix
+      // even after the race, until the next race starts.
+    }
+  }
+
   const winner = sorted[0];
-  const isTie = sorted.length > 1 && sorted[0].score === sorted[1].score;
+  const isTie = sorted.length > 1 && raceScores[sorted[0].name] === raceScores[sorted[1].name];
 
   const overlay = document.getElementById('overlay');
   const text = document.getElementById('overlayText');
 
-  // Build the list using the exact same sorted array
-  const rankingHTML = sorted.map((c, i) => 
-    `${i + 1}. ${c.name}: ${c.score}`
+  // Race result — uses the snapshot so it always shows THIS RACE's scores.
+  const raceRankingHTML = sorted.map((c, i) => 
+    `${i + 1}. ${c.name}: ${raceScores[c.name]}`
   ).join('<br>');
 
-  if (isTie) {
-    text.innerHTML = `🤝 TIE!<br><br><div style="font-size:20px; line-height:1.6;">${rankingHTML}</div>`;
+  // Championship total (only in championship mode)
+  let champRankingHTML = '';
+  if (raceMode === 'championship') {
+    // Sort by championship total descending, then by the same tiebreak
+    // the HUD uses: earlier first-score time wins.
+    const entries = Object.entries(championshipPoints).map(([name, pts]) => {
+      const car = cars.find(c => c.name === name);
+      return {
+        name,
+        pts,
+        firstScoreTime: car ? (car.lastScoreTime || Infinity) : Infinity
+      };
+    });
+    entries.sort((a, b) => {
+      if (b.pts !== a.pts) return b.pts - a.pts;
+      return a.firstScoreTime - b.firstScoreTime;
+    });
+    champRankingHTML = entries.map((e, i) =>
+      `${i + 1}. ${e.name}: ${e.pts}`
+    ).join('<br>');
+  }
+
+  const champPanel = document.getElementById('champPanel');
+  const racePanelSmall = document.querySelector('#racePanel small');
+
+  if (raceMode === 'championship') {
+    // Left panel: championship
+    if (championshipRace < 5) {
+      champPanel.innerHTML = `
+        <div style="font-size:20px; margin-bottom:10px;">CHAMPIONSHIP</div>
+        <div style="font-size:13px; color:#888; margin-bottom:12px;">after race ${championshipRace} of 5</div>
+        ${champRankingHTML}
+      `;
+    } else {
+      const champWinner = Object.entries(championshipPoints)
+        .sort((a, b) => b[1] - a[1])[0];
+      champPanel.innerHTML = `
+        <div style="font-size:20px; margin-bottom:10px;">🏆 ${champWinner[0].toUpperCase()} WINS 🏆</div>
+        <div style="font-size:13px; color:#888; margin-bottom:12px;">final championship standings</div>
+        ${champRankingHTML}
+      `;
+    }
+
+    // Right panel: race result
+    if (championshipRace < 5) {
+      text.innerHTML = `
+        <div style="font-size:20px; margin-bottom:10px;">RACE ${championshipRace}</div>
+        <div style="font-size:14px; color:#aaa; margin-bottom:12px;">${isTie ? '🤝 Tie' : '🏆 ' + winner.name + ' wins'}</div>
+        <div style="font-size:16px; line-height:1.6;">${raceRankingHTML}</div>
+      `;
+      racePanelSmall.textContent = 'Press SPACE for next race';
+    } else {
+      text.innerHTML = `
+        <div style="font-size:20px; margin-bottom:10px;">RACE 5</div>
+        <div style="font-size:14px; color:#aaa; margin-bottom:12px;">${isTie ? '🤝 Tie' : '🏆 ' + winner.name + ' wins'}</div>
+        <div style="font-size:16px; line-height:1.6;">${raceRankingHTML}</div>
+      `;
+      racePanelSmall.textContent = 'Press R to restart championship';
+    }
   } else {
-    text.innerHTML = `🏆 ${winner.name} WINS! 🏆<br><br><div style="font-size:20px; line-height:1.6;">${rankingHTML}</div>`;
+    // Single race — hide left panel, show single big result
+    champPanel.innerHTML = '';
+    champPanel.style.display = 'none';
+
+    if (isTie) {
+      text.innerHTML = `<div style="font-size:24px;">🤝 TIE!</div><div style="font-size:20px; line-height:1.6; margin-top:12px;">${raceRankingHTML}</div>`;
+    } else {
+      text.innerHTML = `<div style="font-size:24px;">🏆 ${winner.name} WINS! 🏆</div><div style="font-size:20px; line-height:1.6; margin-top:12px;">${raceRankingHTML}</div>`;
+    }
+    racePanelSmall.textContent = 'Press R to restart';
+  }
+
+  // Restore champPanel display for next time we hit championship mode
+  if (raceMode === 'championship') {
+    champPanel.style.display = '';
   }
 
   overlay.classList.add('show');
@@ -1302,14 +1756,34 @@ function endGame() {
   document.addEventListener('keydown', e => {
     keys[e.key] = true;
     if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
-    
-      if (e.key === ' ' && menuActive) {
-    menuActive = false;
-    startGame();
-    return;
-  }
-    if (e.key === 'r' || e.key === 'R') {
-      if (gameState === 'finished') startGame();
+
+    if (e.key === ' ' && menuActive) {
+      menuActive = false;
+      // Starting from the menu — reset championship if in that mode
+      if (document.getElementById('raceMode').value === 'championship') {
+        championshipRace = 1;
+        championshipPoints = {};
+        cars.forEach(c => { championshipPoints[c.name] = 0; });
+      }
+      startGame();
+      return;
+    }
+
+    // SPACE between championship races → next race
+    if (e.key === ' ' && gameState === 'finished' && raceMode === 'championship' && championshipRace < 5) {
+      championshipRace++;
+      startGame();
+      return;
+    }
+
+    // R → restart (single race, or restart entire championship)
+    if ((e.key === 'r' || e.key === 'R') && gameState === 'finished') {
+      if (raceMode === 'championship') {
+        championshipRace = 1;
+        championshipPoints = {};
+        cars.forEach(c => { championshipPoints[c.name] = 0; });
+      }
+      startGame();
     }
   });
   document.addEventListener('keyup', e => {
@@ -1318,6 +1792,16 @@ function endGame() {
 
   // Init audio on first keypress (browsers require user interaction)
     // Track change → reload on next race (or immediately if we're between races)
+  // Championship mode toggles the track dropdown
+  document.addEventListener('change', e => {
+    if (e.target && e.target.id === 'raceMode') {
+      const trackSel = document.getElementById('trackSelect');
+      trackSel.disabled = (e.target.value === 'championship');
+      trackSel.style.opacity = trackSel.disabled ? '0.4' : '1';
+    }
+  });
+
+  // Track dropdown change → reload on next race (or immediately if between races)
   document.addEventListener('change', e => {
     if (e.target && e.target.id === 'trackSelect') {
       loadTrack(e.target.value);
