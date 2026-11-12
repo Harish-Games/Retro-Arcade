@@ -763,6 +763,7 @@ const CAR_NAMES = ['Player', 'Max', 'Alain', 'Ayrton', 'Lewis', 'Michael', 'Jim'
   let timeLeft = RACE_TIME;
   let gameState = 'menu';
   let menuActive = true;
+  let paused = false;
   let lastTime = 0;
   let accumulator = 0;
   let countdownTimer = 180;
@@ -1426,6 +1427,25 @@ function drawCars() {
     
     drawCars();
 
+    // --- PAUSE OVERLAY ---
+    if (paused) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffdd55';
+      ctx.font = 'bold 60px "Courier New", monospace';
+      ctx.shadowColor = '#ffdd55';
+      ctx.shadowBlur = 20;
+      ctx.fillText('PAUSED', W / 2, H / 2 - 20);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#88aaff';
+      ctx.font = '16px "Courier New", monospace';
+      ctx.fillText('Press P to resume', W / 2, H / 2 + 40);
+      ctx.restore();
+    }
+
     // --- COUNTDOWN TEXT ---
     if (countdownTimer > 0) {
       const seconds = Math.ceil(countdownTimer / 60);
@@ -1538,8 +1558,9 @@ function updateHUD() {
 }
 
   // ---------- GAME LOOP ----------
-  function update(dt) {
+    function update(dt) {
 	    if (menuActive) return;
+    if (paused) return;
     if (gameState !== 'racing') return;
   
       // --- COUNTDOWN LOGIC ---
@@ -1633,6 +1654,7 @@ function updateHUD() {
     timeLeft = selectedLength;
     countdownTimer = 180;
     playBeep(440, 0.15, 0.08);  // Beep for "3" immediately 
+    paused = false;
     gameState = 'racing';
     lastTime = 0;
     accumulator = 0;
@@ -1641,6 +1663,7 @@ function updateHUD() {
   }
 
 function endGame() {
+  paused = false;
   gameState = 'finished';
   stopFinalSiren();
   playFanfare();
@@ -1756,6 +1779,18 @@ function endGame() {
   document.addEventListener('keydown', e => {
     keys[e.key] = true;
     if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+
+    // P → pause / unpause
+    if ((e.key === 'p' || e.key === 'P') && gameState === 'racing' && !menuActive) {
+      paused = !paused;
+      if (paused) {
+        // Silence the crowd while paused (it'll resume on unpause)
+        if (crowdNodes && crowdNodes.swell) {
+          crowdNodes.swell.gain.value = 0;
+        }
+      }
+      return;
+    }
 
     if (e.key === ' ' && menuActive) {
       menuActive = false;
