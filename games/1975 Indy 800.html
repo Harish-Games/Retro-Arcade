@@ -170,13 +170,16 @@
 	  // ---------- AUDIO ----------
   let audioCtx = null;
 
-  function initAudio() {
-    if (audioCtx) return;
-    try {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    } catch (e) { /* silent fail */ }
+    function initAudio() {
+    if (!audioCtx) {
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      } catch (e) { return; }
+    }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
   }
-
 
 
   function playBeep(freq, duration, volume) {
@@ -232,33 +235,177 @@
 
   // Skid — short filtered noise burst, volume scales with slip amount
   let skidNodes = null;
-  function playSkid(slipAmount) {
+    function playSkid(slipAmount) {
     if (!audioCtx || slipAmount <= 0) return;
     try {
       const now = audioCtx.currentTime;
-      // Volume: ~0.005 at threshold, ~0.04 at full slip
-      const vol = Math.min(0.1, slipAmount * 0.04);
-      const dur = 0.15;
-      const bufferSize = audioCtx.sampleRate * dur;
+      // Dip the engine pitch briefly to suggest loss of traction
+      if (engineMaster) engineSkidDip = 0.25;
+      const vol = Math.min(0.12, slipAmount * 0.05);
+      const dur = 0.18;
+
+      // Layer 1: high-pitched whiny hiss (the "skreeee")
+      const bufferSize = Math.floor(audioCtx.sampleRate * dur);
       const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
       const data = buffer.getChannelData(0);
       for (let i = 0; i < bufferSize; i++) {
         const env = 1 - i / bufferSize;
-        data[i] = (Math.random() * 2 - 1) * env * env;
+        // Slightly biased noise + a fast tremolo to give it a grating texture
+        const wobble = Math.sin(i * 0.4) * 0.3;
+        data[i] = (Math.random() * 2 - 1) * env * (0.7 + wobble);
       }
       const source = audioCtx.createBufferSource();
       source.buffer = buffer;
+
       const filter = audioCtx.createBiquadFilter();
       filter.type = 'bandpass';
-      filter.frequency.value = 1800;   // high, whiny — tyre-like
-      filter.Q.value = 2.5;
+      filter.frequency.value = 1800;   // higher than before — more screechy
+      filter.Q.value = 6.0;            // much sharper resonance
+
       const gain = audioCtx.createGain();
       gain.gain.value = vol;
+
       source.connect(filter);
       filter.connect(gain);
       gain.connect(audioCtx.destination);
       source.start(now);
+
+      // Layer 2: a lower square-wave shriek underneath
+      const osc = audioCtx.createOscillator();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(1200, now);
+      osc.frequency.exponentialRampToValueAtTime(1800, now + dur * 0.6);
+      const oscGain = audioCtx.createGain();
+      oscGain.gain.setValueAtTime(vol * 0.5, now);
+      oscGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.connect(oscGain);
+      oscGain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + dur);
     } catch (e) {}
+  }
+
+  // ---------- ENGINE ----------
+  // Lighter, airier engine: filtered noise + a low triangle hum that
+  // rises with speed. Two layers that pulse slightly so it doesn't sit
+  // as a flat drone.
+  let engineNoiseSrc = null;
+  let engineNoiseGain = null;
+  let engineNoiseFilter = null;
+    let engineHumOsc = null;
+  let engineHumGain = null;
+  let engineLfo = null;
+  let engineLfoGain = null;
+  let engineMaster = null;
+  let engineSkidDip = 0;     // seconds remaining of engine pitch dip
+
+  function startEngine() {
+    if (!audioCtx || engineMaster) return;
+    try {
+      const now = audioCtx.currentTime;
+
+      // Master gain — quiet by default, driven by updateEngine
+      engineMaster = audioCtx.createGain();
+      engineMaster.gain.value = 0.01;
+      engineMaster.connect(audioCtx.destination);
+
+      // Layer 1: filtered noise (the airy hiss of moving air)
+      const noiseLen = audioCtx.sampleRate * 2;
+      const noiseBuf = audioCtx.createBuffer(1, noiseLen, audioCtx.sampleRate);
+      const nd = noiseBuf.getChannelData(0);
+      for (let i = 0; i < noiseLen; i++) nd[i] = Math.random() * 2 - 1;
+      engineNoiseSrc = audioCtx.createBufferSource();
+      engineNoiseSrc.buffer = noiseBuf;
+      engineNoiseSrc.loop = true;
+      engineNoiseFilter = audioCtx.createBiquadFilter();
+      engineNoiseFilter.type = 'bandpass';
+      engineNoiseFilter.frequency.value = 600;
+      engineNoiseFilter.Q.value = 0.8;
+      engineNoiseGain = audioCtx.createGain();
+      engineNoiseGain.gain.value = 0.6;
+      engineNoiseSrc.connect(engineNoiseFilter);
+      engineNoiseFilter.connect(engineNoiseGain);
+      engineNoiseGain.connect(engineMaster);
+      engineNoiseSrc.start(now);
+
+       // Layer 2: low triangle-wave hum (the "engine" body)
+      engineHumOsc = audioCtx.createOscillator();
+      engineHumOsc.type = 'triangle';
+      engineHumOsc.frequency.value = 80;
+      engineHumGain = audioCtx.createGain();
+      engineHumGain.gain.value = 0.4;
+      engineHumOsc.connect(engineHumGain);
+      engineHumGain.connect(engineMaster);
+      engineHumOsc.start(now);
+
+      // Layer 3: slow LFO that wobbles the hum pitch — gives the engine a
+      // subtle "revving" character so it doesn't sit on one note.
+      engineLfo = audioCtx.createOscillator();
+      engineLfo.type = 'sine';
+      engineLfo.frequency.value = 0.15;  // very slow wander
+      engineLfoGain = audioCtx.createGain();
+      engineLfoGain.gain.value = 1.5;    // ±1.5 Hz — barely perceptible drift
+      engineLfo.connect(engineLfoGain);
+      engineLfoGain.connect(engineHumOsc.frequency);
+      engineLfo.start(now);
+
+      console.log('ENGINE: started');
+    } catch (e) {
+      console.log('ENGINE: error', e);
+      engineMaster = null;
+    }
+  }
+
+  function updateEngine(speed) {
+    if (!engineMaster || !audioCtx) return;
+    try {
+      const now = audioCtx.currentTime;
+      const sp = Math.max(0, Math.min(5, speed));
+
+       // Hum pitch rises with speed, with a brief dip when the tyres are sliding
+      if (engineSkidDip > 0) engineSkidDip -= 1 / 60;
+      const dip = engineSkidDip > 0 ? 12 : 0;   // drop the pitch 12 Hz while skidding
+      engineHumOsc.frequency.setTargetAtTime(80 + sp * 16 - dip, now, 0.04);
+
+      // The wobble stays slow and narrow at all speeds — it's a subtle
+      // drift, not a rhythmic pulse.
+      engineLfo.frequency.setTargetAtTime(0.15, now, 0.1);
+      engineLfoGain.gain.setTargetAtTime(1.5, now, 0.1);
+
+      // Noise filter opens as speed rises — airy hiss brightens.
+      engineNoiseFilter.frequency.setTargetAtTime(500 + sp * 180, now, 0.08);
+
+      // Master gain: quiet at idle, audible at speed. NOT constant — drops
+      // to near silent when you're not moving, so the engine only
+      // "presents itself" when you're driving.
+      const gain = 0.003 + sp * 0.008;
+      engineMaster.gain.setTargetAtTime(gain, now, 0.08);
+
+      // Hum gets relatively quieter at speed (the noise layer carries the
+      // sense of movement), so overall the sound gets airier as you go faster.
+      engineHumGain.gain.setTargetAtTime(0.5 - sp * 0.05, now, 0.08);
+    } catch (e) {}
+  }
+
+  function stopEngine() {
+    if (!engineMaster) return;
+    try {
+      const now = audioCtx.currentTime;
+      engineMaster.gain.cancelScheduledValues(now);
+      engineMaster.gain.setValueAtTime(engineMaster.gain.value, now);
+      engineMaster.gain.linearRampToValueAtTime(0, now + 0.25);
+            engineNoiseSrc.stop(now + 0.3);
+      engineHumOsc.stop(now + 0.3);
+      engineLfo.stop(now + 0.3);
+    } catch (e) {}
+    engineMaster = null;
+    engineNoiseSrc = null;
+    engineNoiseFilter = null;
+    engineNoiseGain = null;
+    engineHumOsc = null;
+    engineHumGain = null;
+    engineLfo = null;
+    engineLfoGain = null;
   }
 	
   // Countdown crowd cheer — swells in volume as the clock runs down
@@ -1594,6 +1741,13 @@ function updateHUD() {
       if (car.isAI) updateAI(car, dt);
       else updatePlayer(car, dt);
     }
+        // Engine sound for the player
+    const playerCar = cars.find(c => !c.isAI);
+    if (playerCar) {
+      const spd = Math.hypot(playerCar.vx, playerCar.vy);
+      updateEngine(spd);
+    }
+    
         for (const car of cars) applyMovement(car, dt);
     carCollisions();
  
@@ -1619,7 +1773,8 @@ function updateHUD() {
     if (gameState === 'racing') requestAnimationFrame(loop);
   }
 
-   function startGame() {
+      function startGame() {
+    initAudio();
     const modeEl = document.getElementById('raceMode');
     raceMode = modeEl ? modeEl.value : 'single';
 
@@ -1655,6 +1810,7 @@ function updateHUD() {
     countdownTimer = 180;
     playBeep(440, 0.15, 0.08);  // Beep for "3" immediately 
     paused = false;
+    startEngine();
     gameState = 'racing';
     lastTime = 0;
     accumulator = 0;
@@ -1665,6 +1821,7 @@ function updateHUD() {
 function endGame() {
   paused = false;
   gameState = 'finished';
+  stopEngine();
   stopFinalSiren();
   playFanfare();
 
@@ -1744,14 +1901,14 @@ function endGame() {
         <div style="font-size:14px; color:#aaa; margin-bottom:12px;">${isTie ? '🤝 Tie' : '🏆 ' + winner.name + ' wins'}</div>
         <div style="font-size:16px; line-height:1.6;">${raceRankingHTML}</div>
       `;
-      racePanelSmall.textContent = 'Press SPACE for next race';
+      racePanelSmall.innerHTML = 'Press SPACE for next race<br>Press M for menu';
     } else {
       text.innerHTML = `
         <div style="font-size:20px; margin-bottom:10px;">RACE 5</div>
         <div style="font-size:14px; color:#aaa; margin-bottom:12px;">${isTie ? '🤝 Tie' : '🏆 ' + winner.name + ' wins'}</div>
         <div style="font-size:16px; line-height:1.6;">${raceRankingHTML}</div>
       `;
-      racePanelSmall.textContent = 'Press R to restart championship';
+      racePanelSmall.innerHTML = 'Press R to restart championship<br>Press M for menu';
     }
   } else {
     // Single race — hide left panel, show single big result
@@ -1763,7 +1920,7 @@ function endGame() {
     } else {
       text.innerHTML = `<div style="font-size:24px;">🏆 ${winner.name} WINS! 🏆</div><div style="font-size:20px; line-height:1.6; margin-top:12px;">${raceRankingHTML}</div>`;
     }
-    racePanelSmall.textContent = 'Press R to restart';
+    racePanelSmall.innerHTML = 'Press R to restart<br>Press M for menu';
   }
 
   // Restore champPanel display for next time we hit championship mode
@@ -1780,13 +1937,26 @@ function endGame() {
     keys[e.key] = true;
     if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
 
-    // P → pause / unpause
     if ((e.key === 'p' || e.key === 'P') && gameState === 'racing' && !menuActive) {
       paused = !paused;
       if (paused) {
-        // Silence the crowd while paused (it'll resume on unpause)
+        // Silence the crowd and the engine while paused
         if (crowdNodes && crowdNodes.swell) {
           crowdNodes.swell.gain.value = 0;
+        }
+        if (engineMaster && audioCtx) {
+          engineMaster.gain.setTargetAtTime(0, audioCtx.currentTime, 0.02);
+        }
+      } else {
+        // Restore engine gain based on current speed. updateEngine() will
+        // take over from here on the next frame.
+        if (engineMaster && audioCtx && cars.length) {
+          const playerCar = cars.find(c => !c.isAI);
+          if (playerCar) {
+            const sp = Math.hypot(playerCar.vx, playerCar.vy);
+            const gain = 0.003 + Math.min(5, sp) * 0.008;
+            engineMaster.gain.setTargetAtTime(gain, audioCtx.currentTime, 0.05);
+          }
         }
       }
       return;
@@ -1808,6 +1978,17 @@ function endGame() {
     if (e.key === ' ' && gameState === 'finished' && raceMode === 'championship' && championshipRace < 5) {
       championshipRace++;
       startGame();
+      return;
+    }
+
+    if ((e.key === 'm' || e.key === 'M') && gameState === 'finished') {
+      menuActive = true;
+      gameState = 'menu';
+      paused = false;
+      stopEngine();
+      stopFinalSiren();
+      overlay.classList.remove('show');
+      draw();
       return;
     }
 

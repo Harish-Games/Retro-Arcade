@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Computer Space</title>
+<style>
+  body { background: #111; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; font-family: 'Courier New', monospace; padding: 20px; margin: 0; color: #ddd; transition: background 0.2s; }
+  body.hyperspace { background: #eee; color: #111; }
+  canvas { background: #000; border: 3px solid #444; border-radius: 6px; display: block; }
+  body.hyperspace canvas { background: #fff; border-color: #aaa; }
+  #sidebar { display: flex; flex-direction: column; gap: 12px; width: 200px; font-size: 14px; font-weight: bold; }
+  .game-layout { display: flex; gap: 20px; align-items: flex-start; }
+  #timer { color: #ffdd55; font-size: 28px; text-align: center; padding: 8px; background: #1a1a30; border-radius: 6px; letter-spacing: 1px; }
+  body.hyperspace #timer { background: #ddd; color: #884400; }
+  #status { color: #88ff88; font-size: 12px; text-align: center; letter-spacing: 1px; }
+  body.hyperspace #status { color: #006600; }
+  #scores { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+  #scores span { padding: 4px 10px; border-radius: 4px; }
+  #overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: #fff; font-size: 20px; font-weight: bold; text-align: center; padding: 20px; z-index: 100; }
+  #overlay.show { display: flex; }
+</style>
+</head>
+<body>
+
+<div class="game-layout">
+  <canvas id="game"></canvas>
+  <div id="sidebar">
+    <div id="timer">90</div>
+    <div id="status">ROUND 1</div>
+    <div id="scores">
+      <span style="background:#ffff00; color:#000;">YOU: <span id="playerScore">0</span></span>
+      <span style="background:#ff4060; color:#000;">UFOs: <span id="ufoScore">0</span></span>
+    </div>
+  </div>
+</div>
+<div id="overlay"><div id="overlayText"></div><small style="display:block; margin-top:12px; color:#aaa; font-weight:normal; font-size:13px;">Press R to restart</small></div>
+
+<script>
+(function () {
+  // ---------- AUDIO ----------
+  let audioCtx = null;
+  function initAudio() {
+    if (audioCtx) return;
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  }
+  function playBeep(freq, dur, vol) {
+    if (!audioCtx) return;
+    try {
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(vol || 0.06, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(now); osc.stop(now + dur);
+    } catch (e) {}
+  }
+
+  // ---------- CONFIG ----------
+  const W = 760, H = 760;
+   const TURN_SPEED = 0.04;         // was 0.05
+  const THRUST_POWER = 0.09;       // was 0.12
+  const FRICTION = 0.99;           // unchanged — same glide decay
+  const MAX_SPEED = 4;             // was 5
+  const BULLET_SPEED = 6;          // was 7
+  const BULLET_LIFE = 60;
+  const SHIP_RADIUS = 14;
+  const UFO_RADIUS = 18;
+  const ROUND_TIME = 90;
+  const FIRE_COOLDOWN_FRAMES = 9;
+
+  const canvas = document.getElementById('game');
+  canvas.width = W; canvas.height = H;
+  
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const overlayText = document.getElementById('overlayText');
+  const timerEl = document.getElementById('timer');
+  const statusEl = document.getElementById('status');
+  const playerScoreEl = document.getElementById('playerScore');
+  const ufoScoreEl = document.getElementById('ufoScore');
+
+  // ---------- STATE ----------
+  let player;
+  let ufos = [];
+  let bullets = [];
+  let particles = [];
+  let playerBullet = null;    // the single guided missile
+  let keys = {};
+  let playerScore = 0;
+  let ufoScore = 0;
+  let round = 1;
+  let timeLeft = ROUND_TIME;
+  let gameState = 'menu';     // 'menu', 'playing', 'finished'
+  let menuActive = true;
+  let hyperspace = false;     // inverted colours on round extension
+  let lastTime = 0;
+  let accumulator = 0;
+  let ufoFireTimer = 0;
+  let playerRespawn = 0;
+  let ufoPair;
+  let stars = [];
+  const FIXED_DT = 1 / 60;
+
+    // Build a persistent starfield of short miscoloured lines, like the
+  // diode-array background of the original.
+  function buildStars() {
+    stars = [];
+    const palette = ['#ffffff', '#ccddff', '#ddeeff', '#ffddaa', '#ffcc88'];
+    for (let i = 0; i < 300; i++) {
+      stars.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        len: 3 + Math.floor(Math.random() * 3),
+        color: palette[Math.floor(Math.random() * palette.length)]
+      });
+    }
+  }
+  buildStars();
+
+  function makePlayer() {
+    return {
+      x: W / 2, y: H / 2,
+      angle: -Math.PI / 2,
+      vx: 0, vy: 0,
+      alive: true,
+      invuln: 1.5,
+      fireCooldown: 0
+    };
+  }
+
+  function makeUFOPair() {
+    return {
+      centerX: W / 2,
+      y: H / 2,
+      vx: 1.2,            // drift speed
+      vy: 0.4,            // vertical drift
+      fireTimer: 1.5 + Math.random() * 1.0
+    };
+  }
+
+  function resetRound() {
+    player = makePlayer();
+    ufoPair = makeUFOPair();
+    bullets = [];
+    particles = [];
+    playerBullet = null;
+    timeLeft = ROUND_TIME;
+    ufoFireTimer = 1.5;
+    playerRespawn = 0;
+  }
+
+  function resetFull() {
+    playerScore = 0;
+    ufoScore = 0;
+    round = 1;
+    hyperspace = false;
+    document.body.classList.remove('hyperspace');
+    resetRound();
+    updateHUD();
+  }
+
+  // ---------- SCORING (single digit, reset at 10) ----------
+  function bumpScore(who) {
+    if (who === 'player') {
+      playerScore += 1;
+    } else {
+      ufoScore += 1;
+    }
+    updateHUD();
+  }
+
+  // ---------- INPUT ----------
+  document.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+
+    if (e.key === ' ' && menuActive) {
+      initAudio();
+      menuActive = false;
+      gameState = 'playing';
+      startGame();
+      return;
+    }
+    if ((e.key === 'r' || e.key === 'R') && gameState === 'finished') {
+      gameState = 'playing';
+      overlay.classList.remove('show');
+      startGame();
+    }
+  });
+  document.addEventListener('keyup', e => { keys[e.key] = false; });
+  document.addEventListener('keydown', initAudio, { once: true });
+  document.addEventListener('mousedown', initAudio, { once: true });
+
+  function startGame() {
+    resetFull();
+    overlay.classList.remove('show');
+    lastTime = 0;
+    accumulator = 0;
+  }
+
+  // ---------- PHYSICS ----------
+  function updatePlayer(dt) {
+    if (!player.alive) return;
+    if (player.invuln > 0) player.invuln -= dt;
+    if (player.fireCooldown > 0) player.fireCooldown -= dt;
+
+    if (keys['ArrowLeft'] || keys['a'] || keys['A']) player.angle -= TURN_SPEED;
+    if (keys['ArrowRight'] || keys['d'] || keys['D']) player.angle += TURN_SPEED;
+
+    if (keys['ArrowUp'] || keys['w'] || keys['W']) {
+      player.vx += Math.cos(player.angle) * THRUST_POWER;
+      player.vy += Math.sin(player.angle) * THRUST_POWER;
+      const spd = Math.hypot(player.vx, player.vy);
+      if (spd > MAX_SPEED) {
+        player.vx = (player.vx / spd) * MAX_SPEED;
+        player.vy = (player.vy / spd) * MAX_SPEED;
+      }
+    }
+
+    // Fire the single guided missile
+    if ((keys[' '] || keys['ArrowDown'] || keys['s'] || keys['S']) && !playerBullet && player.fireCooldown <= 0) {
+      player.fireCooldown = FIRE_COOLDOWN_FRAMES / 60;
+      playerBullet = {
+        x: player.x + Math.cos(player.angle) * (SHIP_RADIUS + 4),
+        y: player.y + Math.sin(player.angle) * (SHIP_RADIUS + 4),
+        vx: Math.cos(player.angle) * BULLET_SPEED,
+        vy: Math.sin(player.angle) * BULLET_SPEED,
+        life: BULLET_LIFE
+      };
+      playBeep(880, 0.05, 0.04);
+    }
+  }
+
+  function updateShipPhysics(ship, dt) {
+    if (!ship.alive) return;
+    ship.vx *= FRICTION;
+    ship.vy *= FRICTION;
+    if (Math.abs(ship.vx) < 0.01) ship.vx = 0;
+    if (Math.abs(ship.vy) < 0.01) ship.vy = 0;
+    const speed = Math.hypot(ship.vx, ship.vy);
+    if (speed > MAX_SPEED) {
+      ship.vx = (ship.vx / speed) * MAX_SPEED;
+      ship.vy = (ship.vy / speed) * MAX_SPEED;
+    }
+    ship.x += ship.vx;
+    ship.y += ship.vy;
+    if (ship.x < -50) ship.x = W + 50;
+    else if (ship.x > W + 50) ship.x = -50;
+    if (ship.y < -50) ship.y = H + 50;
+    else if (ship.y > H + 50) ship.y = -50;
+  }
+
+  // ---------- GUIDED MISSILE ----------
+  function updatePlayerBullet() {
+    if (!playerBullet) return;
+    // Missile follows the ship's current facing direction — the original's
+    // emergent "steering" behaviour.
+    playerBullet.vx = Math.cos(player.angle) * BULLET_SPEED;
+    playerBullet.vy = Math.sin(player.angle) * BULLET_SPEED;
+    playerBullet.x += playerBullet.vx;
+    playerBullet.y += playerBullet.vy;
+    playerBullet.life -= 1;
+
+    // Wrap
+    if (playerBullet.x < 0) playerBullet.x += W;
+    if (playerBullet.x >= W) playerBullet.x -= W;
+    if (playerBullet.y < 0) playerBullet.y += H;
+    if (playerBullet.y >= H) playerBullet.y -= H;
+
+    if (playerBullet.life <= 0) { playerBullet = null; return; }
+
+    // Hit either UFO head
+    if (!ufoPair) return;
+    const heads = [
+      { x: ufoPair.centerX, y: ufoPair.y - 90 },
+      { x: ufoPair.centerX, y: ufoPair.y + 90 }
+    ];
+    for (const h of heads) {
+      const d = Math.hypot(playerBullet.x - h.x, playerBullet.y - h.y);
+      if (d < UFO_RADIUS) {
+        spawnExplosion(h.x, h.y, '#ffcc44');
+        playBeep(120, 0.3, 0.1);
+        // Destroy the whole pair — the original treats them as one unit
+        ufoPair = null;
+        playerBullet = null;
+        bumpScore('player');
+        return;
+      }
+    }
+  }
+
+  // ---------- UFO AI ----------
+  function updateUFOs(dt) {
+    if (!ufoPair) return;
+
+    ufoPair.centerX += ufoPair.vx;
+    ufoPair.y += ufoPair.vy;
+
+    // Bounce off top/bottom
+    const verticalMargin = UFO_RADIUS + 90 + 20;   // head offset + radius + padding
+    if (ufoPair.y < verticalMargin) {
+      ufoPair.y = verticalMargin;
+      ufoPair.vy = Math.abs(ufoPair.vy);
+    }
+    if (ufoPair.y > H - verticalMargin) {
+      ufoPair.y = H - verticalMargin;
+      ufoPair.vy = -Math.abs(ufoPair.vy);
+    }
+    // Bounce horizontally — the pair sweeps between margins so the
+    // two heads stay on screen with a gap between them
+    const margin = 180;
+    if (ufoPair.centerX < margin) {
+      ufoPair.centerX = margin;
+      ufoPair.vx = Math.abs(ufoPair.vx);
+    }
+    if (ufoPair.centerX > W - margin) {
+      ufoPair.centerX = W - margin;
+      ufoPair.vx = -Math.abs(ufoPair.vx);
+    }
+
+    // Fire: both heads fire at the same quadrant simultaneously
+    ufoPair.fireTimer -= dt;
+    if (ufoPair.fireTimer <= 0 && player.alive) {
+      ufoPair.fireTimer = 1.4 + Math.random() * 0.9;
+      const topX = ufoPair.centerX;
+      const topY = ufoPair.y - 90;
+      const botX = ufoPair.centerX;
+      const botY = ufoPair.y + 90;
+      // Pick one shared quadrant angle from the top head, apply to both
+      // Aim directly at the player, but with a small random spread
+      // so shots aren't perfectly accurate
+      const dx = player.x - topX;
+      const dy = player.y - topY;
+      const baseAngle = Math.atan2(dy, dx);
+      const spread = (Math.random() - 0.5) * 0.4;  // ±0.2 rad ≈ ±11°
+      const quad = baseAngle + spread;
+      bullets.push({
+        x: topX + Math.cos(quad) * (UFO_RADIUS + 4),
+        y: topY + Math.sin(quad) * (UFO_RADIUS + 4),
+        vx: Math.cos(quad) * 5,
+        vy: Math.sin(quad) * 5,
+        life: 120
+      });
+      bullets.push({
+        x: botX + Math.cos(quad) * (UFO_RADIUS + 4),
+        y: botY + Math.sin(quad) * (UFO_RADIUS + 4),
+        vx: Math.cos(quad) * 5,
+        vy: Math.sin(quad) * 5,
+        life: 120
+      });
+      playBeep(600, 0.06, 0.04);
+    }
+  }
+
+  function updateUFOBullets() {
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const b = bullets[i];
+      b.x += b.vx;
+      b.y += b.vy;
+      b.life -= 1;
+
+      // Wrap
+      if (b.x < 0) b.x += W;
+      if (b.x >= W) b.x -= W;
+      if (b.y < 0) b.y += H;
+      if (b.y >= H) b.y -= H;
+
+      if (b.life <= 0) { bullets.splice(i, 1); continue; }
+
+      // Hit player
+      if (player.alive && player.invuln <= 0) {
+        const d = Math.hypot(b.x - player.x, b.y - player.y);
+        if (d < SHIP_RADIUS) {
+          player.alive = false;
+          spawnExplosion(player.x, player.y, '#ffff00');
+          playBeep(120, 0.3, 0.1);
+          bullets.splice(i, 1);
+          bumpScore('ufo');
+          playerRespawn = 1.5;
+        }
+      }
+    }
+  }
+
+  function updateParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= 1;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+  }
+
+  function spawnExplosion(x, y, color) {
+    for (let i = 0; i < 18; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 2 + Math.random() * 4;
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s,
+        life: 30 + Math.random() * 20,
+        maxLife: 50,
+        color
+      });
+    }
+  }
+
+  function checkRespawn(dt) {
+    if (playerRespawn > 0) {
+      playerRespawn -= dt;
+      if (playerRespawn <= 0) {
+        player.x = W / 2; player.y = H / 2;
+        player.vx = 0; player.vy = 0;
+        player.angle = -Math.PI / 2;
+        player.alive = true;
+        player.invuln = 1.5;
+        playerBullet = null;
+      }
+    }
+    if (!ufoPair) {
+      ufoPair = makeUFOPair();
+      ufoPair.centerX = player.x < W / 2 ? W * 0.75 : W * 0.25;
+      ufoPair.y = H / 2;
+    }
+  }
+
+  function update(dt) {
+    if (menuActive || gameState !== 'playing') return;
+
+    // Round timer
+    timeLeft -= dt;
+    if (timeLeft <= 0) {
+      endRound();
+      return;
+    }
+
+    updatePlayer(dt);
+    updateShipPhysics(player, dt);
+    updateUFOs(dt);
+    updatePlayerBullet();
+    updateUFOBullets();
+    updateParticles();
+    checkRespawn(dt);
+  }
+
+  // ---------- ROUND END ----------
+  function endRound() {
+    if (playerScore > ufoScore) {
+      // Extension — invert colours for the next round
+      hyperspace = !hyperspace;
+      if (hyperspace) document.body.classList.add('hyperspace');
+      else document.body.classList.remove('hyperspace');
+      round += 1;
+      resetRound();
+      updateHUD();
+      playBeep(880, 0.3, 0.1);
+    } else {
+      endGame();
+    }
+  }
+
+  function endGame() {
+    gameState = 'finished';
+    const win = playerScore > ufoScore;
+    overlayText.innerHTML = `<div style="font-size:28px;">${win ? 'ROUND WON' : 'GAME OVER'}</div><div style="font-size:18px; margin-top:12px; color:#aaa;">YOU ${playerScore} — UFOs ${ufoScore}</div><div style="font-size:14px; margin-top:8px; color:#666;">Reached round ${round}</div>`;
+    overlay.classList.add('show');
+  }
+
+  // ---------- RENDER ----------
+  function drawShip() {
+    if (!player.alive) return;
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(player.angle);
+    // Draw as a dot-matrix triangle. Each dot is 2×2 pixels, offset
+    // per the ship's rotation. Flicker while invulnerable.
+    const showDots = !(player.invuln > 0 && Math.floor(player.invuln * 10) % 2 === 0);
+    if (showDots) {
+      ctx.fillStyle = '#ffffff';
+      // Half-size triangle of dots — same shape, ~50% scale.
+      const dots = [
+        // Nose
+        [6, -1], [6, 1],
+        // Upper edge
+        [4, -2], [4, 2],
+        [2, -3], [2, 3],
+        [0, -4], [0, 4],
+        [-2, -5], [-2, 5],
+        [-4, -6], [-4, 6],
+        // Base
+        [-6, -6], [-6, -3], [-6, 0], [-6, 3], [-6, 6]
+      ];
+            for (const [dx, dy] of dots) {
+        ctx.fillRect(dx, dy - 1, 2, 2);
+      }
+    }
+    ctx.restore();
+  }
+
+    function drawUFOHead(x, y) {
+    ctx.save();
+    ctx.translate(x, y);
+    // Draw as a dot-matrix saucer to match the era — slightly smaller than
+    // the original footprint.
+    ctx.fillStyle = '#ffffff';
+    const dots = [
+      [-11, 0], [-8, -3], [-5, -5], [-2, -6], [2, -6], [5, -5], [8, -3], [11, 0],
+      [-9, 3], [-6, 5], [-3, 6], [0, 6], [3, 6], [6, 5], [9, 3]
+    ];
+    for (const [dx, dy] of dots) {
+      ctx.fillRect(dx, dy, 2, 2);
+    }
+    // Dome
+    // Dome
+    ctx.fillRect(-3, -8, 2, 2);
+    ctx.fillRect(0, -9, 2, 2);
+    ctx.fillRect(3, -8, 2, 2);
+    ctx.restore();
+  }
+
+  function drawBullets() {
+    ctx.fillStyle = '#ffaaff';
+    for (const b of bullets) {
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (playerBullet) {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(playerBullet.x, playerBullet.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    if (hyperspace) {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, W, H);
+    } else {
+      ctx.fillStyle = '#0a0a14';
+      ctx.fillRect(0, 0, W, H);
+      // Starfield: short coloured dashes
+      // Starfield: short coloured dashes, now thicker
+      for (const s of stars) {
+        ctx.fillStyle = s.color;
+        ctx.globalAlpha = 0.8;
+        ctx.fillRect(s.x, s.y, s.len, 2);
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = hyperspace ? '#000' : '#fff';
+
+    if (menuActive) {
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = hyperspace ? '#000' : '#ffdd55';
+      ctx.font = 'bold 60px "Courier New", monospace';
+      ctx.shadowColor = ctx.fillStyle;
+      ctx.shadowBlur = 30;
+      ctx.fillText('COMPUTER SPACE', W / 2, H / 2 - 60);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#88aaff';
+      ctx.font = '18px "Courier New", monospace';
+      ctx.fillText('1971 · NUTTING ASSOCIATES', W / 2, H / 2);
+      const blink = Math.sin(Date.now() / 300) > 0;
+      if (blink) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '16px "Courier New", monospace';
+        ctx.fillText('PRESS SPACE TO START', W / 2, H / 2 + 90);
+      }
+      ctx.fillStyle = '#556688';
+      ctx.font = '12px "Courier New", monospace';
+      ctx.fillText('ARROWS = ROTATE & THRUST', W / 2, H - 70);
+      ctx.fillText('SPACE = FIRE GUIDED MISSILE', W / 2, H - 50);
+      ctx.fillText('SCORE MORE THAN THE UFOs IN 90 SECONDS', W / 2, H - 30);
+      return;
+    }
+
+    drawShip();
+    if (ufoPair) {
+      drawUFOHead(ufoPair.centerX, ufoPair.y - 90);
+      drawUFOHead(ufoPair.centerX, ufoPair.y + 90);
+    }
+    drawBullets();
+    drawParticles();
+  }
+
+  function updateHUD() {
+    timerEl.textContent = Math.max(0, Math.ceil(timeLeft));
+    statusEl.textContent = `ROUND ${round}`;
+    playerScoreEl.textContent = playerScore;
+    ufoScoreEl.textContent = ufoScore;
+  }
+
+  // ---------- LOOP ----------
+  function loop(now) {
+    if (!lastTime) lastTime = now;
+    let delta = (now - lastTime) / 1000;
+    lastTime = now;
+    if (delta > 0.1) delta = 0.1;
+
+    accumulator += delta;
+    while (accumulator >= FIXED_DT) {
+      update(FIXED_DT);
+      accumulator -= FIXED_DT;
+    }
+    draw();
+    updateHUD();
+        requestAnimationFrame(loop);
+  }
+
+  draw();
+  updateHUD();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
