@@ -7,7 +7,6 @@
   body { background: #111; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; font-family: 'Courier New', monospace; padding: 20px; margin: 0; color: #ddd; }
   #hud { display: flex; gap: 24px; font-size: 16px; font-weight: bold; margin-bottom: 12px; letter-spacing: 1px; }
   #hud span { padding: 4px 10px; border-radius: 4px; }
-  #timer { color: #ffdd55; font-size: 20px; }
   canvas { background: #000; border: 3px solid #444; border-radius: 6px; display: block; }
   #overlay {
     position: fixed;
@@ -142,7 +141,6 @@
         <option value="cross800">Cross 800</option>
         <option value="oval800">Oval 800</option>
         <option value="fish800">Fish 800</option>
-    </select>
     </select>
     <select id="raceMode" style="background:#1a1a30; color:#88ff88; border:1px solid #3a3a6a; border-radius:6px; padding:6px; font-family:inherit; font-size:14px; font-weight:bold;">
         <option value="single" selected>Single Race</option>
@@ -840,6 +838,7 @@ const CAR_NAMES = ['Player', 'Max', 'Alain', 'Ayrton', 'Lewis', 'Michael', 'Jim'
 
   // ---------- TRACK SELECTION ----------
   function loadTrack(key) {
+    marksCtx.clearRect(0, 0, W, H);
     const t = TRACKS[key];
     if (!t) return;
     parseTrack(t.rows);
@@ -862,6 +861,10 @@ const CAR_NAMES = ['Player', 'Max', 'Alain', 'Ayrton', 'Lewis', 'Michael', 'Jim'
   trackCanvas.width = W;
   trackCanvas.height = H;
   const tctx = trackCanvas.getContext('2d');
+  const marksCanvas = document.createElement('canvas');
+  marksCanvas.width = W;
+  marksCanvas.height = H;
+  const marksCtx = marksCanvas.getContext('2d');
 
   function buildStaticTrack() {
     tctx.fillStyle = '#0a0a14';
@@ -918,7 +921,7 @@ const CAR_NAMES = ['Player', 'Max', 'Alain', 'Ayrton', 'Lewis', 'Michael', 'Jim'
 
    function makeCar(idx, isAI, slot) {
     const s = START[slot !== undefined ? slot : idx];
-    const baseSpeeds = [5.1, 4.7, 5.2, 4.8, 4.9, 5.1, 4.8, 5.3];
+    const baseSpeeds = [5.1, 4.7, 5.2, 4.8, 4.9, 5.2, 4.8, 5.3];
     const frequencies = [1, Math.PI / 3, Math.PI / 5, Math.PI / 4,
                          Math.PI / 6, Math.PI / 7, Math.PI / 2, Math.PI / 2.5];
     
@@ -942,7 +945,7 @@ const CAR_NAMES = ['Player', 'Max', 'Alain', 'Ayrton', 'Lewis', 'Michael', 'Jim'
 	 zonesThisLap: 0,
 	 lastResortTimer: 0,
 	 collisionCleared: true,
-	 laneOffset: [0, -1.2, 1.2, -0.6, 0.6, -1.5, 1.5, 0][idx] || 0,
+	 laneOffset: [0, -1.2, 1.2, -0.6, 0.6, -1.5, 1, 0][idx] || 0,
 	 wallCollisionCleared: true,
 	 baseSpeed: baseSpeeds[idx] || 4.5,
 	 speedVariance: isAI ? 0.6 : 0,
@@ -953,6 +956,46 @@ const CAR_NAMES = ['Player', 'Max', 'Alain', 'Ayrton', 'Lewis', 'Michael', 'Jim'
 	spinVy: 0
     };
   }
+
+// ---------- SKID MARKS ----------
+const AI_GRIP = 4.0;         // raise it and AI cars skid (and mark) less
+const MARK_BACK = 0.22;      // rear wheels: cells behind the car's centre
+const MARK_SIDE = 0.26;      // rear wheels: cells either side of centre
+
+function leaveMarks(car, dt) {
+  const px = car._mx, py = car._my, pa = car._ma;
+  car._mx = car.x; car._my = car.y; car._ma = car.angle;
+  if (px === undefined) return;
+
+    let skidding;
+  if (car.isAI) {
+    // Same test as the player's skid sound, with sideways speed estimated
+    // from how hard the car is turning at its current speed
+    const turn = Math.abs(car.angle - pa) / dt;
+    skidding = !(car.spinTimer > 0) && car.speed > 2.0 &&
+               (car.speed * turn / AI_GRIP) > 0.8;
+  } else {
+    skidding = car.skidding;
+    car.skidding = false;   // set again next frame if the sound test still passes
+  }
+  if (!skidding) { car._wl = car._wr = null; return; }
+
+  const c = Math.cos(car.angle), s = Math.sin(car.angle);
+  const wl = { x: car.x - c * MARK_BACK - s * MARK_SIDE, y: car.y - s * MARK_BACK + c * MARK_SIDE };
+  const wr = { x: car.x - c * MARK_BACK + s * MARK_SIDE, y: car.y - s * MARK_BACK - c * MARK_SIDE };
+
+  if (car._wl && Math.hypot(wl.x - car._wl.x, wl.y - car._wl.y) < 1.5) {
+    marksCtx.strokeStyle = 'rgba(170, 190, 255, 0.22)';
+    marksCtx.lineWidth = 2;
+    marksCtx.beginPath();
+    marksCtx.moveTo(car._wl.x * CELL, car._wl.y * CELL);
+    marksCtx.lineTo(wl.x * CELL, wl.y * CELL);
+    marksCtx.moveTo(car._wr.x * CELL, car._wr.y * CELL);
+    marksCtx.lineTo(wr.x * CELL, wr.y * CELL);
+    marksCtx.stroke();
+  }
+  car._wl = wl; car._wr = wr;
+}
 
 function checkZones(car, dt) {
   if (car.prevX === undefined) {
@@ -1105,6 +1148,7 @@ function checkZones(car, dt) {
     // Skid sound — fires when lateral velocity is significant at speed
     const latSpeed = Math.hypot(latVx, latVy);
     const slip = latSpeed - 0.8;
+    car.skidding = slip > 0 && speedNow > 2.0;
     if (slip > 0 && speedNow > 2.0) {
       car._skidCooldown = (car._skidCooldown || 0) - dt;
       if (car._skidCooldown <= 0) {
@@ -1546,6 +1590,7 @@ function drawCars() {
     }
     
     ctx.drawImage(trackCanvas, 0, 0);
+        ctx.drawImage(marksCanvas, 0, 0);
     
     // Scoring zone lines — drawn from currentZones so they always match
     // the actual trigger coordinates for the active track.
@@ -1750,6 +1795,7 @@ function updateHUD() {
     
         for (const car of cars) applyMovement(car, dt);
     carCollisions();
+    for (const car of cars) leaveMarks(car, dt);
  
     for (const car of cars) {
       checkZones(car, dt);
