@@ -971,7 +971,7 @@ function leaveMarks(car, dt) {
     // from how hard the car is turning at its current speed
     const turn = Math.abs(car.angle - pa) / dt;
     skidding = !(car.spinTimer > 0) && car.speed > 2.0 &&
-               (car.speed * turn / AI_GRIP) > 0.8;
+               ((car.speed * turn / AI_GRIP) > 0.8 || car.slideTimer > 0);
   } else {
     skidding = car.skidding;
     car.skidding = false;   // set again next frame if the sound test still passes
@@ -1179,6 +1179,28 @@ function checkZones(car, dt) {
     car.speed = forwardSpeed;
   }
 
+// ---------- AI WALL RECOVERY ----------
+const AI_BOUNCE_LIMIT = 2;     // wall hits within the window that trigger a recovery
+const AI_BOUNCE_WINDOW = 2.0;  // seconds before the hit count is forgotten
+const AI_JAM_TIME = 0.8;       // seconds stuck against a wall before a recovery
+const AI_SLIDE_ANGLE = Math.random() * 2 - 1;       // radians the nose must be off the line to the next waypoint
+const AI_SLIDE_MIN_SPEED = 3.5;   // only slide when going fast
+const AI_SLIDE_TIME = 0.4;        // seconds sliding with no steering
+const AI_SLIDE_SCRUB = 0.95;      // speed multiplier per frame while sliding
+const AI_SLIDE_GAP = 1.5;         // minimum seconds between slides
+
+function recoverAI(car) {
+  // Start a short, smooth recovery (handled in updateAI) instead of jumping the car
+  car.recovering = 0.8;
+    car.slideTimer = 0;
+  car.wallCollisionCleared = true;
+  car.wallBounces = 0; car.jamTimer = 0; car.stuckTimer = 0;
+  car.spinTimer = 0; car.spinVx = 0; car.spinVy = 0;
+  car.reverseTimer = 0; car.forwardTimer = 0;
+  car.vx = 0; car.vy = 0;
+  car.iframes = 1.0;
+}
+
    function updateAI(car, dt) {
     if (car.iframes > 0) car.iframes -= dt;
 
@@ -1210,6 +1232,39 @@ function checkZones(car, dt) {
         car.spinVy = 0;
         car.speed = 1.5;
       }
+      return;
+    }
+ 
+     if (car.recovering > 0) {
+      car.recovering -= dt;
+      const n = waypoints.length;
+      let bi = car.wpIndex, bd = Infinity;
+      for (let k = -4; k <= 4; k++) {
+        const i = (car.wpIndex + k + n) % n;
+        const d = Math.hypot(waypoints[i].c - car.x, waypoints[i].r - car.y);
+        if (d < bd) { bd = d; bi = i; }
+      }
+      const rw = waypoints[bi], rn = waypoints[(bi + 1) % n];
+
+      // Turn smoothly to face along the track
+      let rdiff = Math.atan2(rn.r - rw.r, rn.c - rw.c) - car.angle;
+      while (rdiff > Math.PI) rdiff -= Math.PI * 2;
+      while (rdiff < -Math.PI) rdiff += Math.PI * 2;
+      const rturn = AI_TURN_RATE * dt * 0.5;
+      car.angle += Math.max(-rturn, Math.min(rturn, rdiff));
+
+      // Glide gently back toward the middle of the track
+      const gx = rw.c - car.x, gy = rw.r - car.y, gd = Math.hypot(gx, gy);
+      if (gd > 0.05) {
+        const gs = Math.min(gd, 2.5 * dt);
+        car.x += gx / gd * gs;
+        car.y += gy / gd * gs;
+      }
+
+      car.wpIndex = (bi + 1) % n;
+      car.speed = 1.5;
+      car.lastX = car.x; car.lastY = car.y;
+      if (gd < 0.2 && Math.abs(rdiff) < 0.3) car.recovering = 0;
       return;
     }
     
@@ -1266,14 +1321,33 @@ function checkZones(car, dt) {
     let diff = targetAngle - car.angle;
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
-    car.angle += Math.max(-AI_TURN_RATE * dt, Math.min(AI_TURN_RATE * dt, diff));
+    // Drift penalty: a hard turn at speed can make the car slide on. While sliding it
+    // can't steer (the nose points the way it's moving) and it loses speed.
+    if (car.slideCooldown > 0) car.slideCooldown -= dt;
+    if (car.slideTimer > 0) {
+      car.slideTimer -= dt;
+    } else if (car.slideCooldown <= 0 && car.speed > AI_SLIDE_MIN_SPEED && Math.abs(diff) > AI_SLIDE_ANGLE) {
+      car.slideTimer = AI_SLIDE_TIME;
+      car.slideCooldown = AI_SLIDE_TIME + AI_SLIDE_GAP;
+    }
+    if (car.slideTimer > 0) {
+      car.speed *= AI_SLIDE_SCRUB;
+    } else {
+      car.angle += Math.max(-AI_TURN_RATE * dt, Math.min(AI_TURN_RATE * dt, diff));
+    }
 
     car.speedTimer += dt;
         if (car.wallCollisionCleared === false) {
       // Just hit a wall — don't accelerate into it this frame
+      car.jamTimer = (car.jamTimer || 0) + dt;
+      if (car.jamTimer > AI_JAM_TIME || (car.wallBounces || 0) >= AI_BOUNCE_LIMIT) {
+        recoverAI(car);
+        return;
+      }
       car.speed *= 0.9;  // let friction slow us down
       return;
     }
+    car.jamTimer = 0;
     const speedWave = Math.sin(car.speedTimer * car.speedFrequency);
     let currentMaxSpeed = car.baseSpeed;
     if (car.isAI) currentMaxSpeed += speedWave * car.speedVariance;
@@ -1385,6 +1459,7 @@ function tryMoveTo(car, newX, newY) {
 }
 
 function applyMovement(car, dt) {
+	  if (car.wallBounceTimer > 0 && (car.wallBounceTimer -= dt) <= 0) car.wallBounces = 0;
   // Use velocity vector (drift-friendly). AI cars still set car.speed and angle,
   // so reconstruct velocity for them (they don't drift).
   let dx, dy;
@@ -1402,9 +1477,15 @@ function applyMovement(car, dt) {
     return;
   }
 
-  // Wall collision detected
+   // Wall collision detected
+   if (car.recovering > 0) return;
   if (car.wallCollisionCleared) {
     car.wallCollisionCleared = false;
+    if (car.isAI) {
+      car.wallBounces = (car.wallBounces || 0) + 1;
+      car.wallBounceTimer = AI_BOUNCE_WINDOW;
+            car.slideTimer = 0;
+    }
 
     // Find which axis is blocked
     const canX = tryMoveTo(car, car.x + dx, car.y);
@@ -1459,8 +1540,9 @@ function carCollisions() {
 
         if (a.iframes > 0 || b.iframes > 0) continue;
         if (a.collisionCleared && b.collisionCleared) {
-          a.spinTimer = 0.4;
-          b.spinTimer = 0.4;
+          a.spinTimer = 0.1 + Math.random() * 0.5;
+			b.spinTimer = 0.1 + Math.random() * 0.5;
+
           a.spinVx = -nx * 8.0;
           a.spinVy = -ny * 8.0;
           b.spinVx = nx * 8.0;
