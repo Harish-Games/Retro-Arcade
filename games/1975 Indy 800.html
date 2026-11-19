@@ -548,6 +548,7 @@
   const TRACKS = {
     indy800: {
       name: 'Indy 800',
+      firstWaypoint: 9,   // skip p1-p8: they sit behind p101 and cause an S-bend at the end of each lap
       startAngle: Math.PI,
       rows: [
     "|  | 2 |  |  |  | - | - | - | - | - | - |  |  |  |  |  |  | - | - | - | - | - | - |  |  |  |  |  |  | - | - | - | - | - | - |  |  |  |",
@@ -580,12 +581,9 @@
   ],
       zones: {
 		          order: ['A', 'B', 'C'],
-        // zone A: top straight, cars cross col 18 while between rows 3-8
-        A: { axis: 'col', value: 18, dir: 'increasing', range: [2, 7] },
-        // zone B: right straight, cars cross row 11 while between cols 30-35
-        B: { axis: 'row', value: 11, dir: 'increasing', range: [30, 35] },
-        // zone C: bottom-left, cars cross col 12 while between rows 21-26
-        C: { axis: 'col', value: 12, dir: 'decreasing', range: [21, 26] }
+        A: { axis: 'col', value: 12, dir: 'decreasing', range: [21, 26] },
+        B: { axis: 'col', value: 18, dir: 'increasing', range: [2, 7] },
+        C: { axis: 'row', value: 11, dir: 'increasing', range: [30, 35] }
       }
     },
 
@@ -769,7 +767,7 @@
   let pathPositions = {};
   let waypoints = [];
 
-  function parseTrack(rows) {
+  function parseTrack(rows, firstWaypoint) {
     wallGrid = Array.from({length: ROWS + 1}, () => Array(COLS + 1).fill(false));
     pathPositions = {};
 
@@ -793,7 +791,7 @@
     // take the band centre so the waypoint sits mid-lane.
     waypoints = [];
     const maxPath = Math.max(...Object.keys(pathPositions).map(Number));
-    for (let n = 1; n <= maxPath; n++) {
+    for (let n = firstWaypoint || 1; n <= maxPath; n++) {
       const cells = pathPositions[n];
       if (!cells || cells.length === 0) continue;
       const rs = cells.map(p => p.r).sort((a, b) => a - b);
@@ -841,7 +839,7 @@ const CAR_NAMES = ['Player', 'Max', 'Alain', 'Ayrton', 'Lewis', 'Michael', 'Jim'
     marksCtx.clearRect(0, 0, W, H);
     const t = TRACKS[key];
     if (!t) return;
-    parseTrack(t.rows);
+    parseTrack(t.rows, t.firstWaypoint);
     currentZones = t.zones;
     for (const s of START) s.angle = t.startAngle;
     for (let i = 0; i < cars.length; i++) {
